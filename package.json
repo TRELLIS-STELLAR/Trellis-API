@@ -1,8 +1,8 @@
 {
-  "name": "alian-structure-api",
+  "name": "trellis-api",
   "version": "0.1.0",
-  "description": "Off-chain services + API layer for alian-structure agents",
-  "author": "alian-structure",
+  "description": "Off-chain services + API layer for Trellis agents",
+  "author": "trellis",
   "private": true,
   "license": "Apache-2.0",
   "scripts": {
@@ -39,7 +39,7 @@
     "openapi:export": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/export-openapi.ts",
     "openapi:validate": "ts-node -r tsconfig-paths/register scripts/validate-openapi.ts",
     "openapi:client": "npm run openapi:export && npx @openapitools/openapi-generator-cli generate -i docs/openapi.json -g typescript-fetch -o sdks/typescript --additional-properties=supportsES6=true,typescriptThreePlus=true",
-    "openapi:client:python": "npm run openapi:export && npx @openapitools/openapi-generator-cli generate -i docs/openapi.json -g python -o sdks/python --additional-properties=packageName=alian_structure_api,packageVersion=$(npm run -s get-version 2>/dev/null || echo '0.1.0')",
+    "openapi:client:python": "npm run openapi:export && npx @openapitools/openapi-generator-cli generate -i docs/openapi.json -g python -o sdks/python --additional-properties=packageName=trellis_api,packageVersion=$(npm run -s get-version 2>/dev/null || echo '0.1.0')",
     "openapi:client:all": "npm run openapi:client && npm run openapi:client:python",
     "get-version": "node -p \"require('./package.json').version\"",
     "module:example:register": "node modules/example-grant-module/register.cjs"

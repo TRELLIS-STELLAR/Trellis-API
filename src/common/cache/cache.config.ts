@@ -5,7 +5,7 @@
  * {@link CacheModule}.
  */
 export interface CacheConfig {
-  /** Prefix prepended to every cache key. Default: "alian:cache:". */
+  /** Prefix prepended to every cache key. Default: "trellis:cache:". */
   prefix?: string;
 
   /** Default TTL in seconds for cache entries. Default: 300. */
@@ -32,7 +32,7 @@ export interface CacheConfig {
 export const DEFAULT_CACHE_CONFIG: Required<
   Omit<CacheConfig, "memoryCache">
 > & { memoryCache?: Map<string, { value: string; expiresAt: number }> } = {
-  prefix: "alian:cache:",
+  prefix: "trellis:cache:",
   defaultTtlSeconds: 300,
   memoryMaxEntries: 1000,
   enableStats: true,

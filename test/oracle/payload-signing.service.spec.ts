@@ -79,7 +79,7 @@ describe("PayloadSigningService", () => {
       );
 
       expect(structuredData.domain).toBeDefined();
-      expect(structuredData.domain.name).toBe("alian-structure Oracle");
+      expect(structuredData.domain.name).toBe("Trellis Oracle");
       expect(structuredData.domain.version).toBe("1");
       expect(structuredData.domain.chainId).toBe(1);
       expect(structuredData.types).toBeDefined();
@@ -260,7 +260,7 @@ describe("PayloadSigningService", () => {
     it("should return the EIP-712 domain", () => {
       const domain = service.getDomain();
 
-      expect(domain.name).toBe("alian-structure Oracle");
+      expect(domain.name).toBe("Trellis Oracle");
       expect(domain.version).toBe("1");
       expect(domain.chainId).toBe(1);
       expect(domain.verifyingContract).toBe(

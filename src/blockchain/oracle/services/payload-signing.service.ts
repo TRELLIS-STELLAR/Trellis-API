@@ -11,7 +11,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 
 /**
- * EIP-712 Domain for alian-structure Oracle
+ * EIP-712 Domain for Trellis Oracle
  */
 export interface OracleDomain extends TypedDataDomain {
   name: string;
@@ -54,7 +54,7 @@ export class PayloadSigningService {
   constructor(private configService: ConfigService) {
     // Initialize EIP-712 domain
     this.domain = {
-      name: "alian-structure Oracle",
+      name: "Trellis Oracle",
       version: "1",
       chainId: parseInt(this.configService.get<string>("CHAIN_ID", "1")),
       verifyingContract: this.configService.get<string>(

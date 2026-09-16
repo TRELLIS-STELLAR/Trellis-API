@@ -25,7 +25,7 @@ exports.logger = (0, pino_1.default)({
     },
     base: {
         env: process.env.NODE_ENV,
-        service: "alian-structure-api",
+        service: "trellis-api",
     },
     timestamp: pino_1.default.stdTimeFunctions.isoTime,
 });

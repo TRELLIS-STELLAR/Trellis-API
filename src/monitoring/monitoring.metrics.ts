@@ -17,7 +17,7 @@ import { register } from "../config/metrics";
  * collector.
  */
 
-const PREFIX = "alian_structure_";
+const PREFIX = "trellis_";
 
 function getOrCreateGauge(
   config: client.GaugeConfiguration<string>,

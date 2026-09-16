@@ -21,7 +21,7 @@ import {
 } from "@opentelemetry/api";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 
-const SERVICE_NAME = "alian-structure-api";
+const SERVICE_NAME = "trellis-api";
 
 function buildExporters(): SpanExporter[] {
   const exporters: SpanExporter[] = [];

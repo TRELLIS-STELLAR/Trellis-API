@@ -3,36 +3,36 @@
 Python Client Example
 
 This example demonstrates how to use the auto-generated Python client
-to interact with the alian-structure API.
+to interact with the Trellis API.
 """
 
 import os
 from typing import Optional, Dict, Any
-import alian_structure_api
-from alian_structure_api.apis import DefaultApi, AuthApi, PortfolioApi, OracleApi
+import trellis_api
+from trellis_api.apis import DefaultApi, AuthApi, PortfolioApi, OracleApi
 
 
-class AlianStructureClient:
+class TrellisClient:
     """
-    A wrapper client for the alian-structure API with convenient methods.
+    A wrapper client for the Trellis API with convenient methods.
     """
 
     def __init__(
         self,
-        base_url: str = "https://api.alian-structure.com",
+        base_url: str = "https://api.trellis.example",
         api_key: Optional[str] = None,
         jwt_token: Optional[str] = None,
     ):
         """
         Initialize the API client.
         """
-        config = alian_structure_api.Configuration(
+        config = trellis_api.Configuration(
             host=base_url,
             api_key=api_key,
             access_token=jwt_token,
         )
 
-        self.client = alian_structure_api.ApiClient(config)
+        self.client = trellis_api.ApiClient(config)
         self.default_api = DefaultApi(self.client)
         self.auth_api = AuthApi(self.client)
         self.portfolio_api = PortfolioApi(self.client)
@@ -68,7 +68,7 @@ class AlianStructureClient:
         Create a new portfolio.
         """
         try:
-            portfolio_dto = alian_structure_api.models.CreatePortfolioDto(
+            portfolio_dto = trellis_api.models.CreatePortfolioDto(
                 name=name,
                 description=description,
                 assets=assets or [],
@@ -102,7 +102,7 @@ class AlianStructureClient:
         """
         try:
             print("📝 Creating Oracle payload...")
-            create_dto = alian_structure_api.models.CreatePayloadDto(
+            create_dto = trellis_api.models.CreatePayloadDto(
                 payload_type=payload_type,
                 data=data,
             )
@@ -110,7 +110,7 @@ class AlianStructureClient:
             payload_id = create_response.id
 
             print(f"🔏 Signing payload {payload_id}...")
-            sign_dto = alian_structure_api.models.SignPayloadDto(
+            sign_dto = trellis_api.models.SignPayloadDto(
                 private_key=os.getenv("WALLET_PRIVATE_KEY")
             )
             sign_response = self.oracle_api.oracle_payloads_id_sign_post(
@@ -118,7 +118,7 @@ class AlianStructureClient:
             )
 
             print(f"⛓️  Submitting to blockchain...")
-            submit_dto = alian_structure_api.models.SubmitPayloadDto()
+            submit_dto = trellis_api.models.SubmitPayloadDto()
             submit_response = self.oracle_api.oracle_payloads_id_submit_post(
                 sign_response.id, submit_dto
             )
@@ -139,9 +139,9 @@ class AlianStructureClient:
 
 
 def main():
-    """Example usage of the AlianStructureClient."""
+    """Example usage of the TrellisClient."""
 
-    client = AlianStructureClient("http://localhost:3001")
+    client = TrellisClient("http://localhost:3001")
 
     try:
         print("🔍 Checking API health...")

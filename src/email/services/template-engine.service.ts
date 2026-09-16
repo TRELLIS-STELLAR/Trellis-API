@@ -11,11 +11,11 @@ export interface EmailTemplate {
 const DEFAULT_TEMPLATES: EmailTemplate[] = [
   {
     name: "welcome",
-    subject: "Welcome to Alian Structure!",
+    subject: "Welcome to Trellis!",
     htmlContent:
-      '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Welcome, {{name}}!</h1><p>Thank you for joining <strong>Alian Structure</strong>.</p><p>Your account is now active.</p></div>',
+      '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Welcome, {{name}}!</h1><p>Thank you for joining <strong>Trellis</strong>.</p><p>Your account is now active.</p></div>',
     textContent:
-      "Welcome, {{name}}!\n\nThank you for joining Alian Structure.\nYour account is now active.",
+      "Welcome, {{name}}!\n\nThank you for joining Trellis.\nYour account is now active.",
     description: "Sent to new users upon registration",
   },
   {

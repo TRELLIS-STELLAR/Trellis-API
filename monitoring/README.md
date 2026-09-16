@@ -1,15 +1,15 @@
-# Alian Structure — Monitoring Stack
+# Trellis — Monitoring Stack
 
 This directory contains the operational monitoring configuration for the
-Alian Structure API. It is the implementation of GitHub issue
-[`#25`](https://github.com/SourceXXL/alian_structure-api/issues/25)
+Trellis API. It is the implementation of GitHub issue
+[`#25`](https://github.com/SourceXXL/trellis-api/issues/25)
 ("Setup Application Monitoring Dashboard").
 
 ## Overview
 
 ```
 ┌──────────────────────┐   scrape :15s   ┌────────────┐  queries  ┌─────────┐
-│ Alian Structure API  │ ───────────────▶│ Prometheus │ ─────────▶│ Grafana │
+│ Trellis API  │ ───────────────▶│ Prometheus │ ─────────▶│ Grafana │
 │ /api/v1/observability│                 └────────────┘           └─────────┘
 │   /metrics           │
 └──────────────────────┘
@@ -24,15 +24,15 @@ endpoint, persists the time series, and Grafana visualises them.
 
 | Metric                                                                  | Type      | Source                                                                       |
 | ----------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------- |
-| `alian_structure_http_requests_total`                                   | Counter   | `RequestTimingMiddleware` (this issue)                                       |
-| `alian_structure_http_request_duration_seconds`                         | Histogram | `RequestTimingMiddleware` (this issue)                                       |
-| `alian_structure_http_requests_in_progress`                             | Gauge     | `RequestTimingMiddleware` (this issue)                                       |
-| `alian_structure_errors_total`                                          | Counter   | `RequestTimingMiddleware` for HTTP `>=400` (this issue)                      |
-| `alian_structure_database_query_duration_seconds`                       | Histogram | `DatabaseTimingInterceptor` / services                                       |
-| `alian_structure_active_connections`                                    | Gauge     | services                                                                      |
-| `alian_structure_user_signups_total` / `alian_structure_active_users`   | Counter   | auth services                                                                 |
-| `alian_structure_job_duration_seconds` / `job_success_total` / `_failure_total` / `queue_length` | Histogram / Counter / Counter / Gauge | compute / queue workers |
-| `alian_structure_baseline_p50_seconds` / `_p95` / `_p99` / `_regressions_total` | Gauge | `PerformanceBaselineService` |
+| `trellis_http_requests_total`                                   | Counter   | `RequestTimingMiddleware` (this issue)                                       |
+| `trellis_http_request_duration_seconds`                         | Histogram | `RequestTimingMiddleware` (this issue)                                       |
+| `trellis_http_requests_in_progress`                             | Gauge     | `RequestTimingMiddleware` (this issue)                                       |
+| `trellis_errors_total`                                          | Counter   | `RequestTimingMiddleware` for HTTP `>=400` (this issue)                      |
+| `trellis_database_query_duration_seconds`                       | Histogram | `DatabaseTimingInterceptor` / services                                       |
+| `trellis_active_connections`                                    | Gauge     | services                                                                      |
+| `trellis_user_signups_total` / `trellis_active_users`   | Counter   | auth services                                                                 |
+| `trellis_job_duration_seconds` / `job_success_total` / `_failure_total` / `queue_length` | Histogram / Counter / Counter / Gauge | compute / queue workers |
+| `trellis_baseline_p50_seconds` / `_p95` / `_p99` / `_regressions_total` | Gauge | `PerformanceBaselineService` |
 | `process_cpu_*`, `process_resident_memory_bytes`, `nodejs_heap_size_used_bytes`, `nodejs_eventloop_lag_seconds`, `nodejs_active_handles_total`, `nodejs_active_requests_total`, `process_uptime_seconds` | various | `prom-client` default metrics |
 
 ## Quick start
@@ -50,7 +50,7 @@ endpoint, persists the time series, and Grafana visualises them.
    ```
 
    You should see Prometheus exposition format output including
-   `alian_structure_http_requests_total{...}` and the default
+   `trellis_http_requests_total{...}` and the default
    `process_*` / `nodejs_*` metrics.
 
 3. **Run a local Prometheus** (optional)
@@ -72,8 +72,8 @@ endpoint, persists the time series, and Grafana visualises them.
      - name: default
        type: file
        options:
-         path: /etc/grafana/provisioning/dashboards/alian-structure
-       folders: ['Alian Structure']
+         path: /etc/grafana/provisioning/dashboards/trellis
+       folders: ['Trellis']
      ```
 
    - Select your Prometheus datasource when prompted.
@@ -126,15 +126,15 @@ top-level scrape endpoint. It reuses the **same** Prometheus registry
 
 | Metric                                          | Type      | Source                    |
 | ----------------------------------------------- | --------- | ------------------------- |
-| `alian_structure_system_cpu_usage_percent`      | Gauge     | `SystemMetricsService`    |
-| `alian_structure_system_process_cpu_usage_percent` | Gauge  | `SystemMetricsService`    |
-| `alian_structure_system_load_average`           | Gauge     | `SystemMetricsService`    |
-| `alian_structure_system_memory_usage_bytes` / `_percent` | Gauge | `SystemMetricsService` |
-| `alian_structure_system_disk_usage_bytes` / `_percent`   | Gauge | `SystemMetricsService` |
-| `alian_structure_operation_duration_seconds`    | Histogram | `@Monitor` decorator      |
-| `alian_structure_operation_total`               | Counter   | `@Monitor` decorator      |
-| `alian_structure_alerts_active`                 | Gauge     | `AlertRulesService`       |
-| `alian_structure_alerts_fired_total`            | Counter   | `AlertRulesService`       |
+| `trellis_system_cpu_usage_percent`      | Gauge     | `SystemMetricsService`    |
+| `trellis_system_process_cpu_usage_percent` | Gauge  | `SystemMetricsService`    |
+| `trellis_system_load_average`           | Gauge     | `SystemMetricsService`    |
+| `trellis_system_memory_usage_bytes` / `_percent` | Gauge | `SystemMetricsService` |
+| `trellis_system_disk_usage_bytes` / `_percent`   | Gauge | `SystemMetricsService` |
+| `trellis_operation_duration_seconds`    | Histogram | `@Monitor` decorator      |
+| `trellis_operation_total`               | Counter   | `@Monitor` decorator      |
+| `trellis_alerts_active`                 | Gauge     | `AlertRulesService`       |
+| `trellis_alerts_fired_total`            | Counter   | `AlertRulesService`       |
 
 ### Instrumenting an operation
 

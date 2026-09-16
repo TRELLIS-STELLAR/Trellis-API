@@ -280,7 +280,7 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
     LoggerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
-        serviceName: cfg.get<string>("SERVICE_NAME") ?? "alian-structure-api",
+        serviceName: cfg.get<string>("SERVICE_NAME") ?? "trellis-api",
         level: (cfg.get<string>("LOG_LEVEL") ?? "info") as any,
         logFileDir: cfg.get<string>("LOG_FILE_DIR"),
         enableCloudWatch: true,

@@ -1,10 +1,31 @@
-# alian_structure-api
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/trellis-lockup-dark.png">
+    <img src="docs/brand/trellis-lockup.png" alt="Trellis" width="331">
+  </picture>
+</p>
 
-A robust NestJS-based off-chain services suite and API layer that powers the alian-structure: secure, auditable, real-time backend services that complement on‑chain logic. Implemented with NestJS (Node.js + TypeScript) with optional Rust adapters for performance‑critical components.
+<h1 align="center">Trellis API</h1>
+
+<p align="center">
+  <strong>Off-chain services and API layer for Trellis &mdash; secure, auditable,<br>real-time backend services that complement the on-chain logic.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-1C6B55?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/NestJS-11-14201C?style=flat-square" alt="NestJS">
+  <img src="https://img.shields.io/badge/TypeScript-5.3%2B-1C6B55?style=flat-square" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Stellar-blockchain-14201C?style=flat-square" alt="Stellar">
+  <img src="https://img.shields.io/badge/status-active%20development-E39A3C?style=flat-square" alt="Status">
+</p>
+
+---
+
+A robust NestJS-based off-chain services suite and API layer that powers Trellis: secure, auditable, real-time backend services that complement on‑chain logic. Implemented with NestJS (Node.js + TypeScript) with optional Rust adapters for performance‑critical components.
 
 ## Purpose
 
-Provide the off‑chain infrastructure required for agents, oracles, and operators to interact reliably with the alian-structure blockchain ecosystem. This backend ensures off‑chain computation, telemetry, and decisioning are secure, verifiable, and low‑latency.
+Provide the off‑chain infrastructure required for agents, oracles, and operators to interact reliably with the Trellis blockchain ecosystem. This backend ensures off‑chain computation, telemetry, and decisioning are secure, verifiable, and low‑latency.
 
 ## Core responsibilities
 
@@ -57,10 +78,10 @@ All SDKs are auto-generated from the authoritative OpenAPI v3 specification and 
 
 ```typescript
 // TypeScript
-import { Configuration, PortfolioApi } from "@alian-structure/api-client";
+import { Configuration, PortfolioApi } from "@trellis/api-client";
 
 const config = new Configuration({
-  basePath: "https://api.alian-structure.com",
+  basePath: "https://api.trellis.example",
   accessToken: process.env.JWT_TOKEN,
 });
 
@@ -70,15 +91,15 @@ const portfolios = await api.portfolioPortfoliosGet({ page: 1, pageSize: 10 });
 
 ```python
 # Python
-import alian_structure_api
-from alian_structure_api.apis import PortfolioApi
+import trellis_api
+from trellis_api.apis import PortfolioApi
 
-config = alian_structure_api.Configuration(
-    host="https://api.alian-structure.com",
+config = trellis_api.Configuration(
+    host="https://api.trellis.example",
     access_token=os.getenv("JWT_TOKEN"),
 )
 
-api_client = alian_structure_api.ApiClient(config)
+api_client = trellis_api.ApiClient(config)
 portfolio_api = PortfolioApi(api_client)
 portfolios = portfolio_api.portfolio_portfolios_get(page=1, page_size=10)
 ```
@@ -96,7 +117,7 @@ See examples for complete integration patterns.
 ## Quick start (developer)
 
 1. Clone the repo
-   git clone https://github.com/alian-structure/alian-structure-api.git
+   git clone https://github.com/TRELLIS-STELLAR/Trellis-API.git
 
 2. Install dependencies
    npm install
@@ -147,7 +168,7 @@ Notes:
 
 ## Security
 
-**🔒 Security is a top priority for alian-structure.**
+**🔒 Security is a top priority for trellis.**
 
 ### Security Features
 
@@ -166,7 +187,7 @@ Notes:
 ### Reporting Security Issues
 
 **DO NOT** create public issues for vulnerabilities.
-Email: **security@alian-structure.com**
+Email: **security@trellis.example**
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting details.
 

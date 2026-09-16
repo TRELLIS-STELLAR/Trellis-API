@@ -77,7 +77,7 @@ export class EnvironmentVariables {
   /** Human-readable service name injected into every structured log record. */
   @IsOptional()
   @IsString()
-  SERVICE_NAME?: string = "alian-structure-api";
+  SERVICE_NAME?: string = "trellis-api";
 
   /** Directory for daily-rotating log files. Omit to disable file logging. */
   @IsOptional()
@@ -293,7 +293,7 @@ export class EnvironmentVariables {
   EMAIL_VERIFICATION_URL: string = "http://localhost:3000/auth/verify-email";
 
   @IsString()
-  EMAIL_FROM: string = '"alian-structure" <noreply@alian-structure.com>';
+  EMAIL_FROM: string = '"Trellis" <noreply@trellis.example>';
 
   // Redis
   @IsOptional()
@@ -605,10 +605,10 @@ export class EnvironmentVariables {
   GRANTFOX_ENCRYPTION_KEY?: string;
   // Rate Limiting & Abuse Protection (distributed, Redis-backed)
 
-  /** Redis key prefix for rate-limit entries. Default: "alian:rl:". */
+  /** Redis key prefix for rate-limit entries. Default: "trellis:rl:". */
   @IsOptional()
   @IsString()
-  RATE_LIMIT_REDIS_KEY_PREFIX?: string = "alian:rl:";
+  RATE_LIMIT_REDIS_KEY_PREFIX?: string = "trellis:rl:";
 
   /**
    * Default rate-limiting strategy: "token-bucket" (default) or

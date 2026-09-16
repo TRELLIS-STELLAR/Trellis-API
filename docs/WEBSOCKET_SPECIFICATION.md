@@ -235,32 +235,32 @@ The client implements exponential backoff with the following parameters:
 The following Prometheus metrics are exposed:
 
 ### Connection Metrics
-- `alian_structure_ws_connections_total` - Total WebSocket connections by namespace and type
-- `alian_structure_ws_active_connections` - Active WebSocket connections by namespace
+- `trellis_ws_connections_total` - Total WebSocket connections by namespace and type
+- `trellis_ws_active_connections` - Active WebSocket connections by namespace
 
 ### Subscription Metrics
-- `alian_structure_ws_subscriptions_total` - Total subscriptions by namespace and channel
-- `alian_structure_ws_active_subscriptions` - Active subscriptions by namespace and channel
+- `trellis_ws_subscriptions_total` - Total subscriptions by namespace and channel
+- `trellis_ws_active_subscriptions` - Active subscriptions by namespace and channel
 
 ### Heartbeat Metrics
-- `alian_structure_ws_heartbeats_sent_total` - Heartbeats sent by namespace
-- `alian_structure_ws_heartbeats_received_total` - Heartbeat responses received
-- `alian_structure_ws_heartbeat_latency_seconds` - Heartbeat response latency
+- `trellis_ws_heartbeats_sent_total` - Heartbeats sent by namespace
+- `trellis_ws_heartbeats_received_total` - Heartbeat responses received
+- `trellis_ws_heartbeat_latency_seconds` - Heartbeat response latency
 
 ### Event Metrics
-- `alian_structure_ws_events_buffered` - Events in buffer by namespace and user
-- `alian_structure_ws_events_sent_total` - Events sent by namespace and event type
-- `alian_structure_ws_events_received_total` - Events received by namespace and event type
+- `trellis_ws_events_buffered` - Events in buffer by namespace and user
+- `trellis_ws_events_sent_total` - Events sent by namespace and event type
+- `trellis_ws_events_received_total` - Events received by namespace and event type
 
 ### Reconnection Metrics
-- `alian_structure_ws_reconnections_total` - Reconnection attempts by namespace and status
-- `alian_structure_ws_reconnection_delay_seconds` - Reconnection delay histogram
+- `trellis_ws_reconnections_total` - Reconnection attempts by namespace and status
+- `trellis_ws_reconnection_delay_seconds` - Reconnection delay histogram
 
 ### Upstream Pool Metrics
-- `alian_structure_upstream_pool_connections_total` - Total pool connections
-- `alian_structure_upstream_pool_active_connections` - Active pool connections
-- `alian_structure_upstream_pool_utilization_percent` - Pool utilization percentage
-- `alian_structure_upstream_pool_requests_total` - Pool requests by status
+- `trellis_upstream_pool_connections_total` - Total pool connections
+- `trellis_upstream_pool_active_connections` - Active pool connections
+- `trellis_upstream_pool_utilization_percent` - Pool utilization percentage
+- `trellis_upstream_pool_requests_total` - Pool requests by status
 
 ## Example Usage
 

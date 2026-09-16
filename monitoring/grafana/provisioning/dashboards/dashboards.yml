@@ -1,13 +1,13 @@
 # Grafana dashboard provisioning.
 #
 # Loads every dashboard JSON from the mounted dashboards directory (see
-# docker-compose.yml) into the "Alian Structure" folder on startup.
+# docker-compose.yml) into the "Trellis" folder on startup.
 apiVersion: 1
 
 providers:
-  - name: alian-structure
+  - name: trellis
     orgId: 1
-    folder: "Alian Structure"
+    folder: "Trellis"
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30

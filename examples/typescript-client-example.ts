@@ -2,7 +2,7 @@
  * TypeScript Client Example
  *
  * This example demonstrates how to use the auto-generated TypeScript client
- * to interact with the alian-structure API.
+ * to interact with the Trellis API.
  */
 
 import {
@@ -11,9 +11,9 @@ import {
   AuthApi,
   PortfolioApi,
   OracleApi,
-} from "@alian-structure/api-client";
+} from "@trellis/api-client";
 
-class AlianStructureClient {
+class TrellisClient {
   private configuration: Configuration;
   private defaultApi: DefaultApi;
   private authApi: AuthApi;
@@ -21,7 +21,7 @@ class AlianStructureClient {
   private oracleApi: OracleApi;
 
   constructor(
-    baseUrl: string = "https://api.alian-structure.com",
+    baseUrl: string = "https://api.trellis.example",
     apiKey?: string,
   ) {
     this.configuration = new Configuration({
@@ -42,7 +42,7 @@ class AlianStructureClient {
     try {
       const response = await this.authApi.authVerifyPost({
         address: walletAddress,
-        message: `Sign this message to authenticate with alian-structure`,
+        message: `Sign this message to authenticate with trellis`,
         signature: signature,
       });
 
@@ -118,7 +118,7 @@ class AlianStructureClient {
 }
 
 async function main() {
-  const client = new AlianStructureClient("http://localhost:3001");
+  const client = new TrellisClient("http://localhost:3001");
 
   try {
     console.log("🔍 Checking API health...");
@@ -141,4 +141,4 @@ async function main() {
   }
 }
 
-export { AlianStructureClient };
+export { TrellisClient };

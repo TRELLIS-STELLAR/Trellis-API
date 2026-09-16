@@ -18,8 +18,8 @@ export interface MonitorOptions {
 /**
  * Method decorator that records latency and success/error counts for the
  * wrapped method against the shared custom-operation metrics
- * (`alian_structure_operation_duration_seconds` and
- * `alian_structure_operation_total`).
+ * (`trellis_operation_duration_seconds` and
+ * `trellis_operation_total`).
  *
  * Works for both synchronous and Promise-returning methods: a returned promise
  * is awaited so the recorded duration reflects the full async operation, and a

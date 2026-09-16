@@ -56,11 +56,11 @@ export class AppController {
     schema: {
       type: "object",
       properties: {
-        name: { type: "string", example: "alian-structure Backend" },
+        name: { type: "string", example: "Trellis Backend" },
         version: { type: "string", example: "1.0.0" },
         description: {
           type: "string",
-          example: "Comprehensive API for alian-structure services",
+          example: "Comprehensive API for Trellis services",
         },
         modules: {
           type: "array",

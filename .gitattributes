@@ -1,0 +1,17 @@
+# Store LF in the repository; check out native line endings on Windows.
+* text=auto
+
+# Always LF in the working tree too — these are parsed or executed on Linux CI.
+*.sh   text eol=lf
+*.ts   text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.svg  text eol=lf
+
+# Binary assets — never convert.
+*.png binary
+*.ico binary
+*.zip binary

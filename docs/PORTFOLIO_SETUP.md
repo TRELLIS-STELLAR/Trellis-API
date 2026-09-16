@@ -80,7 +80,7 @@ MARKET_DATA_PROVIDER=alphavantage # or finnhub, iex, etc
 
 ```bash
 # Create database
-createdb alian-structure
+createdb trellis
 
 # Run migrations
 npm run typeorm -- migration:run -d src/config/typeorm.config.ts
@@ -516,7 +516,7 @@ async function migratePortfolios(oldData: any[]) {
 
 ```bash
 # Check PostgreSQL is running
-psql -U user -d alian-structure -c "SELECT 1;"
+psql -U user -d trellis -c "SELECT 1;"
 
 # Check connection string
 echo $DATABASE_URL

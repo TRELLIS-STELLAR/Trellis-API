@@ -26,9 +26,9 @@ import {
 } from "./dto/rate-limit-dto";
 import { register } from "../config/metrics";
 
-const DENIED_METRIC = "alian_structure_rate_limit_denied_total";
-const ALLOWED_METRIC = "alian_structure_rate_limit_allowed_total";
-const ERRORS_METRIC = "alian_structure_rate_limit_errors_total";
+const DENIED_METRIC = "trellis_rate_limit_denied_total";
+const ALLOWED_METRIC = "trellis_rate_limit_allowed_total";
+const ERRORS_METRIC = "trellis_rate_limit_errors_total";
 
 @ApiTags("Rate Limiting")
 @Controller("rate-limiting")

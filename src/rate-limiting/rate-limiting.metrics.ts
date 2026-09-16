@@ -1,7 +1,7 @@
 import client from "prom-client";
 import { register } from "../config/metrics";
 
-const PREFIX = "alian_structure_";
+const PREFIX = "trellis_";
 
 function getOrCreateCounter(
   config: client.CounterConfiguration<string>,

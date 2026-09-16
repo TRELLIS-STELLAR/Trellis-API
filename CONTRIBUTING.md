@@ -1,4 +1,4 @@
-# Contributing to Alian Structure API
+# Contributing to Trellis API
 
 First off, thanks for taking the time to contribute! ❤️
 
@@ -20,11 +20,11 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 
 ## Code of Conduct
 
-This project and everyone participating in it is governed by the [Alian Structure API Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior to <conduct@alian-structure.com>.
+This project and everyone participating in it is governed by the [Trellis API Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior to <conduct@trellis.example>.
 
 ## I Have a Question
 
-Before you ask a question, it is best to search for existing [Issues](https://github.com/alian-structure/alian-structure-api/issues) that might help you. In case you have found a suitable issue and still need clarification, you can write your question in that issue. It is also advisable to search the internet for answers first.
+Before you ask a question, it is best to search for existing [Issues](https://github.com/TRELLIS-STELLAR/Trellis-API/issues) that might help you. In case you have found a suitable issue and still need clarification, you can write your question in that issue. It is also advisable to search the internet for answers first.
 
 If you still have questions, feel free to reach out via GitHub Discussions.
 

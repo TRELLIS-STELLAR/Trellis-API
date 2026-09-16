@@ -17,7 +17,7 @@
  * LoggerModule.forRoot({
  *   serviceName: 'my-service',
  *   level: 'debug',
- *   logFileDir: '/var/log/alian',
+ *   logFileDir: '/var/log/trellis',
  * })
  * ```
  *

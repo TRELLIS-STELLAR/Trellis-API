@@ -1,12 +1,12 @@
-# Prometheus scrape configuration for the Alian Structure API.
+# Prometheus scrape configuration for the Trellis API.
 #
 # Drop this file into your Prometheus server's configuration path or include
 # it from the main prometheus.yml with:
 #
 #   scrape_configs:
-#     - job_name: 'alian-structure-api'
+#     - job_name: 'trellis-api'
 #       file_sd_configs:
-#         - files: ['/etc/prometheus/conf.d/alian-structure-api.yml']
+#         - files: ['/etc/prometheus/conf.d/trellis-api.yml']
 #
 # Adjust hosts/ports/intervals to match your environment.
 
@@ -14,7 +14,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    monitor: 'alian-structure-monitor'
+    monitor: 'trellis-monitor'
 
 # A dedicated alerting/recording-rules file can be referenced here. See
 # monitoring/prometheus/alerts.yml.example for a starter SLO alert set.
@@ -22,7 +22,7 @@ rule_files:
   # - "alerts.yml"
 
 scrape_configs:
-  - job_name: 'alian-structure-api'
+  - job_name: 'trellis-api'
     metrics_path: '/api/v1/observability/metrics'
     scheme: 'http'
     scrape_interval: 15s
@@ -34,11 +34,11 @@ scrape_configs:
       - targets:
           - 'localhost:3001'
         labels:
-          job: 'alian-structure-api'
+          job: 'trellis-api'
           environment: 'development'
 
       - targets:
-          - 'api.alian-structure.example.com:443'
+          - 'api.trellis.example.com:443'
         labels:
-          job: 'alian-structure-api'
+          job: 'trellis-api'
           environment: 'production'

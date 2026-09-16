@@ -90,10 +90,10 @@ describe("ObservabilityController - Prometheus /metrics endpoint (issue #25)", (
     const body = await controller.getMetrics(makeReq(), res as any);
 
     expect(body).toContain(
-      "# TYPE alian_structure_http_requests_total counter",
+      "# TYPE trellis_http_requests_total counter",
     );
     expect(body).toMatch(
-      /alian_structure_http_requests_total\{[^}]*method="GET"[^}]*\}/,
+      /trellis_http_requests_total\{[^}]*method="GET"[^}]*\}/,
     );
   });
 

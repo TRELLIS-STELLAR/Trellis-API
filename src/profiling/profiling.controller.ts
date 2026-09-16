@@ -126,7 +126,7 @@ export class ProfilingController {
 <!DOCTYPE html>
 <html>
 <head>
-  <title>alian-structure Performance Profiler</title>
+  <title>Trellis Performance Profiler</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
     .container { max-width: 1200px; margin: 0 auto; }
@@ -145,7 +145,7 @@ export class ProfilingController {
 </head>
 <body>
   <div class="container">
-    <h1>🚀 alian-structure Performance Profiler</h1>
+    <h1>🚀 Trellis Performance Profiler</h1>
     
     <div class="card">
       <h2>Quick Actions</h2>

@@ -1,6 +1,6 @@
 # Roadmap
 
-This document outlines the development roadmap for Alian Structure API. We're focused on building a robust, secure, and scalable off-chain infrastructure for blockchain agents and oracles.
+This document outlines the development roadmap for Trellis API. We're focused on building a robust, secure, and scalable off-chain infrastructure for blockchain agents and oracles.
 
 ## Current Status: v0.1.0 (July 2026)
 
@@ -36,10 +36,10 @@ This document outlines the development roadmap for Alian Structure API. We're fo
 - [ ] **Enhanced Monitoring** - Add custom Grafana dashboards for all modules
 
 ### Good First Issues for Contributors
-- [#12 Add missing unit tests for auth service](https://github.com/alian-structure/alian-structure-api/issues/12)
-- [#15 Improve WebSocket error handling](https://github.com/alian-structure/alian-structure-api/issues/15)
-- [#18 Add input validation to oracle endpoints](https://github.com/alian-structure/alian-structure-api/issues/18)
-- [#21 Update documentation with better examples](https://github.com/alian-structure/alian-structure-api/issues/21)
+- [#12 Add missing unit tests for auth service](https://github.com/TRELLIS-STELLAR/Trellis-API/issues/12)
+- [#15 Improve WebSocket error handling](https://github.com/TRELLIS-STELLAR/Trellis-API/issues/15)
+- [#18 Add input validation to oracle endpoints](https://github.com/TRELLIS-STELLAR/Trellis-API/issues/18)
+- [#21 Update documentation with better examples](https://github.com/TRELLIS-STELLAR/Trellis-API/issues/21)
 
 ## Q4 2026 - v0.3.0 (January 2027)
 
@@ -69,7 +69,7 @@ This document outlines the development roadmap for Alian Structure API. We're fo
 
 ## Long-term Vision
 
-We envision Alian Structure as the standard off-chain infrastructure for blockchain-based AI agents. Our goal is to become the go-to platform for developers building autonomous agents that interact with DeFi, NFTs, and other web3 protocols.
+We envision Trellis as the standard off-chain infrastructure for blockchain-based AI agents. Our goal is to become the go-to platform for developers building autonomous agents that interact with DeFi, NFTs, and other web3 protocols.
 
 ### Core Values That Guide Our Roadmap
 1. **Security First** - Never compromise on security for features
@@ -84,7 +84,7 @@ We welcome contributions to any part of our roadmap! Check out our [CONTRIBUTING
 
 ## Progress Tracking
 
-We use GitHub Projects to track our roadmap progress. You can view the current board [here](https://github.com/orgs/alian-structure/projects/1).
+We use GitHub Projects to track our roadmap progress. You can view the current board [here](https://github.com/orgs/trellis/projects/1).
 
 ---
 

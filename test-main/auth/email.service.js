@@ -85,9 +85,9 @@ let EmailService = EmailService_1 = class EmailService {
     async sendVerificationEmail(email, token) {
         const verificationUrl = `${process.env.EMAIL_VERIFICATION_URL || 'http://localhost:3000/auth/verify-email'}?token=${token}`;
         const info = await this.transporter.sendMail({
-            from: process.env.EMAIL_FROM || '"alian-structure" <noreply@alian-structure.com>',
+            from: process.env.EMAIL_FROM || '"Trellis" <noreply@trellis.example>',
             to: email,
-            subject: 'Verify your email address - alian-structure',
+            subject: 'Verify your email address - trellis',
             html: `
         <!DOCTYPE html>
         <html>
@@ -109,7 +109,7 @@ let EmailService = EmailService_1 = class EmailService {
               </div>
               <div class="content">
                 <p>Hello!</p>
-                <p>You've requested to link this email address to your alian-structure wallet account.</p>
+                <p>You've requested to link this email address to your Trellis wallet account.</p>
                 <p>Click the button below to verify your email address:</p>
                 <p style="text-align: center;">
                   <a href="${verificationUrl}" class="button">Verify Email Address</a>
@@ -120,16 +120,16 @@ let EmailService = EmailService_1 = class EmailService {
                 <p>If you didn't request this verification, you can safely ignore this email.</p>
               </div>
               <div class="footer">
-                <p>© ${new Date().getFullYear()} alian-structure. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} trellis. All rights reserved.</p>
               </div>
             </div>
           </body>
         </html>
       `,
             text: `
-        Verify Your Email - alian-structure
+        Verify Your Email - trellis
         
-        You've requested to link this email address to your alian-structure wallet account.
+        You've requested to link this email address to your Trellis wallet account.
         
         Click the link below to verify your email address:
         ${verificationUrl}
@@ -150,9 +150,9 @@ let EmailService = EmailService_1 = class EmailService {
     }
     async sendRecoveryEmail(email, walletAddress) {
         const info = await this.transporter.sendMail({
-            from: process.env.EMAIL_FROM || '"alian-structure" <noreply@alian-structure.com>',
+            from: process.env.EMAIL_FROM || '"Trellis" <noreply@trellis.example>',
             to: email,
-            subject: 'Account Recovery Information - alian-structure',
+            subject: 'Account Recovery Information - trellis',
             html: `
         <!DOCTYPE html>
         <html>
@@ -174,7 +174,7 @@ let EmailService = EmailService_1 = class EmailService {
               </div>
               <div class="content">
                 <p>Hello!</p>
-                <p>You've requested account recovery information for your alian-structure account.</p>
+                <p>You've requested account recovery information for your Trellis account.</p>
                 <p>Your linked wallet address is:</p>
                 <div class="wallet">${walletAddress}</div>
                 <div class="warning">
@@ -190,21 +190,21 @@ let EmailService = EmailService_1 = class EmailService {
                 <ol>
                   <li>Use your wallet application (MetaMask, WalletConnect, etc.)</li>
                   <li>Import your wallet using your seed phrase or private key</li>
-                  <li>Connect to alian-structure with the wallet address shown above</li>
+                  <li>Connect to Trellis with the wallet address shown above</li>
                 </ol>
                 <p>If you didn't request this information, please secure your email account immediately.</p>
               </div>
               <div class="footer">
-                <p>© ${new Date().getFullYear()} alian-structure. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} trellis. All rights reserved.</p>
               </div>
             </div>
           </body>
         </html>
       `,
             text: `
-        Account Recovery - alian-structure
+        Account Recovery - trellis
         
-        You've requested account recovery information for your alian-structure account.
+        You've requested account recovery information for your Trellis account.
         
         Your linked wallet address is:
         ${walletAddress}
@@ -218,7 +218,7 @@ let EmailService = EmailService_1 = class EmailService {
         To regain access to your account:
         1. Use your wallet application (MetaMask, WalletConnect, etc.)
         2. Import your wallet using your seed phrase or private key
-        3. Connect to alian-structure with the wallet address shown above
+        3. Connect to Trellis with the wallet address shown above
         
         If you didn't request this information, please secure your email account immediately.
       `,

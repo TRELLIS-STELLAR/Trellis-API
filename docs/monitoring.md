@@ -1,6 +1,6 @@
 # Monitoring & Observability
 
-The Alian Structure API ships with a lightweight, production-ready observability
+The Trellis API ships with a lightweight, production-ready observability
 stack: **Prometheus metrics**, **OpenTelemetry tracing**, and **Grafana
 dashboards**. This document covers what is exposed, how to enable it, and how to
 run the local monitoring stack.
@@ -9,7 +9,7 @@ run the local monitoring stack.
 
 ```
 ┌────────────────────────┐   scrape :15s   ┌────────────┐  queries  ┌─────────┐
-│  Alian Structure API   │ ───────────────▶│ Prometheus │ ─────────▶│ Grafana │
+│  Trellis API   │ ───────────────▶│ Prometheus │ ─────────▶│ Grafana │
 │  /observability/metrics│                 └────────────┘           └─────────┘
 │                        │   OTLP traces    ┌────────────┐
 │  OpenTelemetry SDK     │ ───────────────▶│   Jaeger    │
@@ -43,19 +43,19 @@ All observability is controlled through environment variables. See
 
 ## Metrics reference
 
-Default process/runtime metrics are exported under the `alian_structure_`
+Default process/runtime metrics are exported under the `trellis_`
 prefix (CPU, resident memory, heap usage, event-loop lag, uptime). Application
 metrics include:
 
 | Metric | Type | Labels | Meaning |
 | --- | --- | --- | --- |
-| `alian_structure_http_requests_total` | Counter | `method`, `route`, `status_code` | Total HTTP requests. |
-| `alian_structure_http_request_duration_seconds` | Histogram | `method`, `route`, `status_code` | Request latency distribution. |
-| `alian_structure_http_requests_in_progress` | Gauge | `method`, `route` | In-flight requests. |
-| `alian_structure_errors_total` | Counter | `type`, `severity` | Errors (HTTP `>=400` and internal). |
-| `alian_structure_database_query_duration_seconds` | Histogram | `operation`, `table` | DB query latency. |
-| `alian_structure_active_connections` | Gauge | `type` | Active connections. |
-| `alian_structure_job_*` / `queue_length` | Histogram/Counter/Gauge | varies | Compute-job queue signals. |
+| `trellis_http_requests_total` | Counter | `method`, `route`, `status_code` | Total HTTP requests. |
+| `trellis_http_request_duration_seconds` | Histogram | `method`, `route`, `status_code` | Request latency distribution. |
+| `trellis_http_requests_in_progress` | Gauge | `method`, `route` | In-flight requests. |
+| `trellis_errors_total` | Counter | `type`, `severity` | Errors (HTTP `>=400` and internal). |
+| `trellis_database_query_duration_seconds` | Histogram | `operation`, `table` | DB query latency. |
+| `trellis_active_connections` | Gauge | `type` | Active connections. |
+| `trellis_job_*` / `queue_length` | Histogram/Counter/Gauge | varies | Compute-job queue signals. |
 
 ### Cardinality safety
 
@@ -102,7 +102,7 @@ Then:
 - **Prometheus** — http://localhost:9090 (scrapes the API on the Docker host via
   `host.docker.internal`; adjust `monitoring/prometheus/prometheus.yml` targets).
 - **Grafana** — http://localhost:3001 (admin / admin). The Prometheus datasource
-  and the "Alian Structure - Application Monitoring" dashboard are
+  and the "Trellis - Application Monitoring" dashboard are
   auto-provisioned from `monitoring/grafana/provisioning/`.
 - **Jaeger** — http://localhost:16686 for trace search.
 
@@ -129,7 +129,7 @@ curl -s http://localhost:3001/api/v1/observability/metrics | head -20
 # Generate traffic, then confirm counters increment
 curl -s http://localhost:3001/api/v1/health >/dev/null
 curl -s http://localhost:3001/api/v1/observability/metrics \
-  | grep alian_structure_http_requests_total
+  | grep trellis_http_requests_total
 ```
 
 Unit tests cover the metrics endpoint and the trace sampler

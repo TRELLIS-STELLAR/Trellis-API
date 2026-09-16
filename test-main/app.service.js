@@ -17,9 +17,9 @@ let AppService = class AppService {
     }
     getInfo() {
         return {
-            name: "alian-structure Backend",
+            name: "Trellis Backend",
             version: "0.1.0",
-            description: "Off-chain services + API layer for alian-structure agents",
+            description: "Off-chain services + API layer for Trellis agents",
             modules: [
                 "AI Compute Bridge",
                 "Real-time Dashboard (WebSocket)",

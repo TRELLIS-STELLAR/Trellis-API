@@ -27,7 +27,7 @@ export class S3StorageBackend implements StorageBackend {
 
   constructor(private readonly configService: ConfigService) {
     this.bucket =
-      this.configService.get<string>("S3_BUCKET") || "alian-structure-files";
+      this.configService.get<string>("S3_BUCKET") || "trellis-files";
     this.region =
       this.configService.get<string>("S3_REGION") || "us-east-1";
     this.endpoint = this.configService.get<string>("S3_ENDPOINT");

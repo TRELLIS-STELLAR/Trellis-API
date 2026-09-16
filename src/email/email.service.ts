@@ -51,7 +51,7 @@ export class EmailService {
     }
     const senderEmail =
       this.configService.get<string>("EMAIL_FROM") ||
-      "noreply@alian-structure.com";
+      "noreply@trellis.example";
     const emailLogs: EmailLog[] = [];
     for (const recipient of dto.to) {
       const emailLog = this.emailLogRepository.create({

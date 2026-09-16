@@ -18,16 +18,16 @@ async function exportOpenApi() {
   const app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
 
   const config = new DocumentBuilder()
-    .setTitle("alian-structure Backend API")
+    .setTitle("Trellis Backend API")
     .setDescription(
-      "Comprehensive API documentation for alian-structure backend services including " +
+      "Comprehensive API documentation for Trellis backend services including " +
       "agent management, oracle submissions, compute operations, and audit trails.",
     )
     .setVersion("1.0.0")
-    .setContact("alian-structure Team", "https://alian-structure.com", "api@alian-structure.com")
+    .setContact("Trellis Team", "https://trellis.example", "api@trellis.example")
     .setLicense("Apache 2.0", "https://www.apache.org/licenses/LICENSE-2.0")
     .addServer("http://localhost:3001", "Development Server")
-    .addServer("https://api.alian-structure.com", "Production Server")
+    .addServer("https://api.trellis.example", "Production Server")
     .addBearerAuth(
       { type: "http", scheme: "bearer", bearerFormat: "JWT", name: "JWT", description: "Enter JWT token", in: "header" },
       "JWT-auth",

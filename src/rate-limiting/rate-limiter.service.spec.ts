@@ -2,7 +2,7 @@ import { RateLimiterService, RateLimitConfig } from "./rate-limiter.service";
 import { RateLimitStrategy } from "./interfaces";
 
 const DEFAULT_CONFIG: RateLimitConfig = {
-  keyPrefix: "alian:rl:",
+  keyPrefix: "trellis:rl:",
   defaultStrategy: RateLimitStrategy.TokenBucket,
   enableFallback: true,
 };
@@ -183,7 +183,7 @@ describe("RateLimiterService", () => {
           string,
           number[]
         >;
-        const windowKey = "alian:rl:sw:exp:g:f";
+        const windowKey = "trellis:rl:sw:exp:g:f";
         memWindows.set(windowKey, [Date.now() - 120_000]); // expired entry
 
         const decision = await service.consume(
@@ -486,14 +486,14 @@ describe("RateLimiterService", () => {
       );
       mockRedis.del.mockClear();
       await service.reset("del-key:g:f");
-      expect(mockRedis.del).toHaveBeenCalledWith("alian:rl:del-key:g:f");
+      expect(mockRedis.del).toHaveBeenCalledWith("trellis:rl:del-key:g:f");
     });
   });
 
   describe("default strategy", () => {
     it("uses token bucket by default when no strategy specified", async () => {
       const service = new RateLimiterService(null, {
-        keyPrefix: "alian:rl:",
+        keyPrefix: "trellis:rl:",
         defaultStrategy: RateLimitStrategy.SlidingWindow,
         enableFallback: true,
       });
@@ -509,7 +509,7 @@ describe("RateLimiterService", () => {
       expect(decision.allowed).toBe(true);
 
       const memWindows = (service as any).memoryWindows;
-      expect(memWindows.has("alian:rl:default-strategy:g:f")).toBe(true);
+      expect(memWindows.has("trellis:rl:default-strategy:g:f")).toBe(true);
     });
   });
 });

@@ -43,7 +43,7 @@ describe("BillingService", () => {
 
   it("registers billing telemetry in the shared Prometheus registry", async () => {
     const output = await register.metrics();
-    expect(output).toContain("alian_structure_billing_usage_units_total");
-    expect(output).toContain("alian_structure_billing_estimated_charges_cents");
+    expect(output).toContain("trellis_billing_usage_units_total");
+    expect(output).toContain("trellis_billing_estimated_charges_cents");
   });
 });

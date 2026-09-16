@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Operational dashboard for the Alian Structure API. Provides visibility into request/error rates, latency percentiles, infrastructure utilization, database performance, queue/worker activity, business metrics, and alert thresholds. Provisioned via Prometheus scraping /api/v1/observability/metrics.",
+  "description": "Operational dashboard for the Trellis API. Provides visibility into request/error rates, latency percentiles, infrastructure utilization, database performance, queue/worker activity, business metrics, and alert thresholds. Provisioned via Prometheus scraping /api/v1/observability/metrics.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -26,10 +26,10 @@
       "icon": "external link",
       "includeVars": false,
       "keepTime": false,
-      "tags": ["alian-structure"],
+      "tags": ["trellis"],
       "targetBlank": true,
-      "title": "Alian Structure dashboards",
-      "tooltip": "Other Alian Structure dashboards",
+      "title": "Trellis dashboards",
+      "tooltip": "Other Trellis dashboards",
       "type": "dashboards"
     }
   ],
@@ -80,7 +80,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(alian_structure_http_requests_total{job=\"$job\"}[5m]))",
+          "expr": "sum(rate(trellis_http_requests_total{job=\"$job\"}[5m]))",
           "legendFormat": "request rate",
           "refId": "A"
         }
@@ -123,7 +123,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "100 * sum(rate(alian_structure_errors_total{job=\"$job\"}[5m])) / clamp_min(sum(rate(alian_structure_http_requests_total{job=\"$job\"}[5m])), 0.001)",
+          "expr": "100 * sum(rate(trellis_errors_total{job=\"$job\"}[5m])) / clamp_min(sum(rate(trellis_http_requests_total{job=\"$job\"}[5m])), 0.001)",
           "legendFormat": "error rate",
           "refId": "A"
         }
@@ -165,7 +165,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(alian_structure_http_requests_in_progress{job=\"$job\"})",
+          "expr": "sum(trellis_http_requests_in_progress{job=\"$job\"})",
           "legendFormat": "in progress",
           "refId": "A"
         }
@@ -203,7 +203,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "max(alian_structure_process_uptime_seconds{job=\"$job\"})",
+          "expr": "max(trellis_process_uptime_seconds{job=\"$job\"})",
           "legendFormat": "uptime",
           "refId": "A"
         }
@@ -248,13 +248,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(alian_structure_http_requests_total{job=\"$job\"}[5m]))",
+          "expr": "sum(rate(trellis_http_requests_total{job=\"$job\"}[5m]))",
           "legendFormat": "Requests",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(alian_structure_errors_total{job=\"$job\"}[5m]))",
+          "expr": "sum(rate(trellis_errors_total{job=\"$job\"}[5m]))",
           "legendFormat": "Errors",
           "refId": "B"
         }
@@ -281,7 +281,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum by (status_code) (rate(alian_structure_http_requests_total{job=\"$job\", status_code=~\"4..|5..\"}[5m]))",
+          "expr": "sum by (status_code) (rate(trellis_http_requests_total{job=\"$job\", status_code=~\"4..|5..\"}[5m]))",
           "legendFormat": "{{status_code}}",
           "refId": "A"
         }
@@ -329,19 +329,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(alian_structure_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(trellis_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(alian_structure_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(trellis_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(alian_structure_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(trellis_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -422,7 +422,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum by (method, route) (rate(alian_structure_http_requests_total{job=\"$job\"}[1h]))",
+          "expr": "sum by (method, route) (rate(trellis_http_requests_total{job=\"$job\"}[1h]))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{method}} {{route}}",
@@ -430,7 +430,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, sum by (le, method, route) (rate(alian_structure_http_request_duration_seconds_bucket{job=\"$job\"}[1h])))",
+          "expr": "histogram_quantile(0.95, sum by (le, method, route) (rate(trellis_http_request_duration_seconds_bucket{job=\"$job\"}[1h])))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{method}} {{route}}",
@@ -438,7 +438,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "100 * sum by (method, route) (rate(alian_structure_http_requests_total{job=\"$job\", status_code=~\"4..|5..\"}[1h])) / clamp_min(sum by (method, route) (rate(alian_structure_http_requests_total{job=\"$job\"}[1h])), 0.001)",
+          "expr": "100 * sum by (method, route) (rate(trellis_http_requests_total{job=\"$job\", status_code=~\"4..|5..\"}[1h])) / clamp_min(sum by (method, route) (rate(trellis_http_requests_total{job=\"$job\"}[1h])), 0.001)",
           "format": "table",
           "instant": true,
           "legendFormat": "{{method}} {{route}}",
@@ -507,13 +507,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(alian_structure_process_cpu_user_seconds_total{job=\"$job\"}[5m]) * 100",
+          "expr": "rate(trellis_process_cpu_user_seconds_total{job=\"$job\"}[5m]) * 100",
           "legendFormat": "user cpu",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(alian_structure_process_cpu_system_seconds_total{job=\"$job\"}[5m]) * 100",
+          "expr": "rate(trellis_process_cpu_system_seconds_total{job=\"$job\"}[5m]) * 100",
           "legendFormat": "system cpu",
           "refId": "B"
         }
@@ -540,19 +540,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "alian_structure_process_resident_memory_bytes{job=\"$job\"}",
+          "expr": "trellis_process_resident_memory_bytes{job=\"$job\"}",
           "legendFormat": "rss",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "alian_structure_nodejs_heap_size_used_bytes{job=\"$job\"}",
+          "expr": "trellis_nodejs_heap_size_used_bytes{job=\"$job\"}",
           "legendFormat": "heap used",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "alian_structure_nodejs_external_memory_bytes{job=\"$job\"}",
+          "expr": "trellis_nodejs_external_memory_bytes{job=\"$job\"}",
           "legendFormat": "external",
           "refId": "C"
         }
@@ -587,7 +587,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "alian_structure_nodejs_eventloop_lag_seconds{job=\"$job\"}",
+          "expr": "trellis_nodejs_eventloop_lag_seconds{job=\"$job\"}",
           "legendFormat": "lag",
           "refId": "A"
         }
@@ -614,13 +614,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "alian_structure_nodejs_active_handles_total{job=\"$job\"}",
+          "expr": "trellis_nodejs_active_handles_total{job=\"$job\"}",
           "legendFormat": "handles",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "alian_structure_nodejs_active_requests_total{job=\"$job\"}",
+          "expr": "trellis_nodejs_active_requests_total{job=\"$job\"}",
           "legendFormat": "requests",
           "refId": "B"
         }
@@ -655,7 +655,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum by (type) (alian_structure_active_connections{job=\"$job\"})",
+          "expr": "sum by (type) (trellis_active_connections{job=\"$job\"})",
           "legendFormat": "{{type}}",
           "refId": "A"
         }
@@ -682,7 +682,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(alian_structure_database_query_duration_seconds_bucket{job=\"$job\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(trellis_database_query_duration_seconds_bucket{job=\"$job\"}[5m])))",
           "legendFormat": "{{operation}}",
           "refId": "A"
         }
@@ -717,7 +717,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "60 * rate(alian_structure_user_signups_total{job=\"$job\"}[5m])",
+          "expr": "60 * rate(trellis_user_signups_total{job=\"$job\"}[5m])",
           "legendFormat": "signups/min",
           "refId": "A"
         }
@@ -744,7 +744,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "max(alian_structure_active_users{job=\"$job\"})",
+          "expr": "max(trellis_active_users{job=\"$job\"})",
           "legendFormat": "active users",
           "refId": "A"
         }
@@ -771,13 +771,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(alian_structure_http_requests_total{job=\"$job\", route=~\".*/auth/.*\", status_code=~\"2..\"}[5m]))",
+          "expr": "sum(rate(trellis_http_requests_total{job=\"$job\", route=~\".*/auth/.*\", status_code=~\"2..\"}[5m]))",
           "legendFormat": "auth success",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(alian_structure_http_requests_total{job=\"$job\", route=~\".*/auth/.*\", status_code=~\"4..\"}[5m]))",
+          "expr": "sum(rate(trellis_http_requests_total{job=\"$job\", route=~\".*/auth/.*\", status_code=~\"4..\"}[5m]))",
           "legendFormat": "auth failed",
           "refId": "B"
         }
@@ -804,7 +804,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum by (queue_name, state) (alian_structure_queue_length{job=\"$job\"})",
+          "expr": "sum by (queue_name, state) (trellis_queue_length{job=\"$job\"})",
           "legendFormat": "{{queue_name}} ({{state}})",
           "refId": "A"
         }
@@ -854,7 +854,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "max(alian_structure_performance_regressions_total{job=\"$job\"})",
+          "expr": "max(trellis_performance_regressions_total{job=\"$job\"})",
           "legendFormat": "regressions",
           "refId": "A"
         }
@@ -891,7 +891,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "100 * sum(rate(alian_structure_errors_total{job=\"$job\"}[5m])) / clamp_min(sum(rate(alian_structure_http_requests_total{job=\"$job\"}[5m])), 0.001)",
+          "expr": "100 * sum(rate(trellis_errors_total{job=\"$job\"}[5m])) / clamp_min(sum(rate(trellis_http_requests_total{job=\"$job\"}[5m])), 0.001)",
           "legendFormat": "error rate %",
           "refId": "A"
         }
@@ -928,7 +928,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(alian_structure_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(trellis_http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
           "legendFormat": "p95 latency",
           "refId": "A"
         }
@@ -937,7 +937,7 @@
   ],
   "refresh": "10s",
   "schemaVersion": 39,
-  "tags": ["alian-structure", "api", "monitoring", "production"],
+  "tags": ["trellis", "api", "monitoring", "production"],
   "templating": {
     "list": [
       {
@@ -965,7 +965,7 @@
           "value": "$__all"
         },
         "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-        "definition": "label_values(alian_structure_process_uptime_seconds, job)",
+        "definition": "label_values(trellis_process_uptime_seconds, job)",
         "hide": 0,
         "includeAll": true,
         "label": "Job",
@@ -973,7 +973,7 @@
         "name": "job",
         "options": [],
         "query": {
-          "query": "label_values(alian_structure_process_uptime_seconds, job)",
+          "query": "label_values(trellis_process_uptime_seconds, job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -989,8 +989,8 @@
     "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"]
   },
   "timezone": "",
-  "title": "Alian Structure - Application Monitoring",
-  "uid": "alian-structure-application-overview",
+  "title": "Trellis - Application Monitoring",
+  "uid": "trellis-application-overview",
   "version": 1,
   "weekStart": ""
 }

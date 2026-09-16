@@ -39,35 +39,35 @@ export class PerformanceBaselineService {
   constructor() {
     // Initialize Prometheus gauges
     this.baselineP50Gauge = new Gauge({
-      name: "alian_structure_baseline_p50_seconds",
+      name: "trellis_baseline_p50_seconds",
       help: "Baseline P50 latency for routes",
       labelNames: ["route", "method"],
       registers: [register],
     });
 
     this.baselineP95Gauge = new Gauge({
-      name: "alian_structure_baseline_p95_seconds",
+      name: "trellis_baseline_p95_seconds",
       help: "Baseline P95 latency for routes",
       labelNames: ["route", "method"],
       registers: [register],
     });
 
     this.baselineP99Gauge = new Gauge({
-      name: "alian_structure_baseline_p99_seconds",
+      name: "trellis_baseline_p99_seconds",
       help: "Baseline P99 latency for routes",
       labelNames: ["route", "method"],
       registers: [register],
     });
 
     this.regressionCounter = new Gauge({
-      name: "alian_structure_performance_regressions_total",
+      name: "trellis_performance_regressions_total",
       help: "Total number of detected performance regressions",
       registers: [register],
     });
     this.regressionCounter.set(0);
 
     this.requestDurationHistogram = new Histogram({
-      name: "alian_structure_request_duration_baseline_seconds",
+      name: "trellis_request_duration_baseline_seconds",
       help: "Request duration compared to baseline",
       labelNames: ["route", "method", "baseline_status"],
       buckets: [0.1, 0.3, 0.5, 0.7, 1, 3, 5, 7, 10],

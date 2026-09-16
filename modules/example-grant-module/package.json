@@ -1,5 +1,5 @@
 {
-  "name": "@alian-structure/example-grant-module",
+  "name": "@trellis/example-grant-module",
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",

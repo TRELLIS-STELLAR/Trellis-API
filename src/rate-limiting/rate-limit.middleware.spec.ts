@@ -28,7 +28,7 @@ describe("RateLimitMiddleware", () => {
 
   beforeEach(() => {
     rateLimiter = new RateLimiterService(null, {
-      keyPrefix: "alian:rl:",
+      keyPrefix: "trellis:rl:",
       defaultStrategy: RateLimitStrategy.TokenBucket,
       enableFallback: true,
     });

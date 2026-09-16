@@ -34,40 +34,40 @@ describe("Grafana application-overview dashboard (issue #25)", () => {
   // The Prometheus metrics that the source codebase registers.
   const registeredMetricNames = new Set([
     // src/config/metrics.ts
-    "alian_structure_http_request_duration_seconds",
-    "alian_structure_http_requests_total",
-    "alian_structure_http_requests_in_progress",
-    "alian_structure_database_query_duration_seconds",
-    "alian_structure_active_connections",
-    "alian_structure_errors_total",
-    "alian_structure_user_signups_total",
-    "alian_structure_active_users",
-    "alian_structure_job_duration_seconds",
-    "alian_structure_job_success_total",
-    "alian_structure_job_failure_total",
-    "alian_structure_queue_length",
+    "trellis_http_request_duration_seconds",
+    "trellis_http_requests_total",
+    "trellis_http_requests_in_progress",
+    "trellis_database_query_duration_seconds",
+    "trellis_active_connections",
+    "trellis_errors_total",
+    "trellis_user_signups_total",
+    "trellis_active_users",
+    "trellis_job_duration_seconds",
+    "trellis_job_success_total",
+    "trellis_job_failure_total",
+    "trellis_queue_length",
     // src/observability/performance-baseline.service.ts
-    "alian_structure_baseline_p50_seconds",
-    "alian_structure_baseline_p95_seconds",
-    "alian_structure_baseline_p99_seconds",
-    "alian_structure_performance_regressions_total",
-    "alian_structure_request_duration_baseline_seconds",
-    // prom-client defaults (with our `alian_structure_` prefix)
-    "alian_structure_process_cpu_user_seconds_total",
-    "alian_structure_process_cpu_system_seconds_total",
-    "alian_structure_process_resident_memory_bytes",
-    "alian_structure_nodejs_heap_size_used_bytes",
-    "alian_structure_nodejs_external_memory_bytes",
-    "alian_structure_nodejs_eventloop_lag_seconds",
-    "alian_structure_nodejs_active_handles_total",
-    "alian_structure_nodejs_active_requests_total",
-    "alian_structure_process_uptime_seconds",
+    "trellis_baseline_p50_seconds",
+    "trellis_baseline_p95_seconds",
+    "trellis_baseline_p99_seconds",
+    "trellis_performance_regressions_total",
+    "trellis_request_duration_baseline_seconds",
+    // prom-client defaults (with our `trellis_` prefix)
+    "trellis_process_cpu_user_seconds_total",
+    "trellis_process_cpu_system_seconds_total",
+    "trellis_process_resident_memory_bytes",
+    "trellis_nodejs_heap_size_used_bytes",
+    "trellis_nodejs_external_memory_bytes",
+    "trellis_nodejs_eventloop_lag_seconds",
+    "trellis_nodejs_active_handles_total",
+    "trellis_nodejs_active_requests_total",
+    "trellis_process_uptime_seconds",
   ]);
 
   it("is a valid Grafana 10+ dashboard JSON", () => {
     expect(dashboard).toBeDefined();
     expect(typeof dashboard.title).toBe("string");
-    expect(dashboard.title).toContain("Alian Structure");
+    expect(dashboard.title).toContain("Trellis");
     expect(dashboard.schemaVersion).toBeGreaterThanOrEqual(38);
     expect(dashboard.refresh).toMatch(/^\d+s$/);
     expect(Array.isArray(dashboard.panels)).toBe(true);
@@ -114,7 +114,7 @@ describe("Grafana application-overview dashboard (issue #25)", () => {
       collectPromqlExpressions(p),
     );
     const referenced = new Set<string>();
-    const metricRegex = /alian_structure_[a-zA-Z0-9_]+/g;
+    const metricRegex = /trellis_[a-zA-Z0-9_]+/g;
     for (const expr of exprs) {
       const matches = expr.match(metricRegex) ?? [];
       for (const m of matches) referenced.add(m);

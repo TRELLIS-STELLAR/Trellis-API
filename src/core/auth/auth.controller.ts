@@ -55,7 +55,7 @@ export class VerifySignatureDto {
   @ApiProperty({
     description: "Challenge message to sign",
     example:
-      "Sign this message to authenticate with alian-structure at 2024-02-25T05:30:00.000Z",
+      "Sign this message to authenticate with Trellis at 2024-02-25T05:30:00.000Z",
   })
   message: string;
 
@@ -100,7 +100,7 @@ export class AuthController {
         message: {
           type: "string",
           example:
-            "Sign this message to authenticate with alian-structure at 2024-02-25T05:30:00.000Z",
+            "Sign this message to authenticate with Trellis at 2024-02-25T05:30:00.000Z",
         },
         address: {
           type: "string",

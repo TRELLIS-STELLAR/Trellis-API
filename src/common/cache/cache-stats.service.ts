@@ -22,7 +22,7 @@ function getOrCreateGauge(
   return new client.Gauge({ ...config, registers: [register] });
 }
 
-const PREFIX = "alian_structure_";
+const PREFIX = "trellis_";
 
 const cacheHitsTotal = getOrCreateCounter({
   name: `${PREFIX}cache_hits_total`,

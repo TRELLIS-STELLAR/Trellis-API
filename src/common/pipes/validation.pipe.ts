@@ -40,7 +40,7 @@ export function extractAllMessages(
 }
 
 /**
- * Factory creating the globally configured ValidationPipe for alian_structure-api.
+ * Factory creating the globally configured ValidationPipe for trellis-api.
  * Enforces:
  * - Property whitelisting (whitelist: true)
  * - Automatic payload transformation (transform: true)

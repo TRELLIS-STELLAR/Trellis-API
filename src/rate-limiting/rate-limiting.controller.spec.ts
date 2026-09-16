@@ -195,7 +195,7 @@ describe("RateLimitingController", () => {
     it("returns Prometheus text exposition", async () => {
       const result = await controller.getMetrics(makeReq());
       expect(typeof result).toBe("string");
-      expect(result).toContain("alian_structure_rate_limit");
+      expect(result).toContain("trellis_rate_limit");
     });
   });
 

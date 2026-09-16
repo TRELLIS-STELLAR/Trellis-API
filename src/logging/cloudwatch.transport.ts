@@ -5,7 +5,7 @@
  * structured log records are shipped to AWS CloudWatch Logs.
  *
  * Required environment variables:
- *   - CLOUDWATCH_GROUP_NAME   — Log group name (e.g. "/alian-structure/api")
+ *   - CLOUDWATCH_GROUP_NAME   — Log group name (e.g. "/trellis/api")
  *   - CLOUDWATCH_STREAM_NAME  — Log stream name (defaults to hostname + pid)
  *   - AWS_REGION              — AWS region (e.g. "us-east-1")
  *

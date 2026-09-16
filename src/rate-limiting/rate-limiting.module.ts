@@ -23,7 +23,7 @@ export class RateLimitingModule implements OnModuleInit {
             keyPrefix:
               options?.keyPrefix ??
               configService.get<string>("RATE_LIMIT_REDIS_KEY_PREFIX") ??
-              "alian:rl:",
+              "trellis:rl:",
             defaultStrategy: (options?.defaultStrategy ??
               configService.get<string>("RATE_LIMIT_DEFAULT_STRATEGY") ??
               "token-bucket") as RateLimitStrategy,

@@ -9,7 +9,7 @@ export const CACHE_REDIS_CLIENT = "CACHE_REDIS_CLIENT";
 export const CACHE_VERSION = "CACHE_VERSION";
 
 /** Default key prefix for all cache entries. */
-export const CACHE_KEY_PREFIX = "alian:cache:";
+export const CACHE_KEY_PREFIX = "trellis:cache:";
 
 /** Default cache TTL in seconds (5 minutes). */
 export const DEFAULT_TTL_SECONDS = 300;

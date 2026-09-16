@@ -86,15 +86,15 @@ jobs:
             -i docs/openapi.json \
             -g python \
             -o sdks/python \
-            --additional-properties=packageName=alian_structure_api,packageVersion=${{ github.ref_name }},projectName=alian-structure-api
+            --additional-properties=packageName=trellis_api,packageVersion=${{ github.ref_name }},projectName=trellis-api
 
       - name: Create SDK package metadata (TypeScript)
         run: |
           cat > sdks/typescript/package.json << 'EOF'
           {
-            "name": "@alian-structure/api-client",
+            "name": "@trellis/api-client",
             "version": "0.1.0",
-            "description": "TypeScript client for alian-structure Backend API",
+            "description": "TypeScript client for Trellis Backend API",
             "main": "dist/index.js",
             "types": "dist/index.d.ts",
             "module": "dist/esm/index.js",
@@ -103,8 +103,8 @@ jobs:
               "test": "jest",
               "lint": "eslint src --ext .ts"
             },
-            "keywords": ["alian", "structure", "api", "client", "typescript"],
-            "author": "alian-structure Team",
+            "keywords": ["trellis", "structure", "api", "client", "typescript"],
+            "author": "Trellis Team",
             "license": "Apache-2.0",
             "peerDependencies": {
               "typescript": ">=4.0.0"
@@ -121,12 +121,12 @@ jobs:
           from setuptools import setup, find_packages
 
           setup(
-              name="alian-structure-api",
+              name="trellis-api",
               version="0.1.0",
-              description="Python client for alian-structure Backend API",
-              author="alian-structure Team",
+              description="Python client for Trellis Backend API",
+              author="Trellis Team",
               license="Apache-2.0",
-              url="https://github.com/alian-structure/structure-api",
+              url="https://github.com/TRELLIS-STELLAR/Trellis-API",
               packages=find_packages(),
               python_requires=">=3.8",
               install_requires=[

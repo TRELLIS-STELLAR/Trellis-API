@@ -27,7 +27,7 @@ const mockEmailQueueService = () => ({
 const mockConfigService = () => ({
   get: jest.fn(
     (key: string, fb?: any) =>
-      ({ EMAIL_PROVIDER: "smtp", EMAIL_FROM: "test@alian-structure.com" })[
+      ({ EMAIL_PROVIDER: "smtp", EMAIL_FROM: "test@trellis.example" })[
         key
       ] || fb,
   ),

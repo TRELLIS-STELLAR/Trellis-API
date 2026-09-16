@@ -14,7 +14,7 @@ const traceExporter = new exporter_trace_otlp_http_1.OTLPTraceExporter({
 });
 exports.sdk = new sdk_node_1.NodeSDK({
     resource: (0, resources_1.resourceFromAttributes)({
-        "service.name": "alian-structure-api",
+        "service.name": "trellis-api",
         "service.version": process.env.npm_package_version || "1.0.0",
         "deployment.environment": process.env.NODE_ENV || "development",
     }),
@@ -51,7 +51,7 @@ const shutdownTracing = async () => {
 exports.shutdownTracing = shutdownTracing;
 // Helper to get the tracer
 const getTracer = () => {
-    return api_1.trace.getTracer("alian-structure-api", "1.0.0");
+    return api_1.trace.getTracer("trellis-api", "1.0.0");
 };
 exports.getTracer = getTracer;
 // Helper to create a span with automatic error handling

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const root = 'C:/Users/User/Desktop/alian_structure-api/node_modules/@nestjs';
+const root = 'C:/Users/User/Desktop/trellis-api/node_modules/@nestjs';
 let found = [];
 function walk(d) {
   if (!fs.existsSync(d)) return;

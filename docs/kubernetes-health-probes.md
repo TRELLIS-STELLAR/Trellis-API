@@ -1,6 +1,6 @@
 # Kubernetes Health Probe Configuration
 
-This document describes the health check endpoints and how to configure Kubernetes liveness, readiness, and startup probes for the alian-structure API.
+This document describes the health check endpoints and how to configure Kubernetes liveness, readiness, and startup probes for the Trellis API.
 
 ## Endpoints
 
@@ -41,8 +41,8 @@ All endpoints are public (no authentication required) and excluded from rate lim
 # deployment.yaml
 spec:
   containers:
-    - name: alian-structure-api
-      image: alian-structure/api:latest
+    - name: trellis-api
+      image: trellis/api:latest
       ports:
         - containerPort: 3000
 

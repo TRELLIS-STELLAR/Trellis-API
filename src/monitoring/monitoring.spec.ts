@@ -45,7 +45,7 @@ describe("MonitoringMetricsService", () => {
 
   it("creates a counter idempotently", () => {
     const opts = {
-      name: "alian_structure_test_counter_idempotent",
+      name: "trellis_test_counter_idempotent",
       help: "test",
     };
     const c1 = service.counter(opts);
@@ -55,7 +55,7 @@ describe("MonitoringMetricsService", () => {
 
   it("creates a gauge idempotently", () => {
     const opts = {
-      name: "alian_structure_test_gauge_idempotent",
+      name: "trellis_test_gauge_idempotent",
       help: "test",
     };
     const g1 = service.gauge(opts);
@@ -65,7 +65,7 @@ describe("MonitoringMetricsService", () => {
 
   it("creates a histogram idempotently", () => {
     const opts = {
-      name: "alian_structure_test_histogram_idempotent",
+      name: "trellis_test_histogram_idempotent",
       help: "test",
     };
     const h1 = service.histogram(opts);
@@ -75,7 +75,7 @@ describe("MonitoringMetricsService", () => {
 
   it("incrementCounter increments the counter value", async () => {
     const opts = {
-      name: "alian_structure_test_increment_counter",
+      name: "trellis_test_increment_counter",
       help: "test",
     };
     service.incrementCounter(opts);
@@ -87,7 +87,7 @@ describe("MonitoringMetricsService", () => {
   });
 
   it("setGauge sets the gauge value", async () => {
-    const opts = { name: "alian_structure_test_set_gauge", help: "test" };
+    const opts = { name: "trellis_test_set_gauge", help: "test" };
     service.setGauge(opts, 42);
     const snap = await service.snapshot();
     const metric = snap.find((m) => m.name === opts.name);
@@ -99,7 +99,7 @@ describe("MonitoringMetricsService", () => {
     service.observeOperation("test.op", 0.1, "success");
     const snap = await service.snapshot();
     const total = snap.find(
-      (m) => m.name === "alian_structure_operation_total",
+      (m) => m.name === "trellis_operation_total",
     );
     expect(total).toBeDefined();
     const entry = total!.values.find(
@@ -113,11 +113,11 @@ describe("MonitoringMetricsService", () => {
   afterAll(() => {
     // Clean up test-only metrics so they don't bleed into other suites.
     [
-      "alian_structure_test_counter_idempotent",
-      "alian_structure_test_gauge_idempotent",
-      "alian_structure_test_histogram_idempotent",
-      "alian_structure_test_increment_counter",
-      "alian_structure_test_set_gauge",
+      "trellis_test_counter_idempotent",
+      "trellis_test_gauge_idempotent",
+      "trellis_test_histogram_idempotent",
+      "trellis_test_increment_counter",
+      "trellis_test_set_gauge",
     ].forEach((name) => {
       try {
         register.removeSingleMetric(name);
@@ -232,7 +232,7 @@ describe("Monitor decorator", () => {
     }
     const snap = await register.getMetricsAsJSON();
     const total = snap.find(
-      (m) => m.name === "alian_structure_operation_total",
+      (m) => m.name === "trellis_operation_total",
     );
     expect(total).toBeDefined();
     const successEntry = total!.values.find(
@@ -258,7 +258,7 @@ describe("Monitor decorator", () => {
     new AnotherService().doWork();
     const snap = await register.getMetricsAsJSON();
     const total = snap.find(
-      (m) => m.name === "alian_structure_operation_total",
+      (m) => m.name === "trellis_operation_total",
     );
     const entry = total?.values.find(
       (v: any) => v.labels?.operation === "AnotherService.doWork",

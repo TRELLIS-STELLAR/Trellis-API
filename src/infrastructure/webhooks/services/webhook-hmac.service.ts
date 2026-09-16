@@ -31,7 +31,7 @@ export class WebhookHmacService {
       "X-Webhook-Event-Type": eventType,
       "X-Webhook-Signature": signature,
       "X-Webhook-Timestamp": Date.now().toString(),
-      "User-Agent": "AlianStructure-Webhook/1.0",
+      "User-Agent": "Trellis-Webhook/1.0",
       ...extraHeaders,
     };
   }

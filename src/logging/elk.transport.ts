@@ -9,7 +9,7 @@
  *   - ELASTICSEARCH_URL   — Node URL (e.g. "http://localhost:9200")
  *
  * Optional:
- *   - ELASTICSEARCH_INDEX_PREFIX  — default "logs-alian-structure"
+ *   - ELASTICSEARCH_INDEX_PREFIX  — default "logs-trellis"
  *   - ELASTICSEARCH_USERNAME      — HTTP basic auth username
  *   - ELASTICSEARCH_PASSWORD      — HTTP basic auth password
  *   - ELASTICSEARCH_API_KEY       — API key (base64 id:api_key)
@@ -23,7 +23,7 @@ import { LEVEL, MESSAGE } from "triple-beam";
 export interface ElkTransportOptions {
   /** Elasticsearch node URL. Default: env ELASTICSEARCH_URL */
   node?: string;
-  /** Index name prefix. Default: "logs-alian-structure" */
+  /** Index name prefix. Default: "logs-trellis" */
   indexPrefix?: string;
   /** HTTP basic auth username */
   username?: string;
@@ -62,10 +62,10 @@ export class ElkTransport extends Transport {
     this._indexPrefix =
       opts.indexPrefix ??
       process.env.ELASTICSEARCH_INDEX_PREFIX ??
-      "logs-alian-structure";
+      "logs-trellis";
 
     this._serviceName =
-      opts.serviceName ?? process.env.SERVICE_NAME ?? "alian-structure-api";
+      opts.serviceName ?? process.env.SERVICE_NAME ?? "trellis-api";
 
     const node = opts.node ?? process.env.ELASTICSEARCH_URL;
     if (node) {

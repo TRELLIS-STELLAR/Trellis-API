@@ -82,8 +82,8 @@ const DEFAULT_RULES: AlertRule[] = [
 /**
  * Evaluates configurable metric thresholds on a timer and tracks the
  * firing/resolved state of each rule. Firing transitions are logged and
- * reflected into the `alian_structure_alerts_active` /
- * `alian_structure_alerts_fired_total` metrics so alert state is scrapeable.
+ * reflected into the `trellis_alerts_active` /
+ * `trellis_alerts_fired_total` metrics so alert state is scrapeable.
  */
 @Injectable()
 export class AlertRulesService implements OnModuleDestroy {

@@ -151,15 +151,15 @@ async function generateOpenAPISpec(): Promise<void> {
   });
 
   const config = new DocumentBuilder()
-    .setTitle("alian-structure Backend API")
+    .setTitle("Trellis Backend API")
     .setDescription(
-      "Comprehensive API documentation for alian-structure backend services",
+      "Comprehensive API documentation for Trellis backend services",
     )
     .setVersion("1.0.0")
-    .setContact("alian-structure Team", "https://alian-structure.com")
+    .setContact("Trellis Team", "https://trellis.example")
     .setLicense("Apache 2.0")
     .addServer("http://localhost:3001", "Development Server")
-    .addServer("https://api.alian-structure.com", "Production Server")
+    .addServer("https://api.trellis.example", "Production Server")
     .addBearerAuth(
       {
         type: "http",

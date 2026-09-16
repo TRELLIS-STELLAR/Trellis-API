@@ -23,7 +23,7 @@ export class EmailNotificationProvider implements NotificationChannelProvider {
     try {
       // Delegate to the existing email module's SMTP/SendGrid/SES provider
       // For now, simulate delivery via a configurable endpoint
-      const emailFrom = this.configService.get<string>('NOTIFICATION_EMAIL_FROM', 'noreply@alian-structure.com');
+      const emailFrom = this.configService.get<string>('NOTIFICATION_EMAIL_FROM', 'noreply@trellis.example');
 
       // In production, this would use the EmailService from the email module
       // or directly use nodemailer/sendgrid/SES

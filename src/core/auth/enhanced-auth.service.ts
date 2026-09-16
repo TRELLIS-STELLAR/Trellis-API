@@ -260,8 +260,8 @@ export class EnhancedAuthService {
 
     // Generate TOTP secret
     const secret = speakeasy.generateSecret({
-      name: `alian-structure (${user.email})`,
-      issuer: "alian-structure",
+      name: `trellis (${user.email})`,
+      issuer: "trellis",
     });
 
     // Generate QR code

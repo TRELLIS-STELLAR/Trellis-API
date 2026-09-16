@@ -71,7 +71,7 @@ describe("RequestTimingMiddleware Prometheus integration (issue #25)", () => {
     // The route pattern should appear in the counter labels, NOT the raw
     // address – otherwise cardinality grows unboundedly.
     expect(body).toMatch(
-      /alian_structure_http_requests_total\{[^}]*route="\/api\/v1\/portfolio\/:address"[^}]*\}/,
+      /trellis_http_requests_total\{[^}]*route="\/api\/v1\/portfolio\/:address"[^}]*\}/,
     );
     expect(body).not.toContain("0xabc12345");
   });
@@ -112,10 +112,10 @@ describe("RequestTimingMiddleware Prometheus integration (issue #25)", () => {
 
     const body = await metrics();
     expect(body).toMatch(
-      /alian_structure_errors_total\{[^}]*severity="low"[^}]*\}/,
+      /trellis_errors_total\{[^}]*severity="low"[^}]*\}/,
     );
     expect(body).toMatch(
-      /alian_structure_errors_total\{[^}]*severity="high"[^}]*\}/,
+      /trellis_errors_total\{[^}]*severity="high"[^}]*\}/,
     );
   });
 
@@ -135,7 +135,7 @@ describe("RequestTimingMiddleware Prometheus integration (issue #25)", () => {
 
     const body = await metrics();
     expect(body).toContain(
-      "# TYPE alian_structure_http_request_duration_seconds histogram",
+      "# TYPE trellis_http_request_duration_seconds histogram",
     );
   });
 

@@ -23,7 +23,7 @@ export type LogLevel =
   | "verbose";
 
 export interface LoggerModuleOptions {
-  /** Service identifier injected into every log line. Default: "alian-structure-api" */
+  /** Service identifier injected into every log line. Default: "trellis-api" */
   serviceName?: string;
 
   /** Minimum log level. Default: process.env.LOG_LEVEL ?? "info" */
@@ -193,7 +193,7 @@ export function createWinstonLogger(
   opts: LoggerModuleOptions = {},
 ): winston.Logger {
   const {
-    serviceName = process.env.SERVICE_NAME ?? "alian-structure-api",
+    serviceName = process.env.SERVICE_NAME ?? "trellis-api",
     level = (process.env.LOG_LEVEL as LogLevel | undefined) ?? "info",
     disableColors = false,
     logFileDir = process.env.LOG_FILE_DIR,

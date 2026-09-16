@@ -133,7 +133,7 @@ describe("ElkTransport", () => {
       const transport = new ElkTransport();
       const buildIndex = (transport as any)._buildIndexName.bind(transport);
       const indexName: string = buildIndex();
-      expect(indexName).toMatch(/^logs-alian-structure-\d{4}\.\d{2}\.\d{2}$/);
+      expect(indexName).toMatch(/^logs-trellis-\d{4}\.\d{2}\.\d{2}$/);
     });
   });
 

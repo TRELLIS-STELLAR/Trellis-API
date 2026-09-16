@@ -1,7 +1,7 @@
 # Performance Monitoring & Profiling Documentation
 
 ## Overview
-The alian-structure backend includes comprehensive performance monitoring and profiling capabilities to identify bottlenecks, track memory usage, and detect performance regressions. This system builds on top of existing OpenTelemetry tracing and Prometheus metrics to provide deep insights into application performance.
+The Trellis backend includes comprehensive performance monitoring and profiling capabilities to identify bottlenecks, track memory usage, and detect performance regressions. This system builds on top of existing OpenTelemetry tracing and Prometheus metrics to provide deep insights into application performance.
 
 ## Features Implemented
 

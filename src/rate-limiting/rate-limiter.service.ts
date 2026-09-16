@@ -134,7 +134,7 @@ export class RateLimiterService {
     @Optional() @Inject("RATE_LIMIT_CONFIG") config?: RateLimitConfig,
   ) {
     this.redis = redis;
-    this.keyPrefix = config?.keyPrefix ?? "alian:rl:";
+    this.keyPrefix = config?.keyPrefix ?? "trellis:rl:";
     this.defaultStrategy =
       config?.defaultStrategy ?? RateLimitStrategy.TokenBucket;
     this.enableFallback = config?.enableFallback ?? true;

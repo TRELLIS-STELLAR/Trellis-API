@@ -202,7 +202,7 @@ export class AlertDispatcherService {
           const html = this.buildEmailHtml(alertType, message);
           await this.emailService.sendEmail({
             to: [userId],
-            subject: `[Alian] Alert: ${alertType}`,
+            subject: `[Trellis] Alert: ${alertType}`,
             html,
             text: message || JSON.stringify(payload),
           } as any);
@@ -261,9 +261,9 @@ export class AlertDispatcherService {
   private buildEmailHtml(alertType: string, message: string): string {
     return `
       <h2>Alert: ${alertType}</h2>
-      <p>${message || "You have a new notification from Alian Structure."}</p>
+      <p>${message || "You have a new notification from Trellis."}</p>
       <hr />
-      <small>Alian Structure API — Notification Service</small>
+      <small>Trellis API — Notification Service</small>
     `;
   }
 

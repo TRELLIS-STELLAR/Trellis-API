@@ -15,7 +15,7 @@ export class CacheKeyGenerator {
   private readonly hashLength: number;
 
   constructor(
-    prefix = "alian:cache:",
+    prefix = "trellis:cache:",
     version = "v1",
     hashLength = 16,
   ) {
@@ -28,9 +28,9 @@ export class CacheKeyGenerator {
    * Build a cache key from a namespace and argument values.
    *
    * @example
-   *   const gen = new CacheKeyGenerator('alian:cache:', 'v1');
+   *   const gen = new CacheKeyGenerator('trellis:cache:', 'v1');
    *   gen.generate('user', 42);
-   *   // => "alian:cache:v1:user:a1b2c3d4e5f6g7h8"
+   *   // => "trellis:cache:v1:user:a1b2c3d4e5f6g7h8"
    */
   generate(namespace: string, ...args: unknown[]): string {
     const argsHash = this.hashArgs(args);
@@ -42,7 +42,7 @@ export class CacheKeyGenerator {
    *
    * @example
    *   gen.namespacePrefix('user');
-   *   // => "alian:cache:v1:user:*"
+   *   // => "trellis:cache:v1:user:*"
    */
   namespacePrefix(namespace: string): string {
     return `${this.prefix}${this.version}:${namespace}:*`;

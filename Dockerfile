@@ -31,7 +31,7 @@ RUN npm run build
 RUN npm prune --production --silent
 
 FROM node:${NODE_VERSION}-alpine AS runner
-LABEL org.opencontainers.image.description="alian-structure backend runtime"
+LABEL org.opencontainers.image.description="Trellis backend runtime"
 WORKDIR /app
 
 # tiny init to forward signals and reap processes

@@ -5,7 +5,7 @@
 set -e
 
 echo "==================================="
-echo "alian-structure Security Secrets Generator"
+echo "trellis Security Secrets Generator"
 echo "==================================="
 echo ""
 
@@ -52,7 +52,7 @@ echo "4. Rotate secrets regularly (every 90 days recommended)"
 echo "5. Use different secrets for each environment (dev, staging, production)"
 echo ""
 echo "For Kubernetes, create secrets with:"
-echo "kubectl create secret generic alian-structure-secrets \\"
+echo "kubectl create secret generic trellis-secrets \\"
 echo "  --from-literal=jwt-secret='\$JWT_SECRET' \\"
 echo "  --from-literal=database-password='\$DATABASE_PASSWORD'"
 echo ""

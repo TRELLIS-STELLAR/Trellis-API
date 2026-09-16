@@ -22,7 +22,7 @@ export const logger = pino({
   },
   base: {
     env: process.env.NODE_ENV,
-    service: "alian-structure-api",
+    service: "trellis-api",
   },
   timestamp: pino.stdTimeFunctions.isoTime,
 });
