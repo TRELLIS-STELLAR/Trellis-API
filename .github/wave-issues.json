@@ -1,0 +1,220 @@
+{
+  "repo": "TRELLIS-STELLAR/Trellis-API",
+  "generated_for": "Wave Program",
+  "issues": [
+    {
+      "number": 1,
+      "stage": 1,
+      "title": "`test/enhanced-auth.service.spec.ts` does not compile",
+      "labels": [
+        "bug",
+        "good first issue",
+        "test"
+      ],
+      "body": "`test/enhanced-auth.service.spec.ts` fails to parse. Two separate problems:\n\n1. **Line 120** has a doubled closing paren:\n   ```ts\n   const result = await service.register(registerDto, \"127.0.0.1\", \"test-agent\"););\n   ```\n2. **The end of the file** contains pasted tool-call markup that is not\n   TypeScript at all:\n   ```\n   });</content>\n   <parameter name=\"filePath\">/workspaces/trellis-api/test/enhanced-auth.service.spec.ts\n   ```\n\n`tsc` reports `TS1128: Declaration or statement expected` at 120:85 and again at\n192:1, plus `TS1110` and `TS1005`. This is the only file in the repository with\nthat artifact — a check across all `.ts` and `.js` files found no others.\n\n## Why this matters\n\nAn auth service spec that cannot compile is a test that never runs. Enhanced\nauth covers registration, login and MFA setup — exactly the paths you want\ncovered. The file has been broken in `main` for some time, so whatever\nregression it was written to catch has been unguarded since.\n\n## Tasks\n\n- [ ] Remove the trailing `</content>` and `<parameter …>` block from the end of the file\n- [ ] Fix the doubled `);` on line 120\n- [ ] Run `npx tsc --noEmit` and confirm the file parses\n- [ ] Run `npm test -- enhanced-auth` and make the tests actually pass, not just compile\n- [ ] Check git history around the commit that introduced the paste — the same edit may have dropped real assertions elsewhere in the file\n\n## Files to look at\n\n- `test/enhanced-auth.service.spec.ts`\n- `src/core/auth/enhanced-auth.service.ts`\n\n## Acceptance criteria\n\n- The file parses under `tsc --noEmit`\n- `npm test -- enhanced-auth` passes\n- The PR notes whether any test content was lost in the original bad paste\n\n## Notes\n\nCheck the surrounding tests carefully rather than only making it compile. A paste\nthat appended markup may also have truncated the test it landed in.\n\n---\n\n**Skills:** TypeScript  \n**Estimated effort:** 30 minutes"
+    },
+    {
+      "number": 2,
+      "stage": 1,
+      "title": "LICENSE says MIT, package.json says Apache-2.0",
+      "labels": [
+        "bug",
+        "good first issue",
+        "legal",
+        "documentation"
+      ],
+      "body": "The repository declares two different licences:\n\n- `LICENSE` begins `MIT License`\n- `package.json` line 7 is `\"license\": \"Apache-2.0\"`\n- The README badge renders \"license Apache 2.0\"\n- `src/config/swagger.config.ts` calls `.setLicense(\"Apache 2.0\", …)` in the\n  published OpenAPI metadata\n\nSo the file on disk says one thing and every machine-readable declaration says\nanother. For comparison, the `Trellis` contracts repo claims MIT (and has no\nLICENSE file at all — tracked separately there).\n\n## Why this matters\n\nA licence contradiction is genuinely unresolvable for a downstream consumer.\nThey cannot know which terms apply, tooling that reads `package.json` will report\nApache-2.0 while GitHub reads the file and reports MIT, and anyone doing licence\ncompliance has to stop and ask. The two licences differ meaningfully — Apache-2.0\ncarries a patent grant that MIT does not.\n\n## Tasks\n\n- [ ] Decide which licence is intended — a maintainer decision, note it in the thread\n- [ ] Replace the `LICENSE` file with the full text of the chosen licence\n- [ ] Make `package.json`, the README badge and the Swagger `setLicense` call agree\n- [ ] Check the generated client packages in `.github/workflows/build-check.yml`, which also declare a licence\n- [ ] Raise whether all three Trellis repositories should use the same licence\n\n## Files to look at\n\n- `LICENSE`\n- `package.json`\n- `README.md`\n- `src/config/swagger.config.ts`\n- `.github/workflows/build-check.yml`\n\n## Acceptance criteria\n\n- Every licence declaration in the repository names the same licence\n- GitHub's sidebar and `package.json` agree\n- The OpenAPI document's licence metadata matches\n\n---\n\n**Skills:** Markdown, JSON  \n**Estimated effort:** 30 minutes"
+    },
+    {
+      "number": 3,
+      "stage": 1,
+      "title": "Add SECURITY.md with a vulnerability disclosure policy",
+      "labels": [
+        "good first issue",
+        "documentation",
+        "security"
+      ],
+      "body": "There is no `SECURITY.md`. The repository has `CONTRIBUTING.md`,\n`CODE_OF_CONDUCT.md`, `CHANGELOG.md`, `LICENSE` and a PR template — the security\npolicy is the one community file missing.\n\nThis service handles authentication, API keys, webhook signing, KYC guard\ncoverage and payment flows. `package.json` even defines `security:audit`,\n`security:generate-secrets` and `security:check` scripts, so security tooling is\ntaken seriously; there is just no route for an outside reporter.\n\n## Why this matters\n\nA researcher who finds an auth bypass here today has no private channel. Given\nthis service signs oracle payloads and initiates payments, a publicly-disclosed\nvulnerability would be materially damaging. GitHub's Security tab is empty until\nthis file exists.\n\n## Tasks\n\n- [ ] Write `SECURITY.md`: supported versions, how to report privately, expected response time\n- [ ] Enable GitHub private vulnerability reporting in repository settings and link it\n- [ ] Document the existing `npm run security:check` flow so contributors know what already runs\n- [ ] State the current deployment status plainly — testnet, staging, or production\n- [ ] Match the structure used in the sibling repositories so the three are consistent\n\n## Files to look at\n\n- `SECURITY.md (new)`\n- `package.json`\n- `scripts/`\n\n## Acceptance criteria\n\n- GitHub's Security tab shows the policy\n- A private reporting channel and response-time commitment are stated\n- The existing security tooling is referenced\n\n---\n\n**Skills:** Markdown  \n**Estimated effort:** 1 hour"
+    },
+    {
+      "number": 4,
+      "stage": 1,
+      "title": "Jest collects coverage but enforces no threshold",
+      "labels": [
+        "good first issue",
+        "test",
+        "ci"
+      ],
+      "body": "`jest.config.js` sets `collectCoverageFrom` (line 24) but no `coverageThreshold`.\nSo coverage can be computed with `npm run test:cov`, but nothing enforces a floor\nand CI does not report it.\n\nThe repository has 105 `.spec.ts` files, which is substantial — but the ROADMAP\ntargets \"80% code coverage across all modules\" and nobody currently knows the\nreal number.\n\n## Why this matters\n\nWithout a threshold, coverage can only go down silently. The roadmap's 80% target\nis unmeasurable until the baseline is recorded, and a visible coverage trend is\none of the strongest signals a programme like this can show reviewers.\n\n## Tasks\n\n- [ ] Run `npm run test:cov` and record the current global and per-module baseline in the issue thread\n- [ ] Add `coverageThreshold` set just below the current baseline so CI cannot regress\n- [ ] Add per-directory thresholds for the sensitive areas: `src/core/auth`, `src/payments`, `src/blockchain`\n- [ ] Surface the coverage summary in the CI job output\n- [ ] Agree a ratchet plan rather than setting 80% immediately\n\n## Files to look at\n\n- `jest.config.js`\n- `.github/workflows/build-check.yml`\n- `package.json`\n\n## Acceptance criteria\n\n- The current baseline is documented\n- CI fails when coverage drops below the threshold\n- Auth, payments and blockchain modules carry a higher bar than the global floor\n\n---\n\n**Skills:** TypeScript, Jest  \n**Estimated effort:** 2–3 hours"
+    },
+    {
+      "number": 5,
+      "stage": 1,
+      "title": "A Python FastAPI service lives inside the NestJS `src/` tree",
+      "labels": [
+        "good first issue",
+        "documentation",
+        "refactor"
+      ],
+      "body": "There is a second, unrelated application inside this repository:\n\n- `src/main.py` — a FastAPI app titled \"Advanced Portfolio Simulation Engine\"\n- `src/api/portfolio.py`\n- `src/models/portfolio.py`\n- `examples/python-client-example.py`\n- `requirements.txt` at the repository root\n\n`src/main.py` sits directly beside `src/main.ts`, the NestJS entrypoint. Nothing\nin the README, CONTRIBUTING or the docs mentions that a Python service exists,\nhow to run it, or how it relates to the Nest application.\n\n## Why this matters\n\nA newcomer opening `src/` sees two entrypoints in two languages with no\nexplanation. Worse, tooling gets confused: `tsconfig`, the Nest CLI and the\nDocker build all assume `src/` is TypeScript, and `requirements.txt` at the root\nsuggests to any scanner that this is a Python project.\n\nEither it is a real component and deserves documentation and a home, or it is a\nprototype that should be archived.\n\n## Tasks\n\n- [ ] Establish in the issue thread what the simulation engine is for and whether it is live\n- [ ] If it is real: move it to its own top-level directory (`services/portfolio-simulator/` or similar), document how to run it, and explain how the Nest app calls it\n- [ ] If it is a prototype: move it to `examples/` or remove it, preserving the history\n- [ ] Either way, make sure `Dockerfile` and `docker-compose.yml` reflect the decision\n- [ ] Document the outcome in the README's project structure section\n\n## Files to look at\n\n- `src/main.py`\n- `src/api/portfolio.py`\n- `src/models/portfolio.py`\n- `requirements.txt`\n- `Dockerfile`\n- `docker-compose.yml`\n- `README.md`\n\n## Acceptance criteria\n\n- `src/` contains one application, or the second one is clearly delineated and documented\n- The README explains what the Python component is and how to run it, or it is gone\n- The Docker build is unaffected or updated deliberately\n\n---\n\n**Skills:** Python, TypeScript, repository structure  \n**Estimated effort:** half a day"
+    },
+    {
+      "number": 6,
+      "stage": 1,
+      "title": "Add a documentation index to the README",
+      "labels": [
+        "good first issue",
+        "documentation"
+      ],
+      "body": "This repository has the best documentation of the three — 29 markdown files,\nincluding a `docs/` directory with twelve: `PORTFOLIO_OPTIMIZATION.md` (825\nlines), `PORTFOLIO_INTEGRATION.md` (656), `PORTFOLIO_SETUP.md` (568),\n`WEBSOCKET_SPECIFICATION.md` (362), `PORTFOLIO_QUICK_START.md` (359),\n`RBAC.md`, `GRAPHQL_GATEWAY.md`, `monitoring.md`, `module-registry.md`,\n`kubernetes-health-probes.md` and `MULTI_WALLET_MANAGEMENT.md`.\n\nThe README links to about seven of them. The rest — plus `PROJECT_STATUS.md`\n(418 lines), `PROFILING.md`, `src/observability/PROFILING_GUIDE.md`,\n`src/payments/README.md` and `monitoring/README.md` — are only findable by\nbrowsing the tree.\n\n## Why this matters\n\nRoughly 5,000 lines of good documentation is partially invisible. A contributor\nlooking for the WebSocket contract or the RBAC model has no reason to think\nthose documents exist. This is pure recovered value from work already done.\n\n## Tasks\n\n- [ ] Add a `## Documentation` section to the README with every markdown file, grouped by topic\n- [ ] Give each a one-line description of what the reader will find\n- [ ] Include the nested ones (`src/payments/README.md`, `src/observability/PROFILING_GUIDE.md`, `monitoring/README.md`)\n- [ ] Verify every relative link resolves on the rendered GitHub page\n- [ ] Consider whether the PORTFOLIO_* quartet should be consolidated — flag it, do not do it here\n\n## Files to look at\n\n- `README.md`\n- `docs/`\n- `PROJECT_STATUS.md`\n- `PROFILING.md`\n- `src/payments/README.md`\n- `monitoring/README.md`\n\n## Acceptance criteria\n\n- Every markdown file is reachable from the README in one click\n- Each entry has a one-line description\n- No broken relative links on GitHub\n\n---\n\n**Skills:** Markdown  \n**Estimated effort:** 1 hour"
+    },
+    {
+      "number": 7,
+      "stage": 1,
+      "title": "The OpenAPI spec is generated in CI but published nowhere",
+      "labels": [
+        "documentation",
+        "ci",
+        "help wanted"
+      ],
+      "body": "The OpenAPI pipeline is well built and ends in a cul-de-sac:\n\n- `npm run openapi:export` generates `docs/openapi.json`\n- `npm run openapi:validate` checks it\n- `npm run openapi:client` generates TypeScript and Python clients from it\n- `.github/workflows/build-check.yml` has a dedicated `openapi` job that runs on\n  pushes to main and uploads the results as workflow artifacts\n\n`docs/openapi.json` is gitignored (line 156), which is a reasonable choice for a\ngenerated file. But the result is that the spec exists only as a CI artifact\nbehind a login, and Swagger UI is only reachable by running the service locally\n(`/api/docs`, and it is opt-in in production via `SWAGGER_ENABLED`).\n\n## Why this matters\n\nThere is no URL anyone can send to an integrator. The frontend team, a partner,\nor a Wave reviewer wanting to see the API surface has to clone the repository,\ninstall dependencies and boot the service. For a project whose application form\nasks for documentation links, that is a real gap — and the hard part is already\ndone.\n\n## Tasks\n\n- [ ] Decide where to publish — GitHub Pages is the cheapest option\n- [ ] Extend the existing `openapi` job to deploy a rendered spec (Redoc or Swagger UI) to Pages\n- [ ] Publish the raw `openapi.json` at a stable URL so clients can be generated from it\n- [ ] Add a CI check that fails when the committed route surface and the generated spec disagree\n- [ ] Link the published URL from the README and from the frontend repository\n\n## Files to look at\n\n- `.github/workflows/build-check.yml`\n- `scripts/export-openapi.ts`\n- `scripts/validate-openapi.ts`\n- `src/config/swagger.config.ts`\n- `README.md`\n\n## Acceptance criteria\n\n- The API reference is browsable at a public URL without cloning\n- The raw spec is fetchable at a stable URL\n- The published docs rebuild on every merge to `main`\n\n---\n\n**Skills:** GitHub Actions, OpenAPI  \n**Estimated effort:** 1 day"
+    },
+    {
+      "number": 8,
+      "stage": 2,
+      "title": "Webhook subscriptions are created with a hardcoded `userId = \"system\"`",
+      "labels": [
+        "bug",
+        "security",
+        "help wanted"
+      ],
+      "body": "`src/infrastructure/webhooks/webhook.controller.ts`, `createSubscription`:\n\n```ts\nasync createSubscription(@Body() dto: CreateWebhookSubscriptionDto) {\n  // TODO: extract userId from auth guard\n  const userId = \"system\";\n  const sub = await this.subscriptionService.create(userId, dto);\n  ...\n}\n```\n\nThe endpoint takes no authenticated principal. Every webhook subscription\ncreated through it is owned by the literal string `\"system\"`, and the handler\ncarries no guard decorator.\n\n## Why this matters\n\nThis is the most serious defect I found in the repository, and it is two bugs at\nonce:\n\n1. **No authorisation.** If the route is reachable without a guard, anyone can\n   register a webhook subscription.\n2. **No ownership.** Because every subscription belongs to `\"system\"`, they\n   cannot be isolated per user. Any subsequent list, update or delete scoped by\n   owner will return or modify *every* subscription, across all users.\n\nThe response body even says \"Store the signingKey securely — it will not be shown\nagain\", so this endpoint hands out a signing secret.\n\n## Tasks\n\n- [ ] Confirm whether the route is currently reachable unauthenticated — write a failing test that demonstrates it either way\n- [ ] Apply the appropriate auth guard, consistent with the rest of the controllers\n- [ ] Extract the real user from the request rather than hardcoding\n- [ ] Audit the other handlers in this controller for the same pattern\n- [ ] Check whether existing `\"system\"`-owned subscriptions need a data migration\n- [ ] Add tests: unauthenticated is rejected, subscriptions are scoped to their owner, one user cannot see another's\n\n## Files to look at\n\n- `src/infrastructure/webhooks/webhook.controller.ts`\n- `src/infrastructure/webhooks/services/`\n- `src/core/auth/`\n- `src/infrastructure/webhooks/services/webhook-hmac.service.ts`\n\n## Acceptance criteria\n\n- The endpoint rejects unauthenticated requests\n- Subscriptions are owned by the authenticated user\n- A test proves one user cannot read or modify another user's subscriptions\n- Any migration needed for existing rows is described in the PR\n\n## Notes\n\nSecurity-sensitive — not a first contribution, and it needs a careful review.\nPlease report privately rather than in a public PR description if the route turns\nout to be reachable unauthenticated in a deployed environment.\n\n---\n\n**Skills:** NestJS, authentication, guards  \n**Estimated effort:** 2–3 days"
+    },
+    {
+      "number": 9,
+      "stage": 2,
+      "title": "API key strategy has no database lookup for user-generated keys",
+      "labels": [
+        "enhancement",
+        "security",
+        "help wanted"
+      ],
+      "body": "`src/core/auth/strategies/api-key/api-key.strategy.ts` line 175:\n`// TODO: Add database lookup for user-generated API keys`\n\nThe strategy validates against statically configured keys only. Users cannot\ncreate, rotate or revoke their own.\n\n## Why this matters\n\nService-to-service auth is advertised in the Swagger metadata as an `X-API-Key`\nheader, which implies per-consumer keys. Without a database lookup there is one\nshared static key: it cannot be revoked for one consumer without breaking all of\nthem, it cannot be rotated without coordinated downtime, and there is no\nper-consumer audit trail.\n\n## Tasks\n\n- [ ] Design the key entity: hashed key, owner, scopes, created/last-used/expires, revoked flag\n- [ ] Store only a hash — never the key itself — and show the plaintext once at creation\n- [ ] Implement the lookup with caching, since it runs on every request\n- [ ] Add endpoints for create, list (metadata only), and revoke\n- [ ] Record last-used timestamps for audit\n- [ ] Keep the existing static keys working during migration, then deprecate them\n- [ ] Add tests: valid key, revoked key, expired key, unknown key, scope enforcement\n\n## Files to look at\n\n- `src/core/auth/strategies/api-key/api-key.strategy.ts`\n- `src/core/auth/`\n- `src/migrations/`\n- `src/config/swagger.config.ts`\n\n## Acceptance criteria\n\n- Users can create, list and revoke their own API keys\n- Keys are stored hashed and shown in plaintext exactly once\n- Revocation takes effect immediately, including through any cache\n- Tests cover valid, revoked, expired and unknown keys\n\n---\n\n**Skills:** NestJS, Passport, TypeORM  \n**Estimated effort:** 1 week"
+    },
+    {
+      "number": 10,
+      "stage": 2,
+      "title": "Oracle submission verifier has a placeholder blockchain adapter",
+      "labels": [
+        "enhancement",
+        "help wanted",
+        "blockchain"
+      ],
+      "body": "`src/blockchain/oracle/submission-verifier.service.ts` line 81:\n`// TODO: Replace with actual blockchain adapter (ethers/web3)`\n\nThe verifier does not actually talk to a chain. The comment also names\n`ethers`/`web3`, which are Ethereum libraries — this project is on Stellar and\nalready depends on `@stellar/stellar-sdk` ^14. So the placeholder was written\nagainst the wrong ecosystem.\n\n## Why this matters\n\nThe whole point of the oracle subsystem is that off-chain data becomes verifiable\non-chain. Without a real adapter, submissions are signed and then never\nverified against the ledger, so the trust property the architecture claims does\nnot hold end to end.\n\n## Tasks\n\n- [ ] Implement the adapter against `@stellar/stellar-sdk` and Soroban RPC, not an Ethereum library\n- [ ] Point it at the `oracle-contract` in the `Trellis` repository — note that contract is currently a stub, so coordinate with that work\n- [ ] Handle the failure modes: RPC unavailable, transaction not found, insufficient confirmations, network mismatch\n- [ ] Make it configurable across testnet and mainnet via existing config\n- [ ] Add retry with backoff for transient RPC failures\n- [ ] Add tests against a mocked RPC covering each failure mode\n\n## Files to look at\n\n- `src/blockchain/oracle/submission-verifier.service.ts`\n- `src/blockchain/oracle/services/payload-signing.service.ts`\n- `src/config/env.validation.ts`\n\n## Acceptance criteria\n\n- Submissions are verified against the real ledger\n- The Ethereum library reference is gone from code and comments\n- Transient RPC failures retry; permanent ones surface clearly\n- Tests cover each failure mode\n\n## Notes\n\nCross-repository: depends on `oracle-contract` in `TRELLIS-STELLAR/Trellis`\nexisting. Link the two issues and agree the payload shape once, in one thread.\n\n---\n\n**Skills:** TypeScript, Stellar SDK, Soroban  \n**Estimated effort:** 1–2 weeks"
+    },
+    {
+      "number": 11,
+      "stage": 2,
+      "title": "Oracle submission verifier queries a placeholder instead of the database",
+      "labels": [
+        "enhancement",
+        "help wanted"
+      ],
+      "body": "`src/blockchain/oracle/submission-verifier.service.ts` line 89:\n`// TODO: Replace with DB query`\n\nSubmission history is not read from persistent storage, so the verifier cannot\ntell whether it has seen a given submission before.\n\n## Why this matters\n\nWithout submission history there is no replay protection at the service layer and\nno audit trail. A resubmitted payload cannot be recognised as a duplicate, which\nmatters because the same verifier is what decides whether a submission is\ntrustworthy.\n\n## Tasks\n\n- [ ] Define the submission entity: payload hash, submitter, timestamp, verification status, transaction hash\n- [ ] Write the migration — see `src/migrations/` for the existing pattern\n- [ ] Replace the placeholder with a real query\n- [ ] Index on the fields used for duplicate detection; this is a hot path\n- [ ] Add a retention policy or archival strategy, agreed in the thread\n- [ ] Add tests: first submission accepted, duplicate detected, history queryable\n\n## Files to look at\n\n- `src/blockchain/oracle/submission-verifier.service.ts`\n- `src/migrations/`\n- `src/models/`\n\n## Acceptance criteria\n\n- Submission history persists across restarts\n- Duplicate submissions are detected\n- The duplicate-detection query is indexed\n- Tests cover acceptance, duplicate rejection and history retrieval\n\n---\n\n**Skills:** TypeScript, TypeORM  \n**Estimated effort:** 3–5 days"
+    },
+    {
+      "number": 12,
+      "stage": 2,
+      "title": "Rebalancing service: `storeTargetAllocations` is unimplemented",
+      "labels": [
+        "enhancement",
+        "help wanted"
+      ],
+      "body": "`src/portfolio/services/rebalancing.service.ts` line 16:\n`// TODO: Implement logic to store target allocations for the portfolio.`\n\nThis is the first of three consecutive unimplemented methods in the same file\n(lines 16, 29 and 46) — target allocations, recommendations, and execution. The\nservice is a shell.\n\n## Why this matters\n\nTarget allocations are the input to everything else in the rebalancing flow.\nNeither recommendations nor execution can be built until a portfolio's desired\nallocation can be persisted and read back.\n\n## Tasks\n\n- [ ] Define the target allocation model: portfolio, asset, target weight, updated-at\n- [ ] Enforce the invariant that weights sum to 100% (or document the chosen tolerance)\n- [ ] Write the migration\n- [ ] Implement store and retrieve, with validation on the way in\n- [ ] Version or audit changes so allocation history is recoverable\n- [ ] Add tests: valid set, weights not summing to 100, unknown asset, update replaces cleanly\n\n## Files to look at\n\n- `src/portfolio/services/rebalancing.service.ts`\n- `src/migrations/`\n- `src/models/`\n\n## Acceptance criteria\n\n- Target allocations persist and are retrievable\n- Invalid weight sets are rejected with a clear error\n- Tests cover the validation cases\n\n## Notes\n\nFirst of three — take all three or coordinate in the thread, as they share a data model.\n\n---\n\n**Skills:** TypeScript, NestJS, TypeORM  \n**Estimated effort:** 3–5 days"
+    },
+    {
+      "number": 13,
+      "stage": 2,
+      "title": "Rebalancing service: `calculateRebalancingRecommendations` is unimplemented",
+      "labels": [
+        "enhancement",
+        "help wanted"
+      ],
+      "body": "`src/portfolio/services/rebalancing.service.ts` line 29:\n`// TODO: Implement logic to calculate rebalancing recommendations.`\n\nThe method that compares current holdings against targets and produces the set\nof trades needed to close the gap does not exist.\n\n## Why this matters\n\nThis is the analytical core of the feature. It is also the part users will trust\nmost directly — a recommendation to sell one asset and buy another is acted on\nwith real money, so the arithmetic and the threshold behaviour need to be right\nand testable.\n\n## Tasks\n\n- [ ] Fetch current holdings and the stored target allocations\n- [ ] Compute the drift per asset and the trades required to close it\n- [ ] Apply a drift threshold so trivial deviations do not generate trades — make it configurable\n- [ ] Account for trading fees and minimum trade sizes, so recommendations are not uneconomic\n- [ ] Return a structured recommendation: asset, direction, amount, expected drift after\n- [ ] Add table-driven tests: already balanced, single asset drifted, all assets drifted, drift below threshold, empty portfolio\n\n## Files to look at\n\n- `src/portfolio/services/rebalancing.service.ts`\n- `src/investment/portfolio/services/`\n- `src/defi/`\n\n## Acceptance criteria\n\n- Recommendations close the gap between current and target allocations\n- Drift below the configured threshold produces no trades\n- Fees and minimum trade sizes are accounted for\n- Table-driven tests cover the listed scenarios\n\n## Notes\n\nDepends on the target allocations issue.\n\n---\n\n**Skills:** TypeScript, NestJS, portfolio mathematics  \n**Estimated effort:** 1 week"
+    },
+    {
+      "number": 14,
+      "stage": 2,
+      "title": "Rebalancing service: `executeRebalancing` is unimplemented",
+      "labels": [
+        "enhancement",
+        "help wanted",
+        "blockchain"
+      ],
+      "body": "`src/portfolio/services/rebalancing.service.ts` line 46:\n`// TODO: Implement logic to execute rebalancing trades.`\n\nThe third of the three stubs. Nothing executes the recommended trades.\n\n## Why this matters\n\nThis is the method that moves user funds, so it carries the most risk in the\ntrio. Partial execution is the central problem: if three of five trades succeed\nand two fail, the portfolio is left in a state that matches neither the original\nallocation nor the target, and the user needs to know that.\n\n## Tasks\n\n- [ ] Agree the execution model in the thread: all-or-nothing, or best-effort with reporting?\n- [ ] Implement execution through the existing payment and transaction services rather than a new path\n- [ ] Make the operation idempotent so a retry cannot double-execute\n- [ ] Record every attempt and its outcome before and after submission\n- [ ] Handle partial failure explicitly — report which trades executed and what the resulting allocation is\n- [ ] Add a dry-run mode that reports what would happen without submitting\n- [ ] Add tests: full success, partial failure, total failure, retry after partial\n\n## Files to look at\n\n- `src/portfolio/services/rebalancing.service.ts`\n- `src/investment/portfolio/services/trading-transaction.service.ts`\n- `src/payments/`\n\n## Acceptance criteria\n\n- Recommended trades are actually executed\n- A retry cannot double-execute\n- Partial failure is reported with the resulting allocation, not swallowed\n- Dry-run mode works and is covered by tests\n\n## Notes\n\nHandles real funds. Needs careful review and should land after the other two.\n\n---\n\n**Skills:** TypeScript, NestJS, Stellar SDK  \n**Estimated effort:** 1–2 weeks"
+    },
+    {
+      "number": 15,
+      "stage": 2,
+      "title": "`trading-transaction.service.ts` has no trade execution logic",
+      "labels": [
+        "enhancement",
+        "help wanted",
+        "blockchain"
+      ],
+      "body": "`src/investment/portfolio/services/trading-transaction.service.ts` line 17:\n`// TODO: Implement actual trade execution logic here`\n\nThe service other components call to execute trades — including the rebalancing\nexecution above — does not execute trades.\n\n## Why this matters\n\nThis is the shared execution primitive. Rebalancing, portfolio management and\nanything else that needs to move assets all route through it, so it is the\nright place to implement submission, confirmation and error handling once rather\nthan in each caller.\n\n## Tasks\n\n- [ ] Define the trade request and result contracts before implementing\n- [ ] Build, sign and submit the transaction via `@stellar/stellar-sdk`\n- [ ] Wait for confirmation with a sensible timeout, and distinguish 'timed out' from 'failed'\n- [ ] Handle: insufficient balance, trustline missing, price moved beyond slippage tolerance, network error\n- [ ] Persist every trade with its resulting transaction hash\n- [ ] Make submission idempotent via a client-supplied reference\n- [ ] Add tests against a mocked Horizon/RPC covering each failure mode\n\n## Files to look at\n\n- `src/investment/portfolio/services/trading-transaction.service.ts`\n- `src/payments/`\n- `src/blockchain/`\n\n## Acceptance criteria\n\n- Trades submit and confirm on the configured network\n- Every listed failure mode is handled distinctly\n- A timed-out submission is never reported as failed without checking the ledger\n- Trades are persisted with their transaction hash\n\n---\n\n**Skills:** TypeScript, NestJS, Stellar SDK  \n**Estimated effort:** 1–2 weeks"
+    },
+    {
+      "number": 16,
+      "stage": 3,
+      "title": "Decide and execute the database identifier rename",
+      "labels": [
+        "refactor",
+        "needs discussion",
+        "ops"
+      ],
+      "body": "The rebrand deliberately left the database identifiers alone, so twelve\nreferences to the old project name remain:\n\n- `src/common/database/database.config.ts` — `\"alian-structure\"`,\n  `\"alian-structure-staging\"`, `\"alian-structure-production\"`\n- `src/common/database/environments/development.config.ts` —\n  `process.env.DB_DATABASE ?? \"alianStructure\"`\n- `test/oracle-e2e.spec.ts` — `process.env.DB_NAME || \"alian-structure_test\"`\n- `docker-compose.yml` — `POSTGRES_USER`/`POSTGRES_DB` defaults and the\n  `pg_isready` healthcheck\n- `.env.example`, `docs/PORTFOLIO_SETUP.md` — connection strings\n\nThey were kept so existing databases and Docker volumes keep working.\n\n## Why this matters\n\nIt is the last place the old name survives in any of the three repositories.\nLeaving it is defensible; the reason it needs a decision rather than a patch is\nthat renaming a database is an operational change, not a code change — existing\nvolumes and deployed databases keep their old names regardless of what the code\nsays.\n\n## Tasks\n\n- [ ] Decide in the thread whether to rename at all — 'no, and document why' is a legitimate outcome\n- [ ] If renaming: write the migration runbook first (rename vs. dump-and-restore, and the downtime implied)\n- [ ] Change the defaults in code and compose only after the runbook is agreed\n- [ ] Provide a compatibility window where `DB_DATABASE` can override, so deployments can migrate independently\n- [ ] Update `.env.example` and `docs/PORTFOLIO_SETUP.md` together with the code\n- [ ] Note the Docker volume implications — an existing volume will not rename itself\n\n## Files to look at\n\n- `src/common/database/database.config.ts`\n- `src/common/database/environments/development.config.ts`\n- `docker-compose.yml`\n- `.env.example`\n- `docs/PORTFOLIO_SETUP.md`\n- `test/oracle-e2e.spec.ts`\n\n## Acceptance criteria\n\n- A decision is recorded in the issue, either way\n- If renamed: a runbook exists and a fresh `docker compose up` works end to end\n- If not renamed: the reason is documented where a future contributor will find it\n\n---\n\n**Skills:** TypeScript, PostgreSQL, deployment  \n**Estimated effort:** 2–3 days plus coordination"
+    },
+    {
+      "number": 17,
+      "stage": 3,
+      "title": "Auth service has an unimplemented reward service integration",
+      "labels": [
+        "enhancement",
+        "needs discussion"
+      ],
+      "body": "`src/core/auth/auth.service.ts` line 81:\n`// TODO: Implement reward service integration when available`\n\nRegistration does not notify any reward or referral system, so a signup arriving\nthrough a referral link is not attributed at the point of registration.\n\n## Why this matters\n\nThis is the join between authentication and the referral economics implemented in\n`referral-contract` and surfaced in the frontend's affiliate dashboard. Until it\nexists, referral attribution has a hole exactly where it matters most — at\nsignup.\n\nIt needs discussion because the boundary is not obvious: attribution could live\nin auth, in a dedicated referral module, or be event-driven.\n\n## Tasks\n\n- [ ] Agree the integration boundary in the thread — direct call, domain event, or queue?\n- [ ] Prefer an event so auth does not take a hard dependency on the reward system's availability\n- [ ] Make sure a reward-system failure cannot fail a registration\n- [ ] Define what is attributed: referral code, timestamp, referring user\n- [ ] Coordinate with the frontend's affiliate referral work so the code format matches\n- [ ] Add tests including the reward-system-unavailable path\n\n## Files to look at\n\n- `src/core/auth/auth.service.ts`\n- `src/growth/`\n- `src/notifications/`\n\n## Acceptance criteria\n\n- Registration attributes a referral when one is present\n- A reward-system outage does not prevent registration\n- The integration mechanism is documented\n- Tests cover the attributed, unattributed and degraded paths\n\n## Notes\n\nCross-repository: coordinate with the referral work in the frontend and contracts repos.\n\n---\n\n**Skills:** TypeScript, NestJS  \n**Estimated effort:** 3–5 days"
+    },
+    {
+      "number": 18,
+      "stage": 3,
+      "title": "ML prediction service uses a placeholder portfolio weight",
+      "labels": [
+        "enhancement",
+        "needs discussion"
+      ],
+      "body": "`src/investment/portfolio/services/ml-prediction.service.ts` line 134:\n`// TODO: Get weight from portfolio`\n\nThe prediction runs against a placeholder weight rather than the asset's actual\nweight in the portfolio being analysed.\n\n## Why this matters\n\nA prediction computed against the wrong weights is not a less accurate\nprediction — it is a prediction about a different portfolio. Any output derived\nfrom it is misleading, and it looks authoritative, which is the dangerous\ncombination.\n\n## Tasks\n\n- [ ] Establish where portfolio weights are authoritative — this overlaps with `src/portfolio/` and needs agreement\n- [ ] Fetch real weights for the portfolio under analysis\n- [ ] Handle the edge cases: empty portfolio, single asset, asset with zero weight\n- [ ] Decide what the service should do when weights are unavailable — failing loudly beats predicting on defaults\n- [ ] Add tests asserting that different weight distributions produce different predictions\n\n## Files to look at\n\n- `src/investment/portfolio/services/ml-prediction.service.ts`\n- `src/portfolio/`\n- `src/defi/`\n\n## Acceptance criteria\n\n- Predictions use the analysed portfolio's real weights\n- Unavailable weights produce an explicit error rather than a silent default\n- A test proves predictions vary with the weight distribution\n\n---\n\n**Skills:** TypeScript, portfolio mathematics  \n**Estimated effort:** 3–5 days"
+    },
+    {
+      "number": 19,
+      "stage": 3,
+      "title": "Add integration tests against Stellar testnet",
+      "labels": [
+        "test",
+        "needs discussion"
+      ],
+      "body": "There are 105 spec files, but the blockchain interactions are tested against\nmocks. `test/oracle-e2e.spec.ts` exists and is the closest thing to an\nintegration test, and it still does not exercise a real network.\n\nThe service talks to Horizon (`horizon-testnet.stellar.org` appears in the docs)\nand is meant to submit to the Soroban contracts in the sibling repository.\n\n## Why this matters\n\nMocks encode what you believe the chain does. They stay green when the SDK\nchanges its response shape, when a contract's interface changes, or when a\ntransaction is rejected for a reason you did not anticipate. Given this service\nsubmits oracle payloads and initiates payments, the gap between \"the mock says\nit worked\" and \"the ledger says it worked\" is where the expensive bugs live.\n\n## Tasks\n\n- [ ] Agree scope and cost in the thread — testnet tests are slow and flaky, so they should not gate every PR\n- [ ] Set up a funded testnet account via friendbot in CI\n- [ ] Write integration tests for: payment submission, oracle submission, transaction confirmation, failure on insufficient balance\n- [ ] Run them on a schedule or on a label, not on every pull request\n- [ ] Make failures actionable — distinguish 'our code is wrong' from 'testnet is down'\n- [ ] Document how to run them locally\n\n## Files to look at\n\n- `test/`\n- `test/oracle-e2e.spec.ts`\n- `jest.config.js`\n- `.github/workflows/build-check.yml`\n\n## Acceptance criteria\n\n- Core blockchain interactions are exercised against real testnet\n- The suite runs on a schedule rather than blocking PRs\n- Testnet outages are distinguishable from genuine failures\n- Local instructions are documented\n\n## Notes\n\nCross-repository: most valuable once `oracle-contract` is deployed to testnet.\n\n---\n\n**Skills:** TypeScript, Jest, Stellar SDK  \n**Estimated effort:** 1–2 weeks"
+    },
+    {
+      "number": 20,
+      "stage": 3,
+      "title": "`src/` has 30+ top-level modules with overlapping portfolio concerns",
+      "labels": [
+        "refactor",
+        "needs discussion",
+        "architecture"
+      ],
+      "body": "`src/` contains more than thirty top-level directories: `api`, `billing`,\n`blockchain`, `common`, `config`, `core`, `dashboard`, `defi`, `discovery`,\n`email`, `graphql`, `growth`, `health`, `infrastructure`, `investment`,\n`logging`, `migrations`, `models`, `modules`, `monitoring`, `notifications`,\n`observability`, `payments`, `portfolio`, `profiling`, `rate-limiting`,\n`reconciliation`, `search`, `simulator` and `types`.\n\nSeveral clearly overlap. Portfolio logic lives in at least three places:\n`src/portfolio/`, `src/investment/portfolio/` and `src/defi/`. The rebalancing\nservice is in `src/portfolio/services/` while the trading transaction service it\nneeds is in `src/investment/portfolio/services/`. There is also both a\n`src/modules/` and a set of top-level modules.\n\n## Why this matters\n\nA contributor asked to \"fix rebalancing\" has to search three directories to find\nwhere the logic lives, and then guess where new code belongs. That guess is how\nthe overlap grew in the first place, so it compounds. `docs/module-registry.md`\nexists and is 143 lines, which suggests the problem is already recognised.\n\n## Tasks\n\n- [ ] Produce an inventory: module, responsibility, what depends on it\n- [ ] Identify the genuine overlaps — portfolio is the obvious one; check `modules/` versus the top-level layout too\n- [ ] Agree a target structure in the thread before moving any file\n- [ ] Move incrementally, one concern at a time, keeping tests green at each step\n- [ ] Update `docs/module-registry.md` to describe the result\n- [ ] Add a short architecture note so the next contributor knows where things go\n\n## Files to look at\n\n- `src/`\n- `src/portfolio/`\n- `src/investment/portfolio/`\n- `src/defi/`\n- `src/modules/`\n- `docs/module-registry.md`\n\n## Acceptance criteria\n\n- An inventory of every top-level module and its responsibility exists\n- Portfolio logic has one clear home\n- `docs/module-registry.md` reflects the real structure\n- No behaviour change — the test suite passes unchanged\n\n## Notes\n\nLarge and disruptive. Do not start moving files before the thread agrees a target,\nand expect to land it as a series of PRs rather than one.\n\n---\n\n**Skills:** NestJS, architecture  \n**Estimated effort:** 1–2 weeks"
+    }
+  ]
+}
