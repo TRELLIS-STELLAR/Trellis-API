@@ -194,7 +194,6 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting details.
 ### Security Documentation
 
 - 🔐 [SECURITY.md](SECURITY.md) - Vulnerability reporting policy
-- 📋 [SECURITY_AUDIT.md](SECURITY_AUDIT.md) - Pre-production checklist & threat model
 - 🛡️ [docs/RBAC.md](docs/RBAC.md) - Role-based access control: roles, guard, token-claim mapping & admin setup
 
 ## API Endpoints
@@ -245,8 +244,7 @@ Fine-grained control over compute jobs with role-based access control:
 
 **Documentation:**
 
-- 📖 [Job Control API Documentation](docs/JOB_CONTROL_API.md) - Complete API reference
-- 🚀 [Quick Start Guide](docs/JOB_CONTROL_QUICK_START.md) - Get started in 5 minutes
+- See the [documentation index](#documentation) for the maintained API and operational guides.
 
 **Use Cases:**
 
@@ -286,6 +284,46 @@ Fine-grained control over compute jobs with role-based access control:
 - Keep provider adapters small and testable; use interfaces to swap implementations.
 - Write DTOs for all controller inputs and use class‑validation for strict contracts.
 - Add unit and integration tests for service logic and gateway flows.
+
+## Documentation
+
+### Getting started and project guides
+
+- [Portfolio quick start](docs/PORTFOLIO_QUICK_START.md) — first-run steps for the portfolio service.
+- [Portfolio setup](docs/PORTFOLIO_SETUP.md) — configuration and deployment prerequisites.
+- [Portfolio integration](docs/PORTFOLIO_INTEGRATION.md) — integrating with the portfolio APIs and services.
+- [Portfolio optimization](docs/PORTFOLIO_OPTIMIZATION.md) — portfolio optimization concepts and workflows.
+- [Multi-wallet management](docs/MULTI_WALLET_MANAGEMENT.md) — managing multiple Stellar wallets.
+- [Module registry](docs/module-registry.md) — registering and loading extension modules.
+- [Example grant module](modules/example-grant-module/README.md) — a working example of the grant-module interface.
+
+### API and architecture
+
+- [GraphQL gateway](docs/GRAPHQL_GATEWAY.md) — GraphQL schema, queries, and gateway behavior.
+- [WebSocket specification](docs/WEBSOCKET_SPECIFICATION.md) — real-time event and connection contracts.
+- [Role-based access control](docs/RBAC.md) — roles, guards, token claims, and administration.
+- [Stellar reconciliation](docs/stellar-reconciliation.md) — reconciling off-chain records with Stellar state.
+- [Kubernetes health probes](docs/kubernetes-health-probes.md) — health and readiness probe behavior.
+- [Payments](src/payments/README.md) — payment module overview and implementation notes.
+
+### Operations and observability
+
+- [Monitoring guide](docs/monitoring.md) — service monitoring, metrics, and operational signals.
+- [Monitoring setup](monitoring/README.md) — monitoring stack configuration and usage.
+- [Profiling](PROFILING.md) — project-level performance profiling guidance.
+- [Observability profiling guide](src/observability/PROFILING_GUIDE.md) — profiling the observability components.
+
+### Project and contributor references
+
+- [Project status](PROJECT_STATUS.md) — current implementation and project status.
+- [Roadmap](ROADMAP.md) — planned work and project direction.
+- [TODO](TODO.md) — outstanding tasks tracked in the repository.
+- [Wave issues](WAVE_ISSUES.md) — issue groupings for the current development waves.
+- [GitHub issue bootstrap](GITHUB_ISSUES_BOOTSTRAP.md) — context for setting up and organizing project issues.
+- [Module review checklist](MODULE_REVIEW_CHECKLIST.md) — review criteria for contributed modules.
+- [Contributing guide](CONTRIBUTING.md) — local setup and contribution workflow.
+- [Code of conduct](CODE_OF_CONDUCT.md) — expectations for participating in the community.
+- [Changelog](CHANGELOG.md) — notable changes by release.
 
 ## Contributing
 
