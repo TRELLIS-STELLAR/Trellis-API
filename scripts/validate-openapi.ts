@@ -157,7 +157,7 @@ async function generateOpenAPISpec(): Promise<void> {
     )
     .setVersion("1.0.0")
     .setContact("Trellis Team", "https://trellis.example")
-    .setLicense("Apache 2.0")
+    .setLicense("MIT")
     .addServer("http://localhost:3001", "Development Server")
     .addServer("https://api.trellis.example", "Production Server")
     .addBearerAuth(

@@ -25,7 +25,7 @@ async function exportOpenApi() {
     )
     .setVersion("1.0.0")
     .setContact("Trellis Team", "https://trellis.example", "api@trellis.example")
-    .setLicense("Apache 2.0", "https://www.apache.org/licenses/LICENSE-2.0")
+    .setLicense("MIT", "https://opensource.org/licenses/MIT")
     .addServer("http://localhost:3001", "Development Server")
     .addServer("https://api.trellis.example", "Production Server")
     .addBearerAuth(

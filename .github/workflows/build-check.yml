@@ -35,6 +35,13 @@ jobs:
           src/discovery/reviews/agent-reviews.service.spec.ts
           src/common/pagination/cursor-pagination.service.spec.ts
 
+      # Runs the full suite and prints the coverage summary against the
+      # coverageThreshold floors in jest.config.js. Report-only for now: some
+      # suites already fail on main, so this step does not fail the build.
+      - name: Test coverage summary
+        continue-on-error: true
+        run: npm run test:cov -- --coverageReporters=text-summary
+
       - name: Build project
         run: npm run build
 
@@ -105,7 +112,7 @@ jobs:
             },
             "keywords": ["trellis", "structure", "api", "client", "typescript"],
             "author": "Trellis Team",
-            "license": "Apache-2.0",
+            "license": "MIT",
             "peerDependencies": {
               "typescript": ">=4.0.0"
             },
@@ -125,7 +132,7 @@ jobs:
               version="0.1.0",
               description="Python client for Trellis Backend API",
               author="Trellis Team",
-              license="Apache-2.0",
+              license="MIT",
               url="https://github.com/TRELLIS-STELLAR/Trellis-API",
               packages=find_packages(),
               python_requires=">=3.8",
@@ -142,7 +149,7 @@ jobs:
                   "Programming Language :: Python :: 3.9",
                   "Programming Language :: Python :: 3.10",
                   "Programming Language :: Python :: 3.11",
-                  "License :: OSI Approved :: Apache Software License",
+                  "License :: OSI Approved :: MIT License",
                   "Operating System :: OS Independent",
               ],
           )

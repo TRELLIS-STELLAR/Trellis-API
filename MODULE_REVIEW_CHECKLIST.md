@@ -33,7 +33,7 @@ module pull request.
 
 ## Governance and documentation
 
-- [ ] Dependency and source licenses are compatible with Apache-2.0.
+- [ ] Dependency and source licenses are compatible with MIT.
 - [ ] The module's purpose, setup, configuration, and operational limits are documented.
 - [ ] Upgrade, rollback, and uninstall expectations are documented.
 - [ ] User-facing API or configuration changes include examples.

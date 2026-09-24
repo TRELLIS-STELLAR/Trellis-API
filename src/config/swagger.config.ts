@@ -32,7 +32,7 @@ export function setupSwagger(app: INestApplication): OpenAPIObject | null {
       "https://trellis.example",
       "api@trellis.example",
     )
-    .setLicense("Apache 2.0", "https://www.apache.org/licenses/LICENSE-2.0")
+    .setLicense("MIT", "https://opensource.org/licenses/MIT")
     .addServer(`http://localhost:${port}`, "Development Server")
     .addServer("https://api.trellis.example", "Production Server")
     .addBearerAuth(

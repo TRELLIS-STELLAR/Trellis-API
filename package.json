@@ -4,7 +4,7 @@
   "description": "Off-chain services + API layer for Trellis agents",
   "author": "trellis",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "MIT",
   "scripts": {
     "prebuild": "rimraf dist",
     "build:tsc": "tsc -p tsconfig.build.json",
