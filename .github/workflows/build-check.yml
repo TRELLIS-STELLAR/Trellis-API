@@ -5,6 +5,11 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -161,3 +166,53 @@ jobs:
           name: typescript-client
           path: client/
           retention-days: 30
+
+  pages:
+    name: Publish API reference to GitHub Pages
+    runs-on: ubuntu-latest
+    # Only publish from main so the public docs always reflect the latest merged spec.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: openapi
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download OpenAPI spec artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openapi-spec
+          path: pages/
+
+      - name: Build Redoc static reference
+        run: |
+          mkdir -p pages
+          cat > pages/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Trellis API Reference</title>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <style>body { margin: 0; padding: 0; }</style>
+            </head>
+            <body>
+              <redoc spec-url="./openapi.json"></redoc>
+              <script src="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js"></script>
+            </body>
+          </html>
+          EOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

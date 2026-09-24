@@ -68,11 +68,12 @@ Provide the off‑chain infrastructure required for agents, oracles, and operato
 
 Auto-generated, type-safe SDKs are available for TypeScript and Python:
 
-- **OpenAPI Specification**: Complete REST API documented at `/docs/openapi.json`
+- **API Reference**: Browsable Redoc reference published at [https://trellis-stellar.github.io/Trellis-API/](https://trellis-stellar.github.io/Trellis-API/) — no clone required
+- **Raw OpenAPI Spec**: Fetchable at [https://trellis-stellar.github.io/Trellis-API/openapi.json](https://trellis-stellar.github.io/Trellis-API/openapi.json)
 - **TypeScript Client**: Full-featured ESM + CommonJS client with complete type safety
 - **Python Client**: Full-featured async-capable client with type hints
 
-All SDKs are auto-generated from the authoritative OpenAPI v3 specification and published as CI artifacts after each commit.
+All SDKs are auto-generated from the authoritative OpenAPI v3 specification. The API reference and raw spec are rebuilt and published to GitHub Pages on every merge to `main`; the generated TypeScript/Python client packages remain available as CI artifacts.
 
 **Quick SDK Usage:**
 
@@ -286,6 +287,53 @@ Fine-grained control over compute jobs with role-based access control:
 - Keep provider adapters small and testable; use interfaces to swap implementations.
 - Write DTOs for all controller inputs and use class‑validation for strict contracts.
 - Add unit and integration tests for service logic and gateway flows.
+
+## Documentation
+
+Every markdown document in this repository, grouped by topic:
+
+### Project
+
+- [CHANGELOG.md](CHANGELOG.md) - Notable changes to the project by release
+- [PROJECT_STATUS.md](PROJECT_STATUS.md) - Point-in-time report on module completeness and outstanding work
+- [ROADMAP.md](ROADMAP.md) - Planned direction for the off-chain services suite
+- [TODO.md](TODO.md) - Open implementation tasks
+- [CONTRIBUTING.md](CONTRIBUTING.md) - How to propose changes and submit pull requests
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) - Community standards for participation
+- [MODULE_REVIEW_CHECKLIST.md](MODULE_REVIEW_CHECKLIST.md) - Checklist maintainers use when reviewing a new pluggable module
+- [WAVE_ISSUES.md](WAVE_ISSUES.md) - Wave Program issue set for this repository
+- [GITHUB_ISSUES_BOOTSTRAP.md](GITHUB_ISSUES_BOOTSTRAP.md) - Starter "good first issue" templates for growing contributor activity
+
+### API & Integration
+
+- [docs/GRAPHQL_GATEWAY.md](docs/GRAPHQL_GATEWAY.md) - GraphQL gateway schema, cursor pagination, and typed client example
+- [docs/RBAC.md](docs/RBAC.md) - Role-based access control: roles, guards, and token-claim mapping
+- [docs/WEBSOCKET_SPECIFICATION.md](docs/WEBSOCKET_SPECIFICATION.md) - WebSocket event contract for real-time agent updates
+- [docs/MULTI_WALLET_MANAGEMENT.md](docs/MULTI_WALLET_MANAGEMENT.md) - Multi-wallet support and related API endpoints
+- [docs/module-registry.md](docs/module-registry.md) - How the pluggable module registry installs packages without touching core
+- [docs/stellar-reconciliation.md](docs/stellar-reconciliation.md) - Reconciliation of confirmed Stellar payments against internal invoices
+
+### Portfolio Optimization
+
+- [docs/PORTFOLIO_OPTIMIZATION.md](docs/PORTFOLIO_OPTIMIZATION.md) - Overview of the AI-powered portfolio optimization system
+- [docs/PORTFOLIO_INTEGRATION.md](docs/PORTFOLIO_INTEGRATION.md) - Integration architecture guide
+- [docs/PORTFOLIO_SETUP.md](docs/PORTFOLIO_SETUP.md) - Prerequisites and configuration steps
+- [docs/PORTFOLIO_QUICK_START.md](docs/PORTFOLIO_QUICK_START.md) - Installation and quick-start walkthrough
+
+> These four documents cover overlapping ground and are candidates for consolidation into a single portfolio guide — flagged here, not addressed in this change.
+
+### Operations & Observability
+
+- [docs/monitoring.md](docs/monitoring.md) - Observability stack overview (logging, metrics, tracing)
+- [monitoring/README.md](monitoring/README.md) - Operational monitoring stack configuration (Prometheus/Grafana)
+- [docs/kubernetes-health-probes.md](docs/kubernetes-health-probes.md) - Liveness, readiness, and startup probe configuration for Kubernetes
+- [PROFILING.md](PROFILING.md) - Performance monitoring and profiling documentation
+- [src/observability/PROFILING_GUIDE.md](src/observability/PROFILING_GUIDE.md) - Guide to using the built-in profiling tools
+
+### Modules
+
+- [src/payments/README.md](src/payments/README.md) - Plugin architecture for payment processor backends
+- [modules/example-grant-module/README.md](modules/example-grant-module/README.md) - Minimal runtime-safe example of a registry module
 
 ## Contributing
 
