@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/license-Apache%202.0-1C6B55?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/license-MIT-1C6B55?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/NestJS-11-14201C?style=flat-square" alt="NestJS">
   <img src="https://img.shields.io/badge/TypeScript-5.3%2B-1C6B55?style=flat-square" alt="TypeScript">
   <img src="https://img.shields.io/badge/Stellar-blockchain-14201C?style=flat-square" alt="Stellar">

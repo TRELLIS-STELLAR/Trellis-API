@@ -25,5 +25,15 @@ module.exports = {
     '**/*.(t|j)s',
   ],
   coverageDirectory: '../coverage',
+  // Floors set just below the measured baseline so coverage cannot silently
+  // drop; raise them as tests are added. Directory keys resolve from the repo
+  // root (where `npm run test:cov` runs) and are checked on their own, so
+  // their files are left out of the global numbers.
+  coverageThreshold: {
+    global: { statements: 39, branches: 37, functions: 36, lines: 39 },
+    './src/core/auth/': { statements: 33, branches: 20, functions: 26, lines: 32 },
+    './src/payments/': { statements: 91, branches: 69, functions: 94, lines: 90 },
+    './src/blockchain/': { statements: 22, branches: 23, functions: 19, lines: 21 },
+  },
   testEnvironment: 'node',
 };
