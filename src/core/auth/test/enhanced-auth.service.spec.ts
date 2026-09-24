@@ -6,6 +6,8 @@ import { User } from "../../user/entities/user.entity";
 import { RefreshToken, TwoFactorAuth } from "../../auth/entities/auth.entity";
 import { EnhancedAuthService } from "../../auth/enhanced-auth.service";
 import { EmailService } from "../../auth/email.service";
+import { EventEmitter2 } from "@nestjs/event-emitter";
+import { REFERRAL_REGISTERED_EVENT } from "src/growth/referral/referral-registered.event";
 import { RegisterDto, LoginDto } from "../../auth/dto/auth.dto";
 import { KycStatus } from "../../user/entities/user.entity";
 import * as bcrypt from "bcrypt";
@@ -28,6 +30,7 @@ describe("EnhancedAuthService", () => {
   let twoFactorRepository: Repository<TwoFactorAuth>;
   let jwtService: JwtService;
   let emailService: EmailService;
+  let eventEmitter: EventEmitter2;
 
   const mockUser = {
     id: "user-id",
@@ -84,6 +87,10 @@ describe("EnhancedAuthService", () => {
             sendEmail: jest.fn(),
           },
         },
+        {
+          provide: EventEmitter2,
+          useValue: { emitAsync: jest.fn().mockResolvedValue([]) },
+        },
       ],
     }).compile();
 
@@ -97,6 +104,7 @@ describe("EnhancedAuthService", () => {
     );
     jwtService = module.get<JwtService>(JwtService);
     emailService = module.get<EmailService>(EmailService);
+    eventEmitter = module.get<EventEmitter2>(EventEmitter2);
   });
 
   it("should be defined", () => {
@@ -118,7 +126,11 @@ describe("EnhancedAuthService", () => {
       jest.spyOn(refreshTokenRepository, "create").mockReturnValue({} as any);
       jest.spyOn(refreshTokenRepository, "save").mockResolvedValue({} as any);
 
-      const result = await service.register(registerDto, "127.0.0.1", "test-agent");
+      const result = await service.register(
+        registerDto,
+        "127.0.0.1",
+        "test-agent",
+      );
 
       expect(result).toHaveProperty("accessToken");
       expect(result).toHaveProperty("refreshToken");
@@ -136,6 +148,58 @@ describe("EnhancedAuthService", () => {
       await expect(
         service.register(registerDto, "127.0.0.1", "test-agent"),
       ).rejects.toThrow("Email already registered");
+    });
+
+    it("persists the referrer and emits attribution without blocking on a failed listener", async () => {
+      const referrer = {
+        ...mockUser,
+        id: "referrer",
+        referralCode: "ABC12345",
+      };
+      jest
+        .spyOn(userRepository, "findOne")
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(referrer as any);
+      jest
+        .spyOn(userRepository, "create")
+        .mockReturnValue({
+          ...mockUser,
+          id: "signup",
+          createdAt: new Date(),
+        } as any);
+      jest
+        .spyOn(userRepository, "save")
+        .mockResolvedValue({ ...mockUser, id: "signup" } as any);
+      jest.spyOn(jwtService, "sign").mockReturnValue("access-token");
+      jest.spyOn(refreshTokenRepository, "create").mockReturnValue({} as any);
+      jest.spyOn(refreshTokenRepository, "save").mockResolvedValue({} as any);
+      jest
+        .spyOn(eventEmitter, "emitAsync")
+        .mockRejectedValueOnce(new Error("reward system unavailable"));
+
+      await expect(
+        service.register(
+          {
+            email: "test@example.com",
+            password: "password123",
+            referralCode: "abc12345",
+          },
+          "127.0.0.1",
+        ),
+      ).resolves.toHaveProperty("accessToken");
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(userRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ referredBy: referrer }),
+      );
+      expect(eventEmitter.emitAsync).toHaveBeenCalledWith(
+        REFERRAL_REGISTERED_EVENT,
+        expect.objectContaining({
+          userId: "signup",
+          referringUserId: "referrer",
+          referralCode: "ABC12345",
+          registeredAt: expect.any(Date),
+        }),
+      );
     });
   });
 

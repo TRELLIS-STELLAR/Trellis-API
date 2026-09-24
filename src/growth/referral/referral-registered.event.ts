@@ -1,0 +1,9 @@
+/** Emitted after a referred user has been saved. The user row is the durable attribution record. */
+export const REFERRAL_REGISTERED_EVENT = "referral.registered";
+
+export interface ReferralRegisteredEvent {
+  userId: string;
+  referringUserId: string;
+  referralCode: string;
+  registeredAt: Date;
+}

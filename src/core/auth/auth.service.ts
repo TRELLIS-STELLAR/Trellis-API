@@ -3,7 +3,9 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
+  Logger,
 } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as bcrypt from "bcrypt";
@@ -13,14 +15,20 @@ import { User } from "../user/entities/user.entity";
 import { RegisterDto, LoginDto } from "./dto/auth.dto";
 import { TokenBlacklistService } from "./token-blacklist.service";
 import { resolveRateLimitTierFromRole } from "src/config/quota.config";
+import {
+  REFERRAL_REGISTERED_EVENT,
+  ReferralRegisteredEvent,
+} from "src/growth/referral/referral-registered.event";
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
     private readonly tokenBlacklist: TokenBlacklistService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -77,15 +85,21 @@ export class AuthService {
 
     await this.userRepository.save(user);
 
-    // Trigger reward logic if referred
-    // TODO: Implement reward service integration when available
-    // if (user.referredById) {
-    //   this.rewardService
-    //     .handleTrigger(RewardTrigger.REGISTRATION, user.id)
-    //     .catch((err) => {
-    //       console.error("Failed to trigger registration reward", err);
-    //     });
-    // }
+    if (referredBy) {
+      const event: ReferralRegisteredEvent = {
+        userId: user.id,
+        referringUserId: referredBy.id,
+        referralCode: referredBy.referralCode!,
+        registeredAt: user.createdAt ?? new Date(),
+      };
+      void Promise.resolve()
+        .then(() =>
+          this.eventEmitter.emitAsync(REFERRAL_REGISTERED_EVENT, event),
+        )
+        .catch((error) =>
+          this.logger.error("Referral event delivery failed", error),
+        );
+    }
 
     // Generate JWT token with jti for replay attack prevention
     const jti = uuidv4();

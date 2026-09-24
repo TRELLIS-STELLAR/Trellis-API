@@ -5,6 +5,8 @@ import { getRepositoryToken } from "@nestjs/typeorm";
 import { User, UserRole, KycStatus } from "../user/entities/user.entity";
 import { Repository } from "typeorm";
 import { TokenBlacklistService } from "./token-blacklist.service";
+import { EventEmitter2 } from "@nestjs/event-emitter";
+import { REFERRAL_REGISTERED_EVENT } from "src/growth/referral/referral-registered.event";
 import {
   ConflictException,
   UnauthorizedException,
@@ -60,6 +62,7 @@ describe("AuthService", () => {
     revoke: jest.fn(),
     isRevoked: jest.fn().mockReturnValue(false),
   };
+  const mockEventEmitter = { emitAsync: jest.fn().mockResolvedValue([]) };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -77,6 +80,7 @@ describe("AuthService", () => {
           provide: TokenBlacklistService,
           useValue: mockTokenBlacklistService,
         },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
@@ -123,6 +127,71 @@ describe("AuthService", () => {
         where: [{ email: "test@example.com" }, { username: "testuser" }],
       });
       expect(bcrypt.hash).toHaveBeenCalledWith("password123", 12);
+      expect(mockEventEmitter.emitAsync).not.toHaveBeenCalled();
+    });
+
+    it("attributes a referred registration and emits its attribution", async () => {
+      const referrer = {
+        ...mockUser,
+        id: "referrer-id",
+        referralCode: "ABC123",
+      };
+      const registered = { ...mockUser, id: "new-user", referredBy: referrer };
+      mockUserRepository.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(referrer);
+      (bcrypt.hash as jest.Mock).mockResolvedValue("hashedpassword");
+      mockUserRepository.create.mockReturnValue(registered);
+      mockUserRepository.save.mockResolvedValue(registered);
+      mockJwtService.sign.mockReturnValue("jwt-token");
+
+      await service.register({
+        email: "test@example.com",
+        password: "password123",
+        username: "new",
+        referralCode: "abc123",
+      });
+      await Promise.resolve();
+
+      expect(mockUserRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ referredBy: referrer }),
+      );
+      expect(mockEventEmitter.emitAsync).toHaveBeenCalledWith(
+        REFERRAL_REGISTERED_EVENT,
+        expect.objectContaining({
+          userId: "new-user",
+          referringUserId: "referrer-id",
+          referralCode: "ABC123",
+          registeredAt: expect.any(Date),
+        }),
+      );
+    });
+
+    it("completes registration when referral event delivery fails", async () => {
+      const referrer = { ...mockUser, id: "referrer-id" };
+      mockUserRepository.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(referrer);
+      (bcrypt.hash as jest.Mock).mockResolvedValue("hashedpassword");
+      mockUserRepository.create.mockReturnValue({
+        ...mockUser,
+        referredBy: referrer,
+      });
+      mockUserRepository.save.mockResolvedValue(mockUser);
+      mockJwtService.sign.mockReturnValue("jwt-token");
+      mockEventEmitter.emitAsync.mockRejectedValueOnce(
+        new Error("reward system unavailable"),
+      );
+
+      await expect(
+        service.register({
+          email: "test@example.com",
+          password: "password123",
+          referralCode: "ABC123",
+        }),
+      ).resolves.toHaveProperty("token", "jwt-token");
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockUserRepository.save).toHaveBeenCalled();
     });
 
     it("should throw ConflictException if email already exists", async () => {

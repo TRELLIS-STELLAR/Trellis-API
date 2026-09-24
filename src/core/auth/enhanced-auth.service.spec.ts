@@ -5,6 +5,7 @@ import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import * as speakeasy from "speakeasy";
 import { EnhancedAuthService } from "./enhanced-auth.service";
 import { EmailService } from "./email.service";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { User } from "../user/entities/user.entity";
 import {
   RefreshToken,
@@ -94,6 +95,10 @@ describe("EnhancedAuthService — 2FA", () => {
         },
         { provide: JwtService, useValue: jwtService },
         { provide: EmailService, useValue: emailService },
+        {
+          provide: EventEmitter2,
+          useValue: { emitAsync: jest.fn().mockResolvedValue([]) },
+        },
       ],
     }).compile();
 
