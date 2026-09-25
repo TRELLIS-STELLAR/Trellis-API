@@ -1,5 +1,10 @@
 # Module registry and versioning
 
+This document covers the pluggable registry under `src/modules/registry`.
+The current source layout and proposed boundaries are inventoried in
+`docs/source-architecture.md`. `src/modules` is a runtime plugin registry,
+not a second home for application feature modules.
+
 The module registry installs pluggable packages without adding them to the core
 application module graph. It validates manifests, checks compatibility with the
 running API version, stores one current version per module name, and isolates

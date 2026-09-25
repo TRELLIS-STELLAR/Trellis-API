@@ -9,6 +9,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Repository } from "typeorm";
 import * as bcrypt from "bcrypt";
 import { randomBytes, createHash, timingSafeEqual } from "crypto";
@@ -33,6 +34,10 @@ import {
   TwoFactorVerifyDto,
 } from "./dto/auth.dto";
 import { TwoFactorSetupDto } from "./dto/kyc.dto";
+import {
+  REFERRAL_REGISTERED_EVENT,
+  ReferralRegisteredEvent,
+} from "src/growth/referral/referral-registered.event";
 
 @Injectable()
 export class EnhancedAuthService {
@@ -55,6 +60,7 @@ export class EnhancedAuthService {
     private readonly jwtService: JwtService,
     @Inject(forwardRef(() => EmailService))
     private readonly emailService: EmailService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async register(
@@ -114,6 +120,22 @@ export class EnhancedAuthService {
     });
 
     await this.userRepository.save(user);
+
+    if (referredBy) {
+      const event: ReferralRegisteredEvent = {
+        userId: user.id,
+        referringUserId: referredBy.id,
+        referralCode: referredBy.referralCode!,
+        registeredAt: user.createdAt ?? new Date(),
+      };
+      void Promise.resolve()
+        .then(() =>
+          this.eventEmitter.emitAsync(REFERRAL_REGISTERED_EVENT, event),
+        )
+        .catch((error) =>
+          this.logger.error("Referral event delivery failed", error),
+        );
+    }
 
     // A freshly registered account never has 2FA configured yet.
     const tokens = await this.generateTokens(user, ipAddress, userAgent, true);

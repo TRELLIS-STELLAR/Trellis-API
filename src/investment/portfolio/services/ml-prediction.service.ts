@@ -1,4 +1,9 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnprocessableEntityException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { PerformanceMetric } from "../entities/performance-metric.entity";
@@ -8,7 +13,6 @@ import {
   calculateExpectedReturn,
   calculateConfidence,
 } from "../ml-models/predictor";
-import { PortfolioService } from "./portfolio.service";
 
 @Injectable()
 export class MLPredictionService {
@@ -18,6 +22,8 @@ export class MLPredictionService {
   constructor(
     @InjectRepository(PerformanceMetric)
     private performanceRepository: Repository<PerformanceMetric>,
+    @InjectRepository(Portfolio)
+    private portfolioRepository: Repository<Portfolio>,
   ) {}
 
   /**
@@ -116,33 +122,72 @@ export class MLPredictionService {
     portfolioExpectedReturn: number;
     assetPredictions: Map<string, any>;
   }> {
+    const portfolio = await this.portfolioRepository.findOne({
+      where: { id: portfolioId },
+      relations: { assets: true },
+    });
+    if (!portfolio) {
+      throw new NotFoundException(`Portfolio ${portfolioId} not found`);
+    }
+    const assets = portfolio.assets ?? [];
+    if (assets.length === 0) {
+      throw new UnprocessableEntityException(
+        "Portfolio has no assets to predict",
+      );
+    }
+
+    // Asset.value is the same current holding value used by PortfolioService
+    // to calculate currentAllocation. Target and initial allocations are plans.
+    const values = new Map<string, number>();
+    for (const asset of assets) {
+      const value = Number(asset.value);
+      if (
+        asset.value == null ||
+        !Number.isFinite(value) ||
+        value < 0 ||
+        values.has(asset.ticker)
+      ) {
+        throw new UnprocessableEntityException(
+          `Unavailable or ambiguous weight for ${asset.ticker}`,
+        );
+      }
+      values.set(asset.ticker, value);
+    }
+    const totalValue = [...values.values()].reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+    if (totalValue <= 0) {
+      throw new UnprocessableEntityException(
+        "Portfolio weights are unavailable: total asset value is zero",
+      );
+    }
+    if (
+      assetDataMap.size !== values.size ||
+      [...values.keys()].some((ticker) => !assetDataMap.has(ticker))
+    ) {
+      throw new UnprocessableEntityException(
+        "Prediction data must cover every portfolio asset",
+      );
+    }
+
     const assetPredictions = new Map();
     let weightedReturn = 0;
-    let totalWeight = 0;
 
     for (const [ticker, data] of assetDataMap) {
-      try {
-        const prediction = await this.predictAssetReturns(
-          ticker,
-          data.price,
-          data.historicalPrices,
-          daysAhead,
-        );
-
-        assetPredictions.set(ticker, prediction);
-
-        // TODO: Get weight from portfolio
-        const weight = 1 / assetDataMap.size;
-        weightedReturn += prediction.predictedReturn * weight;
-        totalWeight += weight;
-      } catch (error) {
-        this.logger.warn(`Failed to predict ${ticker}`);
-      }
+      const prediction = await this.predictAssetReturns(
+        ticker,
+        data.price,
+        data.historicalPrices,
+        daysAhead,
+      );
+      assetPredictions.set(ticker, prediction);
+      weightedReturn +=
+        prediction.predictedReturn * (values.get(ticker)! / totalValue);
     }
 
     return {
-      portfolioExpectedReturn:
-        totalWeight > 0 ? weightedReturn / totalWeight : 0,
+      portfolioExpectedReturn: weightedReturn,
       assetPredictions,
     };
   }
