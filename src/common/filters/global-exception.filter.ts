@@ -12,7 +12,11 @@ import { ConfigService } from "@nestjs/config";
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { AppException } from "../errors/app.exception";
-import { ErrorCode } from "../errors/error-codes";
+import { ErrorCode, ErrorDomain } from "../errors/error-codes";
+import {
+  getErrorTaxonomy,
+  sanitizeClientMessage,
+} from "../errors/error-taxonomy";
 
 interface ValidationConstraints {
   [property: string]: string[];
@@ -34,17 +38,33 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
+    // 1. Correlation ID extraction / generation
     const correlationId =
-      (request.headers["x-request-id"] as string) || uuidv4();
+      (request.headers["x-request-id"] as string) ||
+      (request.headers["x-correlation-id"] as string) ||
+      uuidv4();
+
+    if (response.setHeader) {
+      response.setHeader("x-correlation-id", correlationId);
+      response.setHeader("x-request-id", correlationId);
+    }
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let clientMessage: string | object = "An unexpected error occurred";
     let errorCode: ErrorCode = ErrorCode.INTERNAL_ERROR;
+    let domain: ErrorDomain | undefined;
+    let retryable: boolean | undefined;
+    let retryAfterSeconds: number | undefined;
+    let recoveryGuidance: string | undefined;
     let errors: ValidationConstraints | undefined;
 
     if (exception instanceof AppException) {
       status = exception.getStatus();
       errorCode = exception.errorCode;
+      domain = exception.domain;
+      retryable = exception.retryable;
+      retryAfterSeconds = exception.retryAfterSeconds;
+      recoveryGuidance = exception.recoveryGuidance;
       clientMessage = this.extractMessage(exception);
     } else if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -54,26 +74,42 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         status === HttpStatus.BAD_REQUEST &&
         typeof exceptionResponse === "object"
       ) {
-        const response = exceptionResponse as any;
-        if (Array.isArray(response.message)) {
-          errors = this.formatValidationErrors(response.message);
+        const res = exceptionResponse as any;
+        if (Array.isArray(res.message)) {
+          errors = this.formatValidationErrors(res.message);
           clientMessage = "Validation failed";
           errorCode = ErrorCode.VALIDATION_ERROR;
         } else {
-          clientMessage = this.isProduction
-            ? (response.message ?? "Request failed")
-            : exceptionResponse;
+          clientMessage = res.message ?? "Request failed";
           errorCode = this.mapStatusToCode(status);
         }
       } else {
-        clientMessage = this.isProduction
-          ? typeof exceptionResponse === "string"
+        clientMessage =
+          typeof exceptionResponse === "string"
             ? exceptionResponse
-            : ((exceptionResponse as any).message ?? "Request failed")
-          : exceptionResponse;
+            : ((exceptionResponse as any).message ?? "Request failed");
         errorCode = this.mapStatusToCode(status);
       }
+    } else {
+      // Unhandled / unexpected exception (e.g. Error, DB connection loss)
+      status = HttpStatus.INTERNAL_SERVER_ERROR;
+      errorCode = ErrorCode.INTERNAL_ERROR;
+      clientMessage = "An unexpected error occurred";
     }
+
+    // 2. Resolve taxonomy defaults for domain, retryability, and recovery guidance
+    const taxonomy = getErrorTaxonomy(errorCode);
+    domain = domain ?? taxonomy.domain;
+    retryable = retryable ?? taxonomy.retryable;
+    retryAfterSeconds = retryAfterSeconds ?? taxonomy.retryAfterSeconds;
+    recoveryGuidance = recoveryGuidance ?? taxonomy.recoveryGuidance;
+
+    // 3. User-safe message rendering (strip leaks in production)
+    const safeMessage = sanitizeClientMessage(
+      clientMessage,
+      this.isProduction,
+      errorCode,
+    );
 
     this.reportToSentry(exception, status, correlationId, request);
     this.logError(exception, status, correlationId, request);
@@ -81,7 +117,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     response.status(status).json({
       statusCode: status,
       errorCode,
-      message: clientMessage,
+      domain,
+      message: safeMessage,
+      recoveryGuidance,
+      retryable,
+      ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
       ...(errors && { errors }),
       correlationId,
       timestamp: new Date().toISOString(),
@@ -113,7 +153,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       403: ErrorCode.FORBIDDEN,
       404: ErrorCode.NOT_FOUND,
       409: ErrorCode.CONFLICT,
+      422: ErrorCode.PRECONDITION_FAILED,
       429: ErrorCode.RATE_LIMITED,
+      502: ErrorCode.DEPENDENCY_TIMEOUT,
+      503: ErrorCode.SERVICE_UNAVAILABLE,
+      504: ErrorCode.DEPENDENCY_TIMEOUT,
     };
     return map[status] ?? ErrorCode.INTERNAL_ERROR;
   }

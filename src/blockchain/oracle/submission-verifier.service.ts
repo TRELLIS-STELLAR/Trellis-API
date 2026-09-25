@@ -1,8 +1,7 @@
-// src/oracle/submission-verifier.service.ts
-
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AuditLogService } from "src/infrastructure/audit/audit-log.service";
+import { telemetryService } from "src/observability/telemetry.service";
 
 interface OnChainSubmission {
   id: string;
@@ -57,7 +56,13 @@ export class SubmissionVerifierService {
   // -------------------------------------
   // VERIFY LOOP
   // -------------------------------------
-  private async verifyCycle() {
+  async verifyCycle() {
+    const endTelemetry = telemetryService.startTimer("oracle.verify_submission", {
+      actorType: "service_actor",
+      funnel: "oracle_sync",
+      step: "submission_verify",
+    });
+
     try {
       const onChain = await this.fetchOnChainSubmissions();
       const offChain = await this.fetchOffChainSubmissions();
@@ -68,9 +73,22 @@ export class SubmissionVerifierService {
 
       if (result.mismatches.length > 0) {
         await this.triggerAlerts(result);
+        endTelemetry("failure", "ORACLE_SUBMISSION_MISMATCH", {
+          mismatchesCount: result.mismatches.length,
+          totalChecked: result.totalChecked,
+        });
+      } else {
+        endTelemetry("success", undefined, {
+          totalChecked: result.totalChecked,
+        });
       }
+      return result;
     } catch (err) {
       this.logger.error("Verification failed", err);
+      endTelemetry("failure", "ORACLE_VERIFICATION_ERROR", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
     }
   }
 

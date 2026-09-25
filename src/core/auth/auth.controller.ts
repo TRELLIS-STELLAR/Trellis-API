@@ -37,10 +37,12 @@ import {
   RateLimit,
   SensitiveRateLimit,
 } from "src/common/decorators/rate-limit.decorator";
-import { Roles, Role } from "src/common/decorators/roles.decorator";
+import { Roles, Role, normalizeRole, getRolePermissions } from "src/common/decorators/roles.decorator";
+import { evaluateUiPolicies } from "src/common/guard/rbac-ui-policy";
 import { RolesGuard } from "src/common/guard/roles.guard";
 import { Public } from "src/common/decorators/public.decorator";
 import { AdminTwoFactorGuard } from "./guards/admin-two-factor.guard";
+import { Telemetry } from "src/observability/telemetry.decorator";
 
 export class RequestChallengeDto {
   @ApiProperty({
@@ -128,6 +130,12 @@ export class AuthController {
   // Wallet Authentication Endpoints
 
   @Post("verify")
+  @Telemetry({
+    operation: "wallet.authenticate",
+    funnel: "auth_onboarding",
+    step: "wallet_verify",
+    actorType: "user",
+  })
   @ApiOperation({
     summary: "Verify wallet signature",
     description:
@@ -490,4 +498,42 @@ export class AuthController {
       },
     };
   }
+
+  @Get("me/capabilities")
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Get current user role capabilities and permissions",
+    description:
+      "Returns assigned role, granular permissions, and UI action enablement capabilities.",
+  })
+  async getCapabilities(@Request() req) {
+    const rawRole = req.user.role ?? (req.user.roles?.[0] || Role.USER);
+    const role = normalizeRole(rawRole);
+    const permissions = getRolePermissions(role);
+    const { capabilities, allowedActions } = evaluateUiPolicies(role);
+
+    return {
+      userId: req.user.sub || req.user.id,
+      role,
+      roles: [role],
+      permissions,
+      capabilities,
+      allowedActions,
+    };
+  }
+
+  @Get("permissions")
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List permissions granted to authenticated user" })
+  async getPermissions(@Request() req) {
+    const rawRole = req.user.role ?? (req.user.roles?.[0] || Role.USER);
+    const role = normalizeRole(rawRole);
+    return {
+      role,
+      permissions: getRolePermissions(role),
+    };
+  }
 }
+
