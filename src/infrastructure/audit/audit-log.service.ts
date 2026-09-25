@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { LessThan, Repository } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { AuditLog } from "./entities/audit-log.entity";
 import { QueryAuditLogDto, ExportAuditLogDto } from "./dto/query-audit-log.dto";
 import { AuditLogListResponseDto } from "./dto/audit-log-response.dto";
 import { ExportSigningService } from "./algorithms/export-signing.service";
+import { CursorPaginationService } from "../../common/pagination/cursor-pagination.service";
 
 const RETENTION_YEARS = 7;
 const ARCHIVE_AFTER_YEARS = 1;
@@ -36,6 +37,7 @@ export class AuditLogService {
     @InjectRepository(AuditLog)
     private readonly repo: Repository<AuditLog>,
     private readonly signingService: ExportSigningService,
+    private readonly cursorPagination: CursorPaginationService,
   ) {}
 
   async record(entry: {
@@ -83,11 +85,19 @@ export class AuditLogService {
     if (dto.toDate)
       qb.andWhere("log.createdAt <= :toDate", { toDate: dto.toDate });
 
-    qb.orderBy("log.createdAt", "DESC")
-      .skip((page - 1) * limit)
-      .take(limit);
+    if (dto.cursor) {
+      this.cursorPagination.applyDescendingKeyset(qb, "log", dto.cursor);
+      qb.take(limit + 1);
+    } else {
+      qb.orderBy("log.createdAt", "DESC")
+        .addOrderBy("log.id", "DESC")
+        .skip((page - 1) * limit)
+        .take(limit);
+    }
 
-    const [data, total] = await qb.getManyAndCount();
+    const [rows, total] = await qb.getManyAndCount();
+    const hasNext = Boolean(dto.cursor && rows.length > limit);
+    const data = hasNext ? rows.slice(0, limit) : rows;
 
     return {
       data,
@@ -95,6 +105,13 @@ export class AuditLogService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+      nextCursor:
+        hasNext && data.length > 0
+          ? this.cursorPagination.encode({
+              createdAt: data[data.length - 1].createdAt,
+              id: data[data.length - 1].id,
+            })
+          : null,
     };
   }
 
@@ -174,17 +191,58 @@ export class AuditLogService {
       .execute();
   }
 
-  // Permanently deletes logs past the 7-year retention period.
+  // Permanently deletes unprotected logs past the 7-year retention period.
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
-  async enforceRetention(): Promise<void> {
+  async enforceRetention(): Promise<RetentionReport> {
     const cutoff = new Date();
     cutoff.setFullYear(cutoff.getFullYear() - RETENTION_YEARS);
-
-    await this.repo
-      .createQueryBuilder()
-      .delete()
-      .from(AuditLog)
-      .where("createdAt < :cutoff", { cutoff })
-      .execute();
+    const candidates = await this.repo.find({ where: { createdAt: LessThan(cutoff) } });
+    const protectedRecords = candidates.filter((record) => this.isProtected(record));
+    const eligibleRecords = candidates.filter((record) => !this.isProtected(record));
+    if (eligibleRecords.length) await this.repo.remove(eligibleRecords);
+    return this.createRetentionReport(cutoff, candidates, eligibleRecords, protectedRecords);
   }
+
+  async previewRetention(cutoff = this.retentionCutoff()): Promise<RetentionReport> {
+    const candidates = await this.repo.find({ where: { createdAt: LessThan(cutoff) } });
+    const protectedRecords = candidates.filter((record) => this.isProtected(record));
+    const eligibleRecords = candidates.filter((record) => !this.isProtected(record));
+    return this.createRetentionReport(cutoff, candidates, eligibleRecords, protectedRecords);
+  }
+
+  private retentionCutoff(): Date {
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - RETENTION_YEARS);
+    return cutoff;
+  }
+
+  private createRetentionReport(
+    cutoff: Date,
+    candidates: AuditLog[],
+    eligibleRecords: AuditLog[],
+    protectedRecords: AuditLog[],
+  ): RetentionReport {
+    return {
+      cutoff,
+      scanned: candidates.length,
+      eligible: eligibleRecords.length,
+      protected: protectedRecords.length,
+      affectedIds: eligibleRecords.map((record) => record.id),
+      protectedIds: protectedRecords.map((record) => record.id),
+    };
+  }
+
+  private isProtected(record: AuditLog): boolean {
+    const metadata = record.metadata ?? {};
+    return Boolean(metadata.retentionHold || metadata.activeDisputeId || metadata.auditCaseId || metadata.settlementId);
+  }
+}
+
+export interface RetentionReport {
+  cutoff: Date;
+  scanned: number;
+  eligible: number;
+  protected: number;
+  affectedIds: string[];
+  protectedIds: string[];
 }

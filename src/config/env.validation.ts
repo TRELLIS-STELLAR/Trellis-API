@@ -219,6 +219,12 @@ export class EnvironmentVariables {
   @Transform(({ value }) => parseInt(value, 10) || 5760)
   MONITORING_HISTORY_MAX_POINTS?: number;
 
+  /** Enable Horizon reconciliation polling. Defaults to false until explicitly enabled. */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === "true")
+  RECONCILIATION_HORIZON_POLLING?: boolean = false;
+
   // Blockchain configuration
   @IsNumber()
   @Transform(({ value }) => parseInt(value, 10) || 1)

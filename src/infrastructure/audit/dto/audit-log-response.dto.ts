@@ -51,4 +51,7 @@ export class AuditLogListResponseDto {
 
   @ApiProperty()
   totalPages: number;
+
+  @ApiProperty({ required: false, nullable: true })
+  nextCursor?: string | null;
 }
