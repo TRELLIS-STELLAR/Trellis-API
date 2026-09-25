@@ -5,6 +5,12 @@ import { MonitoringMetricsService } from "./monitoring-metrics.service";
 import { SystemMetricsService } from "./system-metrics.service";
 import { AlertRulesService } from "./alert-rules.service";
 import { MetricsHistoryService } from "./metrics-history.service";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { OperationalHealthController } from "./operational-health.controller";
+import { OperationalHealthService } from "./operational-health.service";
+import { StellarTransaction } from "../reconciliation/entities/stellar-transaction.entity";
+import { ReconciliationInvoice } from "../reconciliation/entities/reconciliation-invoice.entity";
+import { WebhookDeadLetter } from "../infrastructure/webhooks/entities/webhook-dead-letter.entity";
 
 /**
  * Comprehensive monitoring & metrics module.
@@ -21,19 +27,24 @@ import { MetricsHistoryService } from "./metrics-history.service";
  * not spawn background intervals.
  */
 @Module({
-  imports: [ConfigModule],
-  controllers: [MonitoringController],
+  imports: [
+    ConfigModule,
+    TypeOrmModule.forFeature([StellarTransaction, ReconciliationInvoice, WebhookDeadLetter]),
+  ],
+  controllers: [MonitoringController, OperationalHealthController],
   providers: [
     MonitoringMetricsService,
     SystemMetricsService,
     AlertRulesService,
     MetricsHistoryService,
+    OperationalHealthService,
   ],
   exports: [
     MonitoringMetricsService,
     SystemMetricsService,
     AlertRulesService,
     MetricsHistoryService,
+    OperationalHealthService,
   ],
 })
 export class MonitoringModule implements OnModuleInit {

@@ -58,6 +58,11 @@ export class QueryAuditLogDto {
   @Min(1)
   @Max(100)
   limit?: number = 100;
+
+  @ApiPropertyOptional({ description: "Opaque cursor for stable keyset pagination" })
+  @IsOptional()
+  @IsString()
+  cursor?: string;
 }
 
 export class ExportAuditLogDto {
