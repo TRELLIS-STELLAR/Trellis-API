@@ -52,6 +52,8 @@ import { EmailModule } from "./email/email.module";
 import { LoggerModule } from "./logging/logger.module";
 // Modules – cache
 import { CacheModule } from "./common/cache/cache.module";
+// Modules – idempotency (replay protection for mutating requests)
+import { IdempotencyModule } from "./common/idempotency/idempotency.module";
 import { BillingModule } from "./billing/billing.module";
 // Modules – payments (plugin system)
 import { PaymentsModule } from "./payments/payments.module";
@@ -149,12 +151,17 @@ import { GraphqlGatewayModule } from "./graphql/graphql.module";
 import { ModuleRegistryModule } from "./modules/registry/module-registry.module";
 import { QuotaAdminController } from "./common/quota/quota-admin.controller";
 import { VersioningModule } from "./common/versioning/versioning.module";
+// Modules referenced in `imports[]` that were never imported.
+import { ExportModule } from "./infrastructure/export/export.module";
+import { QuotaBudgetModule } from "./common/quota/quota-budget.module";
 import { ApiDeprecationMiddleware } from "./common/versioning/api-deprecation.middleware";
 import { ModuleEntity } from "./modules/registry/entities/module.entity";
 import { TenantModuleState } from "./modules/registry/entities/tenant-module-state.entity";
 import { AccessibilityGuard } from "./common/guard/accessibility.guard";
 // Grantfox OAuth entity
 import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
+// Idempotency entity
+import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-record.entity";
 
 @Module({
   imports: [
@@ -241,6 +248,7 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
             ReconciliationAudit,
             ReconciliationInvoice,
             StellarTransaction,
+            IdempotencyRecord,
             Notification,
             NotificationTemplate,
             NotificationPreference,
@@ -289,6 +297,7 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
     QuotaBudgetModule,
     VersioningModule,
     CacheModule,
+    IdempotencyModule,
     RateLimitingModule.forRoot(),
     LoggerModule.forRootAsync({
       inject: [ConfigService],
