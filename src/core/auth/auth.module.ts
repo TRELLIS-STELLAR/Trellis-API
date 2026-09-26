@@ -110,7 +110,6 @@ import { RefreshToken, TwoFactorAuth } from "./entities/auth.entity";
     ApiKeyStrategy,
     StrategyAuthGuard,
     AdminTwoFactorGuard,
-    AuditLogService,
     GrantfoxOAuthService,
   ],
   exports: [

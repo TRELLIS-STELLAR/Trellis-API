@@ -12,6 +12,9 @@ import { StellarTransaction } from "../reconciliation/entities/stellar-transacti
 import { ReconciliationInvoice } from "../reconciliation/entities/reconciliation-invoice.entity";
 import { WebhookDeadLetter } from "../infrastructure/webhooks/entities/webhook-dead-letter.entity";
 
+import { AuthModule } from "../core/auth/auth.module";
+import { UserModule } from "../core/user/user.module";
+
 /**
  * Comprehensive monitoring & metrics module.
  *
@@ -29,6 +32,8 @@ import { WebhookDeadLetter } from "../infrastructure/webhooks/entities/webhook-d
 @Module({
   imports: [
     ConfigModule,
+    AuthModule,
+    UserModule,
     TypeOrmModule.forFeature([StellarTransaction, ReconciliationInvoice, WebhookDeadLetter]),
   ],
   controllers: [MonitoringController, OperationalHealthController],

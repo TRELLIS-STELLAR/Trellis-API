@@ -17,6 +17,7 @@
     "start:prod": "node dist/main.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
+    "test:contract": "jest src/common/contract/api-contract-drift.spec.ts",
     "test:kyc-guard-scan": "node scripts/check-kyc-guard-coverage.js",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -43,7 +44,8 @@
     "openapi:client:python": "npm run openapi:export && npx @openapitools/openapi-generator-cli generate -i docs/openapi.json -g python -o sdks/python --additional-properties=packageName=trellis_api,packageVersion=$(npm run -s get-version 2>/dev/null || echo '0.1.0')",
     "openapi:client:all": "npm run openapi:client && npm run openapi:client:python",
     "get-version": "node -p \"require('./package.json').version\"",
-    "module:example:register": "node modules/example-grant-module/register.cjs"
+    "module:example:register": "node modules/example-grant-module/register.cjs",
+    "dr:validate": "ts-node -r tsconfig-paths/register scripts/validate-dr-invariants.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",

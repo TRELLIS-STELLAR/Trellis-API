@@ -128,6 +128,10 @@ import { NotificationAnalytics } from "./notifications/entities/notification-ana
 import { WebhookModule } from "./infrastructure/webhooks/webhook.module";
 // Modules – file upload
 import { FileUploadModule } from "./infrastructure/file-upload/file-upload.module";
+// Modules – disaster recovery
+import { DisasterRecoveryModule } from "./infrastructure/disaster-recovery/disaster-recovery.module";
+// Modules – import pipeline
+import { ImportModule } from "./infrastructure/import/import.module";
 
 // Guards
 import { APP_FILTER } from "@nestjs/core";
@@ -293,6 +297,8 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
     PaymentsModule,
     ReconciliationModule,
     NotificationModule,
+    DisasterRecoveryModule,
+    ImportModule,
   ],
 
   controllers: [AppController],
