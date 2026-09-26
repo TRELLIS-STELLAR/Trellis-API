@@ -201,6 +201,32 @@ GRANTFOX_API_KEY=...                   # sent as: Authorization: Bearer <key>
   `mapPaymentResponse()` (both marked `// ADAPT:`). If your Grantfox endpoint's
   shape differs, those two methods are the only things to change.
 
+## Sandbox processor (contributor testing)
+
+[`SandboxPaymentAdapter`](../sandbox/adapters/sandbox-payment.adapter.ts)
+implements the same `IPaymentProcessor` contract with deterministic,
+credential-free responses served from
+[`src/sandbox/fixtures/sandbox.fixtures.ts`](../sandbox/fixtures/sandbox.fixtures.ts).
+It is the payment seam of integration sandbox mode (issue #57).
+
+Unlike `StellarAdapter`/`GrantfoxAdapter` it is **not** tagged with
+`@RegisterPaymentProcessor()`. Instead `SandboxProcessorRegistrar` registers it
+on init **only while `SANDBOX_MODE=true`**, so production never lists or routes
+to a fake processor. Every entry point also fails closed with
+`412 Precondition Failed` when the flag is off or `NODE_ENV=production`.
+
+Select it per request like any other processor:
+
+```bash
+curl -X POST /api/v1/payments \
+  -H 'X-Payment-Processor: sandbox' -H 'Content-Type: application/json' \
+  -d '{"amount":"10","currency":"XLM","destination":"GBSANDBOX","idempotencyKey":"sandbox-1"}'
+```
+
+See [`docs/SANDBOX_MODE.md`](../../docs/SANDBOX_MODE.md) for scenarios,
+configuration, determinism guarantees and limitations, and run
+`npm test -- src/sandbox` for its tests.
+
 ## Persisting payments (DB seam)
 
 The system is intentionally stateless — no new TypeORM entity or migration.

@@ -632,4 +632,25 @@ export class EnvironmentVariables {
   @IsBoolean()
   @Transform(({ value }) => value !== "false")
   RATE_LIMIT_FALLBACK_TO_MEMORY?: boolean = true;
+
+  // ── Integration Sandbox Mode ───────────────────────────────────────
+  // Opt-in deterministic fakes for the external payment/chain dependency so
+  // contributors can run the primary payment workflow with no credentials.
+  // Refused when NODE_ENV=production (see src/sandbox/sandbox.config.ts).
+
+  /** Master switch for sandbox mode. Must be exactly "true". Default: false. */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === "true" || value === true)
+  SANDBOX_MODE?: boolean = false;
+
+  /** Default sandbox scenario: success | payment_failed | insufficient_funds | horizon_timeout. */
+  @IsOptional()
+  @IsString()
+  SANDBOX_SCENARIO?: string = "success";
+
+  /** Seed for deterministic sandbox ids/hashes. Changing it changes every id. */
+  @IsOptional()
+  @IsString()
+  SANDBOX_SEED?: string = "trellis-local-sandbox";
 }

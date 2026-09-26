@@ -23,6 +23,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:testnet": "jest --config ./test/jest-testnet.js --runInBand",
+    "test:sandbox": "jest src/sandbox",
+    "sandbox:demo": "ts-node -r tsconfig-paths/register scripts/sandbox-demo.ts",
     "security:audit": "npm audit --audit-level=moderate",
     "security:audit:fix": "npm audit fix",
     "security:generate-secrets": "./scripts/generate-secrets.sh",

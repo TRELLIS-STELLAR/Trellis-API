@@ -55,6 +55,8 @@ import { CacheModule } from "./common/cache/cache.module";
 import { BillingModule } from "./billing/billing.module";
 // Modules – payments (plugin system)
 import { PaymentsModule } from "./payments/payments.module";
+// Modules – integration sandbox mode (deterministic fakes; opt-in)
+import { SandboxModule } from "./sandbox/sandbox.module";
 import { RateLimitingModule } from "./rate-limiting/rate-limiting.module";
 import { ReconciliationModule } from "./reconciliation/reconciliation.module";
 // Modules – notifications
@@ -302,6 +304,7 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
     }),
     BillingModule,
     PaymentsModule,
+    SandboxModule,
     ReconciliationModule,
     NotificationModule,
   ],
