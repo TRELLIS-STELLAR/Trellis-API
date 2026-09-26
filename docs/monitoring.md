@@ -56,6 +56,12 @@ metrics include:
 | `trellis_database_query_duration_seconds` | Histogram | `operation`, `table` | DB query latency. |
 | `trellis_active_connections` | Gauge | `type` | Active connections. |
 | `trellis_job_*` / `queue_length` | Histogram/Counter/Gauge | varies | Compute-job queue signals. |
+| `trellis_business_operation_duration_seconds` | Histogram | `operation`, `actor_type`, `result` | Latency distribution of critical business operations. |
+| `trellis_business_operation_total` | Counter | `operation`, `actor_type`, `result` | Invocations of critical business operations. |
+| `trellis_business_failure_total` | Counter | `operation`, `actor_type`, `error_code` | Business operation failures by error code. |
+| `trellis_conversion_funnel_total` | Counter | `funnel`, `step`, `status` | State transitions across conversion funnels. |
+
+> See [OBSERVABILITY_TELEMETRY.md](./OBSERVABILITY_TELEMETRY.md) for full documentation on business operation telemetry, structured logging, PromQL queries, and alerting thresholds.
 
 ### Cardinality safety
 

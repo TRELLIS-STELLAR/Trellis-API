@@ -8,11 +8,14 @@ import { PerformanceBaselineService } from "./performance-baseline.service";
 import { ObservabilityController } from "./observability.controller";
 import { TracingInterceptor } from "./tracing.interceptor";
 
+import { TelemetryService } from "./telemetry.service";
+
 @Module({
   providers: [
     ProfilingService,
     RequestTimingMiddleware,
     PerformanceBaselineService,
+    TelemetryService,
     {
       provide: APP_INTERCEPTOR,
       useClass: TracingInterceptor,
@@ -27,6 +30,7 @@ import { TracingInterceptor } from "./tracing.interceptor";
     ProfilingService,
     RequestTimingMiddleware,
     PerformanceBaselineService,
+    TelemetryService,
   ],
 })
 export class ObservabilityModule implements NestModule {
