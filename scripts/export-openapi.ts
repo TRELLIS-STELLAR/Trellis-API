@@ -11,11 +11,25 @@ import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { AppModule } from "../src/app.module";
+import { DataSource } from "typeorm";
 
 async function exportOpenApi() {
+  // Mock TypeORM connection initialization so OpenAPI export works offline without live Postgres
+  const origInit = DataSource.prototype.initialize;
+  DataSource.prototype.initialize = async function () {
+    return this;
+  };
+
   // Silence NestJS bootstrap logs — we only want the artefact output
-  const app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
+  let app: any;
+  try {
+    const { AppModule } = await import("../src/app.module");
+    app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
+  } catch (err: any) {
+    console.warn("Bootstrap warning during spec export:", err.message);
+  } finally {
+    DataSource.prototype.initialize = origInit;
+  }
 
   const config = new DocumentBuilder()
     .setTitle("Trellis Backend API")

@@ -112,7 +112,6 @@ import { ImpersonationController } from "./impersonation.controller";
     ApiKeyStrategy,
     StrategyAuthGuard,
     AdminTwoFactorGuard,
-    AuditLogService,
     GrantfoxOAuthService,
     ImpersonationService,
   ],

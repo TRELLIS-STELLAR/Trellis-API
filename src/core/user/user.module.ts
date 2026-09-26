@@ -12,6 +12,6 @@ import { AdminTwoFactorGuard } from "src/core/auth/guards/admin-two-factor.guard
   imports: [TypeOrmModule.forFeature([User]), AuthModule],
   controllers: [UserController, AdminRoleController],
   providers: [UserService, RoleSeederService, AdminTwoFactorGuard],
-  exports: [UserService],
+  exports: [UserService, TypeOrmModule],
 })
 export class UserModule {}

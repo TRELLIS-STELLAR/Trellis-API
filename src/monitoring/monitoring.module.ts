@@ -15,6 +15,9 @@ import { PartialFailure } from "./entities/partial-failure.entity";
 import { PartialFailureController } from "./partial-failure.controller";
 import { PartialFailureService } from "./partial-failure.service";
 
+import { AuthModule } from "../core/auth/auth.module";
+import { UserModule } from "../core/user/user.module";
+
 /**
  * Comprehensive monitoring & metrics module.
  *
@@ -32,7 +35,9 @@ import { PartialFailureService } from "./partial-failure.service";
 @Module({
   imports: [
     ConfigModule,
-    TypeOrmModule.forFeature([StellarTransaction, ReconciliationInvoice, WebhookDeadLetter, PartialFailure]),
+    AuthModule,
+    UserModule,
+    TypeOrmModule.forFeature([StellarTransaction, ReconciliationInvoice, WebhookDeadLetter]),
   ],
   controllers: [MonitoringController, OperationalHealthController, PartialFailureController],
   providers: [
