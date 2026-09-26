@@ -386,6 +386,7 @@ Every markdown document in this repository, grouped by topic:
 - [docs/MULTI_WALLET_MANAGEMENT.md](docs/MULTI_WALLET_MANAGEMENT.md) - Multi-wallet support and related API endpoints
 - [docs/module-registry.md](docs/module-registry.md) - How the pluggable module registry installs packages without touching core
 - [docs/stellar-reconciliation.md](docs/stellar-reconciliation.md) - Reconciliation of confirmed Stellar payments against internal invoices
+- [docs/POLICY_ENGINE.md](docs/POLICY_ENGINE.md) - Configurable business-rule evaluation and trading policy settings
 
 ### Portfolio Optimization
 

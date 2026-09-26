@@ -653,4 +653,29 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   SANDBOX_SEED?: string = "trellis-local-sandbox";
+
+  // ── Trading policy ─────────────────────────────────────────────────
+
+  /** Master switch for the trade execution endpoint. Default: true. */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value !== "false")
+  TRADING_ENABLED?: boolean = true;
+
+  /** Maximum amount accepted by a single trade request. Default: 100000. */
+  @IsOptional()
+  @IsNumber()
+  @Min(Number.EPSILON)
+  @Transform(({ value }) => parseFloat(value) || 100000)
+  TRADING_MAX_ORDER_AMOUNT?: number = 100000;
+
+  /** Optional comma-separated asset allow-list, e.g. "XLM,USDC". */
+  @IsOptional()
+  @IsString()
+  TRADING_ALLOWED_ASSETS?: string;
+
+  /** Comma-separated trade sides. Defaults to "buy,sell". */
+  @IsOptional()
+  @IsString()
+  TRADING_ALLOWED_SIDES?: string;
 }
