@@ -1,8 +1,11 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ReconciliationController } from "./reconciliation.controller";
 import { ReconciliationService } from "./reconciliation.service";
 import { HorizonPollingService } from "./horizon-polling.service";
+import { DryRunReconciliationController } from "./dry-run-reconciliation.controller";
+import { DryRunReconciliationService } from "./dry-run-reconciliation.service";
 import { ReconciliationAudit } from "./entities/reconciliation-audit.entity";
 import { ReconciliationInvoice } from "./entities/reconciliation-invoice.entity";
 import { StellarTransaction } from "./entities/stellar-transaction.entity";
@@ -15,9 +18,16 @@ import { FeatureFlagsService } from "../config/feature-flags.service";
       ReconciliationInvoice,
       StellarTransaction,
     ]),
+    // Enables the scheduled dry-run safety net.
+    ScheduleModule.forRoot(),
   ],
-  controllers: [ReconciliationController],
-  providers: [ReconciliationService, HorizonPollingService, FeatureFlagsService],
-  exports: [ReconciliationService],
+  controllers: [ReconciliationController, DryRunReconciliationController],
+  providers: [
+    ReconciliationService,
+    HorizonPollingService,
+    DryRunReconciliationService,
+    FeatureFlagsService,
+  ],
+  exports: [ReconciliationService, DryRunReconciliationService],
 })
 export class ReconciliationModule {}
