@@ -155,7 +155,7 @@ export class EnvironmentVariables {
   SENTRY_TRACES_SAMPLE_RATE?: number = 0.1;
 
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
 
   // Observability toggles
