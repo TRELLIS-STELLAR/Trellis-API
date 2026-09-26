@@ -15,6 +15,7 @@ interface JwtPayload {
   tier?: string;
   jti?: string; // JWT ID for replay attack prevention
   twoFactorVerified?: boolean; // whether 2FA was completed for this session
+  impersonatorId?: string; // ID of the admin impersonating this user
   iat?: number;
   exp?: number;
 }
@@ -80,6 +81,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         tier: payload.tier,
         jti: payload.jti,
         twoFactorVerified: payload.twoFactorVerified ?? false,
+        impersonatorId: payload.impersonatorId,
         exp: payload.exp,
         type: "traditional",
       };
@@ -92,6 +94,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         roles: [role],
         jti: payload.jti,
         twoFactorVerified: payload.twoFactorVerified ?? false,
+        impersonatorId: payload.impersonatorId,
         exp: payload.exp,
         type: "wallet",
       };

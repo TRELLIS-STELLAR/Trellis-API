@@ -136,6 +136,7 @@ import { APP_FILTER } from "@nestjs/core";
 import { DistributedRateLimitGuard } from "./rate-limiting/rate-limiting.guard";
 import { RolesGuard } from "./common/guard/roles.guard";
 import { KycGuard } from "./common/guard/kyc.guard";
+import { ImpersonationGuard } from "./core/auth/guards/impersonation.guard";
 import { StrategyAuthGuard } from "./core/auth/guards/strategy-auth.guard";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { SubmissionVerifierService } from "./blockchain/oracle/submission-verifier.service";
