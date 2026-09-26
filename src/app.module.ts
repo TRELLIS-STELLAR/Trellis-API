@@ -79,6 +79,7 @@ import { AgentEvent } from "./infrastructure/audit/entities/agent-event.entity";
 import { ComputeResult } from "./infrastructure/audit/entities/compute-result.entity";
 import { ProvenanceRecord } from "./infrastructure/audit/entities/provenance-record.entity";
 import { OracleSubmission } from "./infrastructure/audit/entities/oracle-submission.entity";
+import { SensitiveActionEvent } from "./infrastructure/audit/entities/sensitive-action-event.entity";
 
 // Portfolio entities
 import { Portfolio } from "./investment/portfolio/entities/portfolio.entity";
@@ -218,6 +219,7 @@ import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-rec
             ComputeResult,
             ProvenanceRecord,
             OracleSubmission,
+            SensitiveActionEvent,
             Portfolio,
             PortfolioAsset,
             Transaction,

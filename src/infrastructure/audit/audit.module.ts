@@ -12,6 +12,8 @@ import { ExportSigningService } from "./algorithms/export-signing.service";
 import { CursorPaginationService } from "../../common/pagination/cursor-pagination.service";
 import { PaginationModule } from "../../common/pagination/pagination.module";
 import { AuditLogController } from "./audit-log.controller";
+import { SensitiveActionEvent } from "./entities/sensitive-action-event.entity";
+import { SensitiveActionAuditModule } from "./sensitive-actions/sensitive-action-audit.module";
 
 @Module({
   imports: [
@@ -21,11 +23,13 @@ import { AuditLogController } from "./audit-log.controller";
       OracleSubmission,
       ComputeResult,
       ProvenanceRecord,
+      SensitiveActionEvent,
     ]),
     PaginationModule,
+    SensitiveActionAuditModule,
   ],
   controllers: [ProvenanceController, AuditLogController],
   providers: [ProvenanceService, AuditLogService, ExportSigningService, CursorPaginationService],
-  exports: [TypeOrmModule, ProvenanceService, AuditLogService],
+  exports: [TypeOrmModule, ProvenanceService, AuditLogService, SensitiveActionAuditModule],
 })
 export class AuditModule {}
