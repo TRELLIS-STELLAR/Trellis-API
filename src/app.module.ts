@@ -129,6 +129,7 @@ import { NotificationPreference } from "./notifications/entities/notification-pr
 import { NotificationAggregation } from "./notifications/entities/notification-aggregation.entity";
 import { NotificationDeliveryLog } from "./notifications/entities/notification-delivery-log.entity";
 import { NotificationAnalytics } from "./notifications/entities/notification-analytics.entity";
+import { MaintainerAggregateMetric } from "./monitoring/maintainer-insights/entities/maintainer-aggregate-metric.entity";
 // Modules – webhooks
 import { WebhookModule } from "./infrastructure/webhooks/webhook.module";
 // Modules – file upload
@@ -262,6 +263,7 @@ import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-rec
             NotificationDeliveryLog,
             NotificationAnalytics,
             GrantfoxToken,
+            MaintainerAggregateMetric,
           ],
           synchronize: true,
           logging: true,
