@@ -19,6 +19,7 @@ import {
   StellarTransaction,
   StellarTransactionStatus,
 } from "./entities/stellar-transaction.entity";
+import { telemetryService } from "../observability/telemetry.service";
 
 const SCALE = 7n;
 const SCALE_FACTOR = 10n ** SCALE;
@@ -280,6 +281,12 @@ export class ReconciliationService {
     transaction: StellarTransaction,
     reason?: string
   ): Promise<void> {
+    const endTelemetry = telemetryService.startTimer("reconciliation.match", {
+      actorType: "service_actor",
+      funnel: "payment_settlement",
+      step: "reconciliation_match",
+    });
+
     const invoice = await this.invoiceRepo.findOne({
       where: { destinationAccount: transaction.destinationAccount },
       order: { createdAt: "ASC" },
@@ -295,6 +302,9 @@ export class ReconciliationService {
           reason ?? "No invoice matched destination, asset, and reference",
         attempt: 0,
         metadata: { destinationAccount: transaction.destinationAccount },
+      });
+      endTelemetry("failure", "RECONCILIATION_UNMATCHED", {
+        transactionId: transaction.transactionId,
       });
       return;
     }
@@ -325,6 +335,12 @@ export class ReconciliationService {
         paidAmount: invoice.paidAmount,
         assetCode: invoice.assetCode,
       },
+    });
+
+    endTelemetry("success", undefined, {
+      invoiceId: invoice.invoiceId,
+      transactionId: transaction.transactionId,
+      status: invoice.status,
     });
   }
 

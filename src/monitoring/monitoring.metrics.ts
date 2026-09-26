@@ -105,6 +105,35 @@ export const customOperationTotal = getOrCreateCounter({
 });
 
 // ---------------------------------------------------------------------------
+// Business operation & conversion metrics — populated by TelemetryService
+// ---------------------------------------------------------------------------
+
+export const businessOperationDuration = getOrCreateHistogram({
+  name: `${PREFIX}business_operation_duration_seconds`,
+  help: "Duration of business-critical operations in seconds",
+  labelNames: ["operation", "actor_type", "result"],
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+});
+
+export const businessOperationTotal = getOrCreateCounter({
+  name: `${PREFIX}business_operation_total`,
+  help: "Total number of business-critical operation invocations",
+  labelNames: ["operation", "actor_type", "result"],
+});
+
+export const businessFailureTotal = getOrCreateCounter({
+  name: `${PREFIX}business_failure_total`,
+  help: "Total number of business-critical operation failures by error code",
+  labelNames: ["operation", "actor_type", "error_code"],
+});
+
+export const conversionFunnelTotal = getOrCreateCounter({
+  name: `${PREFIX}conversion_funnel_total`,
+  help: "Total number of conversion funnel step transitions and outcomes",
+  labelNames: ["funnel", "step", "status"],
+});
+
+// ---------------------------------------------------------------------------
 // Alerting metrics — mirror the AlertRulesService state so alert status is
 // itself scrapeable (useful for meta-alerting / dashboards).
 // ---------------------------------------------------------------------------

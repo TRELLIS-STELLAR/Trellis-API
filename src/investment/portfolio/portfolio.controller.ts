@@ -21,6 +21,7 @@ import {
   ApiOkResponse,
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "src/core/auth/jwt.guard";
+import { Telemetry } from "src/observability/telemetry.decorator";
 import { PortfolioService } from "./services/portfolio.service";
 import { RebalancingService } from "./services/rebalancing.service";
 import { PerformanceAnalyticsService } from "./services/performance-analytics.service";
@@ -168,6 +169,12 @@ export class PortfolioController {
   // Optimization Endpoints
 
   @Post("portfolios/:portfolioId/optimize")
+  @Telemetry({
+    operation: "portfolio.optimize",
+    funnel: "portfolio_management",
+    step: "portfolio_optimize",
+    actorType: "user",
+  })
   @ApiOperation({ summary: "Run portfolio optimization" })
   @UseGuards(PortfolioOwnerGuard)
   async runOptimization(
