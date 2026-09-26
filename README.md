@@ -256,6 +256,80 @@ Fine-grained control over compute jobs with role-based access control:
 - Monitor job progress in real-time
 - Implement custom job orchestration workflows
 
+### Background Workers
+
+Delayed and retryable background jobs are managed via BullMQ:
+
+- `POST /api/v1/workers/jobs` - Enqueue a background job
+- `GET /api/v1/workers/jobs/:id` - Get job details by ID
+- `GET /api/v1/workers/jobs` - List jobs with optional status filter
+- `POST /api/v1/workers/jobs/:id/retry` - Retry a failed or dead-lettered job
+- `POST /api/v1/workers/jobs/:id/cancel` - Cancel a pending or active job
+- `GET /api/v1/workers/metrics` - Get worker metrics and job statistics
+
+**Local development:**
+
+```bash
+# Start Redis (required for BullMQ)
+docker run -d -p 6379:6379 redis:alpine
+
+# Start the application (workers start automatically)
+npm run start:dev
+```
+
+**Enqueuing a job:**
+
+```typescript
+POST /api/v1/workers/jobs
+{
+  "type": "webhook.delivery",
+  "payload": { "url": "https://example.com/webhook", "event": "loan.approved" },
+  "priority": "normal",
+  "delayMs": 5000
+}
+```
+
+**Features:**
+
+- Configurable retry policies per job type with exponential backoff
+- Dead-letter queue for jobs that exhaust retries
+- Job inspection and metrics endpoints
+- Correlation ID support for distributed tracing
+
+### Data Export
+
+Privacy-safe data exports with schema versioning and retention limits:
+
+- `POST /api/v1/exports` - Request a data export
+- `GET /api/v1/exports/:id` - Get export status and download URL
+- `GET /api/v1/exports` - List all exports for the authenticated user
+
+**Requesting an export:**
+
+```typescript
+POST /api/v1/exports
+{
+  "scope": "user_data",
+  "format": "json",
+  "schemaVersion": "1.0.0",
+  "retentionDays": 7
+}
+```
+
+**Export scopes:**
+
+- `user_data` - Non-sensitive user profile and preferences
+- `portfolio` - Portfolio holdings and performance history
+- `audit_log` - Audit trail entries for the user
+- `transaction_history` - Transaction history for the user
+
+**Features:**
+
+- Schema versioning for export format compatibility
+- Automatic expiration and cleanup of old exports
+- Privacy filters that strip sensitive fields (passwords, keys, etc.)
+- Authorization checks ensuring users can only access their own exports
+
 ## Configuration & deployment
 
 - Environment variables drive provider keys, DB endpoints, wallet signing keys, and feature flags.

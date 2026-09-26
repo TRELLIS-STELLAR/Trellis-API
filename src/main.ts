@@ -14,6 +14,7 @@ import * as Sentry from "@sentry/node";
 import { expressIntegration } from "@sentry/node";
 import { initSentry } from "./config/sentry";
 import { sentryBreadcrumbMiddleware } from "./common/middleware/sentry.middleware";
+import { AccessibilityMiddleware } from "./common/middleware/accessibility.middleware";
 
 async function bootstrap() {
   initSentry();
@@ -75,6 +76,9 @@ async function bootstrap() {
     new SanitizePipe(),
     createGlobalValidationPipe(),
   );
+
+  // Accessibility middleware
+  app.use(AccessibilityMiddleware);
 
   // CORS configuration with stricter settings
   app.enableCors(createCorsConfig(configService));

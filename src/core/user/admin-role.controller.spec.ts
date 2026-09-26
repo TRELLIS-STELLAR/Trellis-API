@@ -98,4 +98,16 @@ describe("AdminRoleController", () => {
       expect(userService.assignRole).toHaveBeenCalledWith("user-1", Role.USER);
     });
   });
+
+  describe("getRoleMatrix", () => {
+    it("returns role hierarchy, permissions, and capabilities", () => {
+      const matrix = controller.getRoleMatrix();
+      expect(matrix.hierarchy).toContain(Role.MAINTAINER);
+      expect(matrix.roles.length).toBe(Object.values(Role).length);
+      const adminEntry = matrix.roles.find((r) => r.role === Role.ADMIN);
+      expect(adminEntry?.capabilities.canManageUsers).toBe(true);
+      expect(adminEntry?.capabilities.canTrade).toBe(true);
+    });
+  });
 });
+

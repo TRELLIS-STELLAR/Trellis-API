@@ -11,20 +11,43 @@ All role values are **UPPERCASE** strings:
 
 | Role                  | Purpose                                                        |
 | --------------------- | -------------------------------------------------------------- |
-| `USER`                | Default, least-privileged role. Read-only baseline access.     |
-| `OPERATOR`            | Elevated operational access (supersedes `USER`).               |
+| `USER`                | Default, least-privileged role. Baseline access.               |
+| `OPERATOR`            | Elevated operational access (portfolio optimization, trade).   |
+| `MAINTAINER`          | Platform maintainer access (modules, metrics, reconciliation). |
 | `ADMIN`               | Full administrative access. Supersedes every other role.       |
 | `GOVERNANCE_OPERATOR` | Specialised governance role. Exact-match only (no hierarchy).  |
 | `KYC_OPERATOR`        | Specialised KYC/compliance role. Exact-match only.             |
+| `SERVICE_ACTOR`       | Automated service principal (oracle submitter, daemon tasks).  |
 
 ### Hierarchy
 
-`USER → OPERATOR → ADMIN` is a linear hierarchy: a higher role satisfies any
+`USER → OPERATOR → MAINTAINER → ADMIN` is a linear hierarchy: a higher role satisfies any
 requirement for a lower one. `ADMIN` supersedes everything.
 
-`GOVERNANCE_OPERATOR` and `KYC_OPERATOR` sit **outside** the linear hierarchy —
+`GOVERNANCE_OPERATOR`, `KYC_OPERATOR`, and `SERVICE_ACTOR` sit **outside** the linear hierarchy —
 they require an exact match and do not inherit from or grant each other. Only
 `ADMIN` supersedes them. See `hasRole()` in the enum file for the exact logic.
+
+### Granular Permissions
+
+The service defines a granular `Permission` enum covering domain operations:
+- **User & Security**: `user:read`, `user:write`, `user:manage`, `role:assign`
+- **Portfolio & Trading**: `portfolio:read`, `portfolio:write`, `portfolio:optimize`, `trade:read`, `trade:execute`
+- **Payments & Reconciliation**: `payment:create`, `payment:process`, `payment:refund`, `reconciliation:view`, `reconciliation:run`
+- **Oracle & Plugins**: `oracle:read`, `oracle:submit`, `oracle:verify`, `module:read`, `module:manage`
+- **Monitoring & System**: `metrics:read`, `system:maintenance`, `alerts:manage`, `rate_limit:manage`
+- **Specialised**: `kyc:review`, `governance:vote`, `service:sync`
+
+Permissions are mapped to canonical roles via `ROLE_PERMISSIONS` and enforced via `PermissionsGuard` and the `@RequirePermissions(...)` decorator.
+
+### UI Boundaries & Capabilities
+
+Frontends consume the user's capabilities via `GET /auth/me/capabilities` or `GET /admin/roles/matrix` to dynamically show, hide, or disable UI elements based on:
+```ts
+const { capabilities, allowedActions } = evaluateUiPolicies(currentUserRole);
+```
+**Security Invariant**: UI element gating is strictly a presentation convenience. All mutation endpoints and privileged operations are guarded on the server by `RolesGuard` and `PermissionsGuard`. Bypassing client-side UI restrictions directly triggers a `401 Unauthorized` or `403 Forbidden` response.
+
 
 ### Conflicting roles
 
