@@ -128,6 +128,8 @@ import { NotificationAnalytics } from "./notifications/entities/notification-ana
 import { WebhookModule } from "./infrastructure/webhooks/webhook.module";
 // Modules – file upload
 import { FileUploadModule } from "./infrastructure/file-upload/file-upload.module";
+// Modules – workers
+import { WorkersModule } from "./infrastructure/workers/workers.module";
 
 // Guards
 import { APP_FILTER } from "@nestjs/core";
@@ -145,6 +147,7 @@ import { GraphqlGatewayModule } from "./graphql/graphql.module";
 import { ModuleRegistryModule } from "./modules/registry/module-registry.module";
 import { ModuleEntity } from "./modules/registry/entities/module.entity";
 import { TenantModuleState } from "./modules/registry/entities/tenant-module-state.entity";
+import { AccessibilityGuard } from "./common/guard/accessibility.guard";
 // Grantfox OAuth entity
 import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
 
@@ -275,6 +278,8 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
     GraphqlGatewayModule,
     WebhookModule,
     FileUploadModule,
+    WorkersModule,
+    ExportModule,
     ModuleRegistryModule,
     CacheModule,
     RateLimitingModule.forRoot(),
@@ -322,7 +327,7 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
     },
     {
       provide: APP_GUARD,
-      useClass: ImpersonationGuard,
+      useClass: AccessibilityGuard,
     },
   ],
 })

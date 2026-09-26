@@ -167,6 +167,61 @@ describe("RolesGuard", () => {
     });
   });
 
+  describe("maintainer and service_actor roles", () => {
+    it("authorizes a MAINTAINER for OPERATOR-required route", () => {
+      jest
+        .spyOn(reflector, "getAllAndOverride")
+        .mockReturnValue([Role.OPERATOR]);
+      const context = createMockContext({
+        address: "0x123",
+        role: Role.MAINTAINER,
+      });
+      expect(guard.canActivate(context)).toBe(true);
+    });
+
+    it("denies a MAINTAINER on ADMIN-required route", () => {
+      jest.spyOn(reflector, "getAllAndOverride").mockReturnValue([Role.ADMIN]);
+      const context = createMockContext({
+        address: "0x123",
+        role: Role.MAINTAINER,
+      });
+      expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+    });
+
+    it("authorizes an ADMIN for MAINTAINER-required route", () => {
+      jest
+        .spyOn(reflector, "getAllAndOverride")
+        .mockReturnValue([Role.MAINTAINER]);
+      const context = createMockContext({
+        address: "0x123",
+        role: Role.ADMIN,
+      });
+      expect(guard.canActivate(context)).toBe(true);
+    });
+
+    it("authorizes a SERVICE_ACTOR for SERVICE_ACTOR route", () => {
+      jest
+        .spyOn(reflector, "getAllAndOverride")
+        .mockReturnValue([Role.SERVICE_ACTOR]);
+      const context = createMockContext({
+        address: "0x123",
+        role: Role.SERVICE_ACTOR,
+      });
+      expect(guard.canActivate(context)).toBe(true);
+    });
+
+    it("denies a standard USER on SERVICE_ACTOR route", () => {
+      jest
+        .spyOn(reflector, "getAllAndOverride")
+        .mockReturnValue([Role.SERVICE_ACTOR]);
+      const context = createMockContext({
+        address: "0x123",
+        role: Role.USER,
+      });
+      expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+    });
+  });
+
   describe("reflector integration", () => {
     it("should check both handler and class for roles metadata", () => {
       const spy = jest
@@ -181,3 +236,4 @@ describe("RolesGuard", () => {
     });
   });
 });
+

@@ -26,6 +26,7 @@ import {
   SubmittedTransaction,
 } from "./interfaces/payment-processor.interface";
 import { PaymentsService } from "./payments.service";
+import { Telemetry } from "src/observability/telemetry.decorator";
 
 /**
  * Stellar-specific convenience API matching the endpoints named in the feature
@@ -58,6 +59,12 @@ export class StellarPaymentsController {
 
   @Post("create")
   @HttpCode(HttpStatus.CREATED)
+  @Telemetry({
+    operation: "payment.create",
+    funnel: "payment_settlement",
+    step: "payment_create",
+    actorType: "user",
+  })
   @ApiOperation({ summary: "Create (but do not submit) a Stellar payment" })
   createPayment(@Body() dto: CreatePaymentDto): Promise<CreatedPayment> {
     return this.paymentsService.createPayment(dto, STELLAR_PROCESSOR_NAME);
@@ -65,6 +72,12 @@ export class StellarPaymentsController {
 
   @Post("submit")
   @HttpCode(HttpStatus.OK)
+  @Telemetry({
+    operation: "payment.process",
+    funnel: "payment_settlement",
+    step: "payment_submit",
+    actorType: "user",
+  })
   @ApiOperation({
     summary:
       "Submit a Stellar payment — signs server-side when given the unsigned XDR, or submits a client-signed payload",

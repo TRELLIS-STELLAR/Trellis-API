@@ -15,7 +15,12 @@ import {
 } from "@nestjs/swagger";
 import { UserService } from "./user.service";
 import { AssignRoleDto } from "./dto/assign-role.dto";
-import { Role } from "src/common/guard/roles.enum";
+import {
+  Role,
+  ROLE_HIERARCHY,
+  getRolePermissions,
+  getUiCapabilities,
+} from "src/common/guard/roles.enum";
 import { Roles } from "src/common/guard/roles.decorator";
 import { RolesGuard } from "src/common/guard/roles.guard";
 import { JwtAuthGuard } from "src/core/auth/guards/jwt-auth.guard";
@@ -48,6 +53,24 @@ export class AdminRoleController {
   @ApiResponse({ status: 200, description: "List of assignable roles" })
   listRoles(): { roles: Role[] } {
     return { roles: Object.values(Role) };
+  }
+
+  @Get("roles/matrix")
+  @ApiOperation({
+    summary: "Get roles and permissions matrix",
+    description:
+      "Returns the capabilities, permissions, and hierarchy for every canonical role.",
+  })
+  @ApiResponse({ status: 200, description: "Role matrix and capabilities" })
+  getRoleMatrix() {
+    return {
+      hierarchy: ROLE_HIERARCHY,
+      roles: Object.values(Role).map((role) => ({
+        role,
+        permissions: getRolePermissions(role),
+        capabilities: getUiCapabilities(role),
+      })),
+    };
   }
 
   @Get("users/:id/role")
