@@ -11,6 +11,9 @@ import { OperationalHealthService } from "./operational-health.service";
 import { StellarTransaction } from "../reconciliation/entities/stellar-transaction.entity";
 import { ReconciliationInvoice } from "../reconciliation/entities/reconciliation-invoice.entity";
 import { WebhookDeadLetter } from "../infrastructure/webhooks/entities/webhook-dead-letter.entity";
+import { PartialFailure } from "./entities/partial-failure.entity";
+import { PartialFailureController } from "./partial-failure.controller";
+import { PartialFailureService } from "./partial-failure.service";
 
 /**
  * Comprehensive monitoring & metrics module.
@@ -29,15 +32,16 @@ import { WebhookDeadLetter } from "../infrastructure/webhooks/entities/webhook-d
 @Module({
   imports: [
     ConfigModule,
-    TypeOrmModule.forFeature([StellarTransaction, ReconciliationInvoice, WebhookDeadLetter]),
+    TypeOrmModule.forFeature([StellarTransaction, ReconciliationInvoice, WebhookDeadLetter, PartialFailure]),
   ],
-  controllers: [MonitoringController, OperationalHealthController],
+  controllers: [MonitoringController, OperationalHealthController, PartialFailureController],
   providers: [
     MonitoringMetricsService,
     SystemMetricsService,
     AlertRulesService,
     MetricsHistoryService,
     OperationalHealthService,
+    PartialFailureService,
   ],
   exports: [
     MonitoringMetricsService,
@@ -45,6 +49,7 @@ import { WebhookDeadLetter } from "../infrastructure/webhooks/entities/webhook-d
     AlertRulesService,
     MetricsHistoryService,
     OperationalHealthService,
+    PartialFailureService,
   ],
 })
 export class MonitoringModule implements OnModuleInit {
