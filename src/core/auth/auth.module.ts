@@ -35,6 +35,8 @@ import { User } from "../user/entities/user.entity";
 import { EmailVerification } from "./entities/email-verification.entity";
 import { Wallet } from "./entities/wallet.entity";
 import { RefreshToken, TwoFactorAuth } from "./entities/auth.entity";
+import { ImpersonationService } from "./impersonation.service";
+import { ImpersonationController } from "./impersonation.controller";
 
 /**
  * AuthModule — Authentication Architecture Overview
@@ -85,7 +87,7 @@ import { RefreshToken, TwoFactorAuth } from "./entities/auth.entity";
     ]),
     AuditModule,
   ],
-  controllers: [AuthController, OAuthController, GrantfoxController],
+  controllers: [AuthController, OAuthController, GrantfoxController, ImpersonationController],
   providers: [
     // Legacy services (for backward compatibility)
     AuthService,
@@ -111,6 +113,7 @@ import { RefreshToken, TwoFactorAuth } from "./entities/auth.entity";
     StrategyAuthGuard,
     AdminTwoFactorGuard,
     GrantfoxOAuthService,
+    ImpersonationService,
   ],
   exports: [
     // Legacy exports
@@ -133,6 +136,7 @@ import { RefreshToken, TwoFactorAuth } from "./entities/auth.entity";
     ApiKeyStrategy,
     StrategyAuthGuard,
     GrantfoxOAuthService,
+    ImpersonationService,
   ],
 })
 export class AuthModule implements OnModuleInit {

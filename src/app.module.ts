@@ -52,9 +52,13 @@ import { EmailModule } from "./email/email.module";
 import { LoggerModule } from "./logging/logger.module";
 // Modules – cache
 import { CacheModule } from "./common/cache/cache.module";
+// Modules – idempotency (replay protection for mutating requests)
+import { IdempotencyModule } from "./common/idempotency/idempotency.module";
 import { BillingModule } from "./billing/billing.module";
 // Modules – payments (plugin system)
 import { PaymentsModule } from "./payments/payments.module";
+// Modules – integration sandbox mode (deterministic fakes; opt-in)
+import { SandboxModule } from "./sandbox/sandbox.module";
 import { RateLimitingModule } from "./rate-limiting/rate-limiting.module";
 import { ReconciliationModule } from "./reconciliation/reconciliation.module";
 // Modules – notifications
@@ -75,6 +79,7 @@ import { AgentEvent } from "./infrastructure/audit/entities/agent-event.entity";
 import { ComputeResult } from "./infrastructure/audit/entities/compute-result.entity";
 import { ProvenanceRecord } from "./infrastructure/audit/entities/provenance-record.entity";
 import { OracleSubmission } from "./infrastructure/audit/entities/oracle-submission.entity";
+import { SensitiveActionEvent } from "./infrastructure/audit/entities/sensitive-action-event.entity";
 
 // Portfolio entities
 import { Portfolio } from "./investment/portfolio/entities/portfolio.entity";
@@ -140,6 +145,7 @@ import { APP_FILTER } from "@nestjs/core";
 import { DistributedRateLimitGuard } from "./rate-limiting/rate-limiting.guard";
 import { RolesGuard } from "./common/guard/roles.guard";
 import { KycGuard } from "./common/guard/kyc.guard";
+import { ImpersonationGuard } from "./core/auth/guards/impersonation.guard";
 import { StrategyAuthGuard } from "./core/auth/guards/strategy-auth.guard";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { SubmissionVerifierService } from "./blockchain/oracle/submission-verifier.service";
@@ -148,11 +154,19 @@ import { LoggingMiddleware } from "./common/middleware/logging.middleware";
 import { ProfilingMiddleware } from "./profiling/profiling.middleware";
 import { GraphqlGatewayModule } from "./graphql/graphql.module";
 import { ModuleRegistryModule } from "./modules/registry/module-registry.module";
+import { QuotaAdminController } from "./common/quota/quota-admin.controller";
+import { VersioningModule } from "./common/versioning/versioning.module";
+// Modules referenced in `imports[]` that were never imported.
+import { ExportModule } from "./infrastructure/export/export.module";
+import { QuotaBudgetModule } from "./common/quota/quota-budget.module";
+import { ApiDeprecationMiddleware } from "./common/versioning/api-deprecation.middleware";
 import { ModuleEntity } from "./modules/registry/entities/module.entity";
 import { TenantModuleState } from "./modules/registry/entities/tenant-module-state.entity";
 import { AccessibilityGuard } from "./common/guard/accessibility.guard";
 // Grantfox OAuth entity
 import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
+// Idempotency entity
+import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-record.entity";
 
 @Module({
   imports: [
@@ -209,6 +223,7 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
             ComputeResult,
             ProvenanceRecord,
             OracleSubmission,
+            SensitiveActionEvent,
             Portfolio,
             PortfolioAsset,
             Transaction,
@@ -239,6 +254,7 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
             ReconciliationAudit,
             ReconciliationInvoice,
             StellarTransaction,
+            IdempotencyRecord,
             Notification,
             NotificationTemplate,
             NotificationPreference,
@@ -284,7 +300,10 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
     WorkersModule,
     ExportModule,
     ModuleRegistryModule,
+    QuotaBudgetModule,
+    VersioningModule,
     CacheModule,
+    IdempotencyModule,
     RateLimitingModule.forRoot(),
     LoggerModule.forRootAsync({
       inject: [ConfigService],
@@ -300,13 +319,14 @@ import { GrantfoxToken } from "./core/auth/entities/grantfox-token.entity";
     }),
     BillingModule,
     PaymentsModule,
+    SandboxModule,
     ReconciliationModule,
     NotificationModule,
     DisasterRecoveryModule,
     ImportModule,
   ],
 
-  controllers: [AppController],
+  controllers: [AppController, QuotaAdminController],
 
   providers: [
     AppService,
@@ -348,7 +368,8 @@ export class AppModule implements NestModule, OnModuleInit {
     consumer
       .apply(
         (req, res, next) => loggingMiddleware.use(req, res, next),
-        ProfilingMiddleware
+        ProfilingMiddleware,
+        ApiDeprecationMiddleware,
       )
       .forRoutes("*");
   }
