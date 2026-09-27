@@ -61,6 +61,7 @@ import { PaymentsModule } from "./payments/payments.module";
 import { SandboxModule } from "./sandbox/sandbox.module";
 import { RateLimitingModule } from "./rate-limiting/rate-limiting.module";
 import { ReconciliationModule } from "./reconciliation/reconciliation.module";
+import { SoftDeleteCascadeSubscriber } from "./common/database/subscribers/soft-delete-cascade.subscriber";
 // Modules – notifications
 import { NotificationModule } from "./notifications/notification.module";
 
@@ -269,6 +270,11 @@ import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-rec
             GrantfoxToken,
             MaintainerAggregateMetric,
           ],
+          // Issue #141: the soft-delete cascade subscriber has to be listed
+          // here for TypeORM to register it. It ships with an empty target
+          // list, so registering it changes nothing until cascade targets are
+          // declared deliberately.
+          subscribers: [SoftDeleteCascadeSubscriber],
           synchronize: true,
           logging: true,
           ssl: isProduction ? { rejectUnauthorized: false } : false,
