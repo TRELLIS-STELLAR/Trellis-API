@@ -159,6 +159,10 @@ import { QuotaAdminController } from "./common/quota/quota-admin.controller";
 import { VersioningModule } from "./common/versioning/versioning.module";
 // Modules referenced in `imports[]` that were never imported.
 import { ExportModule } from "./infrastructure/export/export.module";
+// Modules – snapshot export (issue #119)
+import { SnapshotModule } from "./snapshot/snapshot.module";
+// Modules – recovery center (issue #122)
+import { RecoveryModule } from "./recovery/recovery.module";
 import { QuotaBudgetModule } from "./common/quota/quota-budget.module";
 import { ApiDeprecationMiddleware } from "./common/versioning/api-deprecation.middleware";
 import { ModuleEntity } from "./modules/registry/entities/module.entity";
@@ -303,6 +307,8 @@ import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-rec
     ExportModule,
     ModuleRegistryModule,
     QuotaBudgetModule,
+    SnapshotModule,
+    RecoveryModule,
     VersioningModule,
     CacheModule,
     IdempotencyModule,
