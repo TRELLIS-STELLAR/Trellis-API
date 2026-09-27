@@ -97,7 +97,7 @@ export class DashboardGateway
       }
 
       // Register connection in connection manager (with empty subscriptions array)
-      await this.connectionManager.registerConnection(client.id, {
+      const registered = await this.connectionManager.registerConnection(client.id, {
         userId,
         clientId: client.id,
         connectedAt: new Date(),
@@ -105,6 +105,14 @@ export class DashboardGateway
         isAlive: true,
         subscriptions: [], // Initialize with empty subscriptions
       });
+      if (!registered) {
+        client.emit("error", {
+          code: "MAX_CONNECTIONS_EXCEEDED",
+          message: "Maximum WebSocket connections for this user exceeded",
+        });
+        client.disconnect(true);
+        return;
+      }
 
       // Join user room for broadcasting
       client.join(`user:${userId}`);

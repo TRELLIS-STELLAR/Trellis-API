@@ -71,6 +71,23 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   CORS_ORIGIN: string = "http://localhost:3001";
 
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === true || value === "true")
+  ENABLE_PROFILING?: boolean = false;
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => parseInt(value, 10) || 5)
+  @Min(1)
+  MAX_WS_CONNECTIONS_PER_USER?: number = 5;
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => parseFloat(value) || 100)
+  @Min(0)
+  MAX_GAS_FEE_GWEI?: number = 100;
+
   @IsString()
   LOG_LEVEL: string = "info";
 
