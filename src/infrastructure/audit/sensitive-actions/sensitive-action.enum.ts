@@ -17,6 +17,7 @@ export enum SensitiveActionScope {
   DATA_EXPORT = "data-export",
   PROTOCOL_CONFIG = "protocol-config",
   COMPLIANCE = "compliance",
+  PORTFOLIO = "portfolio",
 }
 
 export enum SensitiveAction {
@@ -67,6 +68,9 @@ export enum SensitiveAction {
   FEATURE_FLAG_CHANGED = "config.feature-flag.changed",
   EMERGENCY_PAUSE_TOGGLED = "config.emergency-pause.toggled",
   CONTRACT_UPGRADED = "config.contract.upgraded",
+
+  // Portfolio ownership and value
+  PORTFOLIO_RECORD_CHANGED = "portfolio.record.changed",
 }
 
 export interface SensitiveActionDefinition {
@@ -272,6 +276,12 @@ export const SENSITIVE_ACTION_CATALOGUE: Record<
     scope: SensitiveActionScope.PROTOCOL_CONFIG,
     description: "A contract was upgraded or its WASM hash changed.",
     reasonRequired: true,
+    capturesState: true,
+  },
+  [SensitiveAction.PORTFOLIO_RECORD_CHANGED]: {
+    scope: SensitiveActionScope.PORTFOLIO,
+    description: "A portfolio or holding affecting ownership or value changed.",
+    reasonRequired: false,
     capturesState: true,
   },
 };
