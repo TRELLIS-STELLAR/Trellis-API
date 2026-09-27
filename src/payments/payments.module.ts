@@ -1,5 +1,11 @@
 import { HttpModule } from "@nestjs/axios";
-import { Module, OnModuleInit } from "@nestjs/common";
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  OnModuleInit,
+  RequestMethod,
+} from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { DiscoveryModule, DiscoveryService, Reflector } from "@nestjs/core";
 import { TypeOrmModule } from "@nestjs/typeorm";
@@ -17,7 +23,11 @@ import { PaymentsController } from "./payments.controller";
 import { PaymentsService } from "./payments.service";
 import { PaymentProcessorRegistry } from "./registry/payment-processor.registry";
 import { StellarPaymentsController } from "./stellar-payments.controller";
-import { PaymentOperation } from "./entities/payment-operation.entity";
+import { PaymentWebhookService } from "./webhooks/payment-webhook.service";
+import { PaymentWebhooksController } from "./webhooks/payment-webhooks.controller";
+import { RawBodyMiddleware } from "./webhooks/raw-body.middleware";
+import { WebhookSignatureGuard } from "./webhooks/webhook-signature.guard";
+import { WebhookSignatureService } from "./webhooks/webhook-signature.service";
 
 /**
  * Wires the payment-processor plugin system.
@@ -32,21 +42,25 @@ import { PaymentOperation } from "./entities/payment-operation.entity";
  * so tests can override it with an in-memory fake (no network I/O offline).
  */
 @Module({
-  imports: [
-    ConfigModule,
-    HttpModule,
-    DiscoveryModule,
-    TypeOrmModule.forFeature([PaymentOperation]),
+  imports: [ConfigModule, HttpModule, DiscoveryModule],
+  // Static segments MUST precede dynamic ones: both
+  // `payments/webhooks/:provider` and `payments/stellar/{submit,status}` would
+  // otherwise be shadowed by the generic `payments/:id/{submit,status}` routes
+  // (Express matches in registration order). See the notes in
+  // stellar-payments.controller.ts and webhooks/payment-webhooks.controller.ts.
+  controllers: [
+    PaymentWebhooksController,
+    StellarPaymentsController,
+    PaymentsController,
   ],
-  // StellarPaymentsController MUST precede PaymentsController: its static
-  // `payments/stellar/{submit,status}` routes would otherwise be shadowed by the
-  // generic dynamic `payments/:id/{submit,status}` routes (Express matches in
-  // registration order). See the note in stellar-payments.controller.ts.
-  controllers: [StellarPaymentsController, PaymentsController],
   providers: [
     PaymentProcessorRegistry,
     PaymentProcessorFactory,
     PaymentsService,
+    WebhookSignatureService,
+    PaymentWebhookService,
+    WebhookSignatureGuard,
+    RawBodyMiddleware,
     StellarAdapter,
     GrantfoxAdapter,
     {
@@ -63,12 +77,25 @@ import { PaymentOperation } from "./entities/payment-operation.entity";
   ],
   exports: [PaymentProcessorRegistry, PaymentProcessorFactory, PaymentsService],
 })
-export class PaymentsModule implements OnModuleInit {
+export class PaymentsModule implements OnModuleInit, NestModule {
   constructor(
     private readonly discoveryService: DiscoveryService,
     private readonly reflector: Reflector,
     private readonly registry: PaymentProcessorRegistry,
   ) {}
+
+  /**
+   * Preserve the exact bytes of a webhook delivery before any guard runs.
+   *
+   * Scoped to the webhook route so the rest of the API keeps its parsed body
+   * and no other endpoint pays the cost of retaining a second copy.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RawBodyMiddleware).forRoutes({
+      path: "payments/webhooks/:provider",
+      method: RequestMethod.POST,
+    });
+  }
 
   /**
    * Discover every provider tagged `@RegisterPaymentProcessor()` and register

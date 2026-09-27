@@ -21,6 +21,7 @@ import { AppService } from "./app.service";
 import { AuthModule } from "./core/auth/auth.module";
 import { UserModule } from "./core/user/user.module";
 import { ProfileModule } from "./core/profile/profile.module";
+import { InvitationModule } from "./core/invitation/invitation.module";
 
 // Modules – infrastructure
 import { AuditModule } from "./infrastructure/audit/audit.module";
@@ -62,6 +63,7 @@ import { PaymentOperation } from "./payments/entities/payment-operation.entity";
 import { SandboxModule } from "./sandbox/sandbox.module";
 import { RateLimitingModule } from "./rate-limiting/rate-limiting.module";
 import { ReconciliationModule } from "./reconciliation/reconciliation.module";
+import { SoftDeleteCascadeSubscriber } from "./common/database/subscribers/soft-delete-cascade.subscriber";
 // Modules – notifications
 import { NotificationModule } from "./notifications/notification.module";
 
@@ -69,6 +71,7 @@ import { NotificationModule } from "./notifications/notification.module";
 import { User } from "./core/user/entities/user.entity";
 import { EmailVerification } from "./core/auth/entities/email-verification.entity";
 import { Wallet } from "./core/auth/entities/wallet.entity";
+import { Invitation } from "./core/invitation/entities/invitation.entity";
 
 // Oracle entities
 import { SignedPayload } from "./blockchain/oracle/entities/signed-payload.entity";
@@ -161,6 +164,10 @@ import { QuotaAdminController } from "./common/quota/quota-admin.controller";
 import { VersioningModule } from "./common/versioning/versioning.module";
 // Modules referenced in `imports[]` that were never imported.
 import { ExportModule } from "./infrastructure/export/export.module";
+// Modules – snapshot export (issue #119)
+import { SnapshotModule } from "./snapshot/snapshot.module";
+// Modules – recovery center (issue #122)
+import { RecoveryModule } from "./recovery/recovery.module";
 import { QuotaBudgetModule } from "./common/quota/quota-budget.module";
 import { ApiDeprecationMiddleware } from "./common/versioning/api-deprecation.middleware";
 import { ModuleEntity } from "./modules/registry/entities/module.entity";
@@ -267,8 +274,13 @@ import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-rec
             NotificationAnalytics,
             GrantfoxToken,
             MaintainerAggregateMetric,
-            PaymentOperation,
+            Invitation,
           ],
+          // Issue #141: the soft-delete cascade subscriber has to be listed
+          // here for TypeORM to register it. It ships with an empty target
+          // list, so registering it changes nothing until cascade targets are
+          // declared deliberately.
+          subscribers: [SoftDeleteCascadeSubscriber],
           synchronize: true,
           logging: true,
           ssl: isProduction ? { rejectUnauthorized: false } : false,
@@ -287,6 +299,7 @@ import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-rec
     AuthModule,
     UserModule,
     ProfileModule,
+    InvitationModule,
     AuditModule,
     OracleModule,
     PortfolioModule,
@@ -307,6 +320,8 @@ import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-rec
     ExportModule,
     ModuleRegistryModule,
     QuotaBudgetModule,
+    SnapshotModule,
+    RecoveryModule,
     VersioningModule,
     CacheModule,
     IdempotencyModule,
