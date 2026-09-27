@@ -21,6 +21,19 @@ export interface QueryPerformanceMetrics {
   recommendations: string[];
 }
 
+export interface IndexRecommendation {
+  tableName: string;
+  columns: string[];
+  indexName: string;
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  reason: string;
+  /**
+   * Raw DDL for indexes the default `CREATE INDEX ... (columns)` form cannot
+   * express, such as `USING gin (... gin_trgm_ops)` or an expression index.
+   */
+  ddl?: string;
+}
+
 @Injectable()
 export class DatabaseIndexService {
   constructor(private readonly dataSource: DataSource) {}
@@ -108,11 +121,17 @@ export class DatabaseIndexService {
   async createRecommendedIndexes(): Promise<void> {
     const recommendations = await this.generateIndexRecommendations();
 
+    // Trigram recommendations carry `USING gin (...)`, which needs pg_trgm
+    // present first (the migration installs it; this covers a database that
+    // was restored without the extension).
+    await this.ensureTrigramSearchSupport();
+
     for (const recommendation of recommendations) {
       if (recommendation.priority === "HIGH") {
         try {
           await this.dataSource.query(
-            `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${recommendation.indexName} ON ${recommendation.tableName} (${recommendation.columns.join(", ")});`,
+            recommendation.ddl ??
+              `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${recommendation.indexName} ON ${recommendation.tableName} (${recommendation.columns.join(", ")});`,
           );
           console.log(`Created index: ${recommendation.indexName}`);
         } catch (error) {
@@ -242,7 +261,7 @@ export class DatabaseIndexService {
     return recommendations;
   }
 
-  private async generateIndexRecommendations(): Promise<any[]> {
+  private async generateIndexRecommendations(): Promise<IndexRecommendation[]> {
     // This would analyze query patterns and suggest new indexes
     // For now, return some common recommendations based on the schema
     return [
@@ -268,7 +287,55 @@ export class DatabaseIndexService {
         priority: "MEDIUM",
         reason: "Queries often filter by submission status and time",
       },
+      {
+        tableName: "portfolio_assets",
+        columns: ["ticker"],
+        indexName: "IDX_portfolio_assets_ticker_trgm",
+        priority: "HIGH",
+        reason:
+          "Typo-tolerant asset lookup compares LOWER(ticker) with similarity(); a GIN trigram index keeps the fallback from sequential-scanning portfolio_assets",
+        ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_portfolio_assets_ticker_trgm" ON "portfolio_assets" USING gin ("ticker" gin_trgm_ops);`,
+      },
+      {
+        tableName: "portfolio_assets",
+        columns: ["name"],
+        indexName: "IDX_portfolio_assets_name_trgm",
+        priority: "HIGH",
+        reason:
+          "Asset names are matched with the same similarity() fallback as tickers",
+        ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_portfolio_assets_name_trgm" ON "portfolio_assets" USING gin ("name" gin_trgm_ops);`,
+      },
+      {
+        tableName: "portfolio_assets",
+        columns: ["ticker"],
+        indexName: "IDX_portfolio_assets_ticker_lower",
+        priority: "HIGH",
+        reason:
+          "The exact/prefix stage matches on LOWER(ticker), which the default btree on the raw column cannot serve",
+        ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_portfolio_assets_ticker_lower" ON "portfolio_assets" (LOWER("ticker"));`,
+      },
     ];
+  }
+
+  /**
+   * Install the extensions the fuzzy-search recommendations depend on.
+   *
+   * Mirrors the migration that owns these indexes: the search module degrades
+   * to in-process ranking when the extensions are absent, but the recommended
+   * GIN indexes cannot be created without pg_trgm, so a deployment that wants
+   * database-side ranking has to have them.
+   */
+  async ensureTrigramSearchSupport(): Promise<boolean> {
+    try {
+      await this.dataSource.query(`CREATE EXTENSION IF NOT EXISTS "pg_trgm"`);
+      await this.dataSource.query(
+        `CREATE EXTENSION IF NOT EXISTS "fuzzystrmatch"`,
+      );
+      return true;
+    } catch (error) {
+      console.warn("Could not enable pg_trgm/fuzzystrmatch extensions:", error);
+      return false;
+    }
   }
 
   private async ensurePgStatStatements(): Promise<void> {

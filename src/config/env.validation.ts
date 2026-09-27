@@ -573,6 +573,27 @@ export class EnvironmentVariables {
   @IsString()
   PAYMENTS_DEFAULT_PROCESSOR?: string;
 
+  /** Stripe signing secret (`whsec_...`) for /payments/webhooks/stripe. */
+  @IsOptional()
+  @IsString()
+  STRIPE_WEBHOOK_SECRET?: string;
+
+  /** Coinbase Commerce shared secret for /payments/webhooks/coinbase. */
+  @IsOptional()
+  @IsString()
+  COINBASE_WEBHOOK_SECRET?: string;
+
+  /** Shared secret for the generic HMAC scheme (/payments/webhooks/generic). */
+  @IsOptional()
+  @IsString()
+  PAYMENTS_WEBHOOK_SECRET?: string;
+
+  /** Accepted clock skew, in seconds, for signed webhook timestamps. */
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => parseInt(value, 10) || 300)
+  PAYMENTS_WEBHOOK_TOLERANCE_SECONDS?: number = 300;
+
   /** Stellar Horizon endpoint. Default: https://horizon-testnet.stellar.org */
   @IsOptional()
   @IsString()
