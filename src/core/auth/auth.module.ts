@@ -38,6 +38,9 @@ import { RefreshToken, TwoFactorAuth } from "./entities/auth.entity";
 import { ImpersonationService } from "./impersonation.service";
 import { ImpersonationController } from "./impersonation.controller";
 
+import { BullModule } from "@nestjs/bull";
+import { AuthEmailProcessor } from "./email-processor.service";
+
 /**
  * AuthModule — Authentication Architecture Overview
  *
@@ -85,6 +88,19 @@ import { ImpersonationController } from "./impersonation.controller";
       SocialAccount,
       GrantfoxToken,
     ]),
+    BullModule.registerQueueAsync({
+      name: "auth-email",
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        redis: {
+          host: configService.get<string>("REDIS_HOST", "localhost"),
+          port: configService.get<number>("REDIS_PORT", 6379),
+          password: configService.get<string>("REDIS_PASSWORD"),
+        },
+        defaultJobOptions: { removeOnComplete: 100, removeOnFail: 500 },
+      }),
+    }),
     AuditModule,
   ],
   controllers: [AuthController, OAuthController, GrantfoxController, ImpersonationController],
@@ -94,6 +110,7 @@ import { ImpersonationController } from "./impersonation.controller";
     ChallengeService,
     WalletAuthService,
     EmailService,
+    AuthEmailProcessor,
     EmailLinkingService,
     RecoveryService,
     SessionRecoveryService,
