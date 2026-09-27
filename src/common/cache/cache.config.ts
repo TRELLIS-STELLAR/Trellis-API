@@ -1,4 +1,12 @@
 /**
+ * Sentinel node configuration for Redis Sentinel mode.
+ */
+export interface SentinelNodeConfig {
+  host: string;
+  port: number;
+}
+
+/**
  * Configuration interface for the cache module.
  *
  * All fields are optional — sensible defaults are applied in
@@ -26,6 +34,18 @@ export interface CacheConfig {
 
   /** In-memory cache instance for fallback when Redis is unavailable. */
   memoryCache?: Map<string, { value: string; expiresAt: number }>;
+
+  /** Redis Sentinel nodes for high-availability failover. If set, Sentinel mode is enabled. */
+  sentinels?: SentinelNodeConfig[];
+
+  /** Redis Sentinel service name (master name). Required when sentinels is set. */
+  sentinelName?: string;
+
+  /** Enable Redis Cluster mode (alternative to Sentinel). Requires cluster node endpoints. */
+  enableCluster?: boolean;
+
+  /** Redis Cluster nodes array when cluster mode is enabled. */
+  clusterNodes?: Array<{ host: string; port: number }>;
 }
 
 /** Default configuration values. */
