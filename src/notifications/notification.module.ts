@@ -30,11 +30,14 @@ import { WebhookNotificationProvider } from './providers/webhook-notification.pr
 
 // Gateway & Controller
 import { NotificationGateway } from './websocket/notification.gateway';
+import { ScheduleModule } from '@nestjs/schedule';
+import { NotificationDigestService } from './services/notification-digest.service';
 import { NotificationController } from './notification.controller';
 
 @Module({
   imports: [
     ConfigModule,
+    ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([
       Notification,
       NotificationTemplate,
@@ -87,6 +90,7 @@ import { NotificationController } from './notification.controller';
 
     // WebSocket gateway
     NotificationGateway,
+    NotificationDigestService,
 
     // Lifecycle events listener
     LifecycleNotificationListener,
@@ -100,6 +104,7 @@ import { NotificationController } from './notification.controller';
     NotificationAnalyticsService,
     NotificationQueueService,
     NotificationGateway,
+    NotificationDigestService,
   ],
 })
 export class NotificationModule {}
