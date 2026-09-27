@@ -62,6 +62,7 @@ const STRUCTURED_MATCH_RANK_SQL =
 
 export interface AssetSearchInput {
   query: string;
+  userId: string;
   portfolioId?: string;
   limit: number;
   minSimilarity?: number;
@@ -90,7 +91,10 @@ export class AssetSearchService {
     private readonly assets: Repository<PortfolioAsset>,
   ) {}
 
-  async search(dto: AssetSearchQueryDto): Promise<AssetSearchResponse> {
+  async search(
+    dto: AssetSearchQueryDto,
+    userId = "",
+  ): Promise<AssetSearchResponse> {
     const query = normalizeAssetQuery(dto?.q);
     const limit = this.clampLimit(dto?.limit);
 
@@ -106,6 +110,7 @@ export class AssetSearchService {
 
     const structured = await this.searchStructured(
       query,
+      userId,
       dto?.portfolioId,
       limit,
     );
@@ -123,6 +128,7 @@ export class AssetSearchService {
 
     const tolerant = await this.searchTolerant({
       query,
+      userId,
       portfolioId: dto?.portfolioId,
       limit: limit - structured.length,
       minSimilarity: dto?.minSimilarity ?? DEFAULT_MIN_SIMILARITY,
@@ -147,6 +153,7 @@ export class AssetSearchService {
    */
   private async searchStructured(
     query: string,
+    userId: string,
     portfolioId: string | undefined,
     limit: number,
   ): Promise<AssetSearchHit[]> {
@@ -154,8 +161,11 @@ export class AssetSearchService {
 
     const qb = this.assets
       .createQueryBuilder("asset")
+      .innerJoin("asset.portfolio", "portfolio")
       .where("asset.ticker IS NOT NULL")
       .andWhere("asset.deletedAt IS NULL")
+      .andWhere("portfolio.deletedAt IS NULL")
+      .andWhere("portfolio.userId = :userId", { userId })
       .andWhere(
         "(LOWER(asset.ticker) = :exact" +
           " OR LOWER(asset.name) = :exact" +
@@ -232,6 +242,7 @@ export class AssetSearchService {
   ): Promise<AssetSearchHit[]> {
     const {
       query,
+      userId,
       portfolioId,
       limit,
       minSimilarity = DEFAULT_MIN_SIMILARITY,
@@ -252,10 +263,13 @@ export class AssetSearchService {
 
     const qb = this.assets
       .createQueryBuilder("asset")
+      .innerJoin("asset.portfolio", "portfolio")
       .addSelect(score, "relevance_score")
       .addSelect(distance, "edit_distance")
       .where("asset.ticker IS NOT NULL")
       .andWhere("asset.deletedAt IS NULL")
+      .andWhere("portfolio.deletedAt IS NULL")
+      .andWhere("portfolio.userId = :userId", { userId })
       .andWhere(`(${score} >= :minSimilarity OR ${distance} <= :maxDistance)`)
       .setParameters({
         query,
@@ -297,6 +311,7 @@ export class AssetSearchService {
   ): Promise<AssetSearchHit[]> {
     const {
       query,
+      userId,
       portfolioId,
       limit,
       minSimilarity = DEFAULT_MIN_SIMILARITY,
@@ -307,8 +322,11 @@ export class AssetSearchService {
 
     const qb = this.assets
       .createQueryBuilder("asset")
+      .innerJoin("asset.portfolio", "portfolio")
       .where("asset.ticker IS NOT NULL")
       .andWhere("asset.deletedAt IS NULL")
+      .andWhere("portfolio.deletedAt IS NULL")
+      .andWhere("portfolio.userId = :userId", { userId })
       .andWhere(
         "(asset.ticker ILIKE :window ESCAPE '\\'" +
           " OR asset.name ILIKE :window ESCAPE '\\'" +
@@ -330,11 +348,7 @@ export class AssetSearchService {
 
     return candidates
       .map((candidate) => {
-        const tickerScore = scoreTypoMatch(
-          query,
-          candidate.ticker,
-          options,
-        );
+        const tickerScore = scoreTypoMatch(query, candidate.ticker, options);
         const nameScore = scoreTypoMatch(query, candidate.name, options);
         const relevance = Math.max(tickerScore ?? 0, nameScore ?? 0);
 
@@ -364,7 +378,9 @@ export class AssetSearchService {
   private async probeFuzzyExtensions(): Promise<boolean> {
     try {
       for (const extension of FUZZY_EXTENSIONS) {
-        await this.assets.query(`CREATE EXTENSION IF NOT EXISTS "${extension}"`);
+        await this.assets.query(
+          `CREATE EXTENSION IF NOT EXISTS "${extension}"`,
+        );
       }
 
       return true;

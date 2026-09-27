@@ -167,6 +167,7 @@ import { StrategyAuthGuard } from "./core/auth/guards/strategy-auth.guard";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { SubmissionVerifierService } from "./blockchain/oracle/submission-verifier.service";
 import { SearchModule } from "./search/search.module";
+import { SearchRecord } from "./search/entities/search-record.entity";
 import { LoggingMiddleware } from "./common/middleware/logging.middleware";
 import { ProfilingMiddleware } from "./profiling/profiling.middleware";
 import { GraphqlGatewayModule } from "./graphql/graphql.module";
@@ -212,7 +213,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
           throw new Error(
             `Environment validation failed: ${errors
               .map((e) => Object.values(e.constraints || {}).join(", "))
-              .join(", ")}`
+              .join(", ")}`,
           );
         }
         return validatedConfig;
@@ -296,6 +297,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
             PauseScope,
             PauseAuditLog,
             InvariantReportEntity,
+            SearchRecord,
             Invitation,
             RetryOperation,
             PauseScope,
@@ -412,7 +414,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
 export class AppModule implements NestModule, OnModuleInit {
   constructor(
     @Inject(SubmissionVerifierService)
-    private readonly verifier: SubmissionVerifierService
+    private readonly verifier: SubmissionVerifierService,
   ) {}
 
   configure(consumer: MiddlewareConsumer) {

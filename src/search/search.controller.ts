@@ -1,5 +1,16 @@
-import { Controller, Get, Post, Body, Query } from "@nestjs/common";
 import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  Request,
+  UseGuards,
+  Delete,
+  Param,
+} from "@nestjs/common";
+import {
+  ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -9,8 +20,12 @@ import { AssetSearchService } from "./asset-search.service";
 import { AssetSearchQueryDto } from "./dto/asset-search-query.dto";
 import { AssetSearchResponse } from "./dto/asset-search-response.dto";
 import { SearchService } from "./search.service";
+import { JwtAuthGuard } from "../core/auth/jwt.guard";
+import { IndexSearchRecordDto } from "./dto/index-search-record.dto";
 
 @ApiTags("search")
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller("search")
 export class SearchController {
   constructor(
@@ -20,15 +35,39 @@ export class SearchController {
 
   @Post("index")
   @ApiOperation({ summary: "Index a document in the posts index" })
-  async indexPost(@Body() post: any) {
-    return this.searchService.indexPost(post);
+  async indexPost(
+    @Body() post: IndexSearchRecordDto,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.searchService.indexPost(post, request.user.id);
   }
 
   @Get()
   @ApiOperation({ summary: "Full-text search across indexed documents" })
   @ApiQuery({ name: "q", required: true, description: "Search query" })
-  async search(@Query("q") query: string) {
-    return this.searchService.search(query);
+  async search(
+    @Query("q") query: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.searchService.search(query, request.user.id);
+  }
+
+  @Post(":id/revoke")
+  @ApiOperation({ summary: "Revoke a searchable record" })
+  async revokePost(
+    @Param("id") id: string,
+    @Request() request: { user: { id: string } },
+  ): Promise<void> {
+    return this.searchService.revokePost(id, request.user.id);
+  }
+
+  @Delete(":id")
+  @ApiOperation({ summary: "Delete a searchable record" })
+  async deletePost(
+    @Param("id") id: string,
+    @Request() request: { user: { id: string } },
+  ): Promise<void> {
+    return this.searchService.deletePost(id, request.user.id);
   }
 
   @Get("assets")
@@ -43,7 +82,8 @@ export class SearchController {
   })
   async searchAssets(
     @Query() query: AssetSearchQueryDto,
+    @Request() request: { user: { id: string } },
   ): Promise<AssetSearchResponse> {
-    return this.assetSearchService.search(query);
+    return this.assetSearchService.search(query, request.user.id);
   }
 }

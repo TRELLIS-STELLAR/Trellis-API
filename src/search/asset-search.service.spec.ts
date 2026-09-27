@@ -8,6 +8,7 @@ import { AssetSearchQueryDto } from "./dto/asset-search-query.dto";
 interface QueryBuilderStub {
   where: jest.Mock;
   andWhere: jest.Mock;
+  innerJoin: jest.Mock;
   addSelect: jest.Mock;
   setParameters: jest.Mock;
   orderBy: jest.Mock;
@@ -26,6 +27,7 @@ const makeQueryBuilder = (
 ): QueryBuilderStub => ({
   where: jest.fn().mockReturnThis(),
   andWhere: jest.fn().mockReturnThis(),
+  innerJoin: jest.fn().mockReturnThis(),
   addSelect: jest.fn().mockReturnThis(),
   setParameters: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
@@ -87,7 +89,9 @@ const sqlOf = (builder: QueryBuilderStub): string =>
     .map(([statement]) => String(statement))
     .join("\n");
 
-const buildService = async (repository: unknown): Promise<AssetSearchService> => {
+const buildService = async (
+  repository: unknown,
+): Promise<AssetSearchService> => {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       AssetSearchService,
@@ -146,7 +150,9 @@ describe("AssetSearchService", () => {
           asset({ id: "eth", ticker: "ETH", name: "Ethereum" }),
         ],
       });
-      const service = await buildService(makeRepository({ queue: [structured] }));
+      const service = await buildService(
+        makeRepository({ queue: [structured] }),
+      );
 
       const response = await service.search(query({ limit: 6 }));
 
@@ -164,12 +170,16 @@ describe("AssetSearchService", () => {
 
     it("matches case-insensitively with an escaped LIKE pattern", async () => {
       const structured = makeQueryBuilder({ many: [] });
-      const service = await buildService(makeRepository({ queue: [structured] }));
+      const service = await buildService(
+        makeRepository({ queue: [structured] }),
+      );
 
       await service.search(query({ q: "  Stell_ar%  ", exactOnly: true }));
 
       expect(sqlOf(structured)).toContain("LOWER(asset.ticker) = :exact");
-      expect(sqlOf(structured)).toContain("asset.ticker ILIKE :prefix ESCAPE '\\'");
+      expect(sqlOf(structured)).toContain(
+        "asset.ticker ILIKE :prefix ESCAPE '\\'",
+      );
       expect(sqlOf(structured)).toContain("asset.deletedAt IS NULL");
       expect(structured.setParameters).toHaveBeenCalledWith({
         exact: "stell_ar%",
@@ -180,12 +190,16 @@ describe("AssetSearchService", () => {
 
     it("orders in SQL by the match ladder so LIMIT keeps the strongest matches", async () => {
       const structured = makeQueryBuilder({ many: [] });
-      const service = await buildService(makeRepository({ queue: [structured] }));
+      const service = await buildService(
+        makeRepository({ queue: [structured] }),
+      );
 
       await service.search(query({ q: "eth", exactOnly: true }));
 
       const [rankSql, direction] = structured.orderBy.mock.calls[0];
-      expect(rankSql).toContain("CASE WHEN LOWER(asset.ticker) = :exact THEN 0");
+      expect(rankSql).toContain(
+        "CASE WHEN LOWER(asset.ticker) = :exact THEN 0",
+      );
       expect(rankSql).toContain("LOWER(asset.name) = :exact THEN 1");
       expect(rankSql).toContain("ILIKE :prefix");
       expect(rankSql).toContain("ILIKE :contains");
@@ -195,8 +209,12 @@ describe("AssetSearchService", () => {
 
     it("scopes the lookup to one portfolio when asked", async () => {
       const structured = makeQueryBuilder({ many: [] });
-      const fuzzy = makeQueryBuilder({ rawAndEntities: { entities: [], raw: [] } });
-      const service = await buildService(makeRepository({ queue: [structured, fuzzy] }));
+      const fuzzy = makeQueryBuilder({
+        rawAndEntities: { entities: [], raw: [] },
+      });
+      const service = await buildService(
+        makeRepository({ queue: [structured, fuzzy] }),
+      );
 
       await service.search(query({ portfolioId: "portfolio-9" }));
 
@@ -208,6 +226,21 @@ describe("AssetSearchService", () => {
         "asset.portfolioId = :portfolioId",
         { portfolioId: "portfolio-9" },
       );
+    });
+
+    it("filters every result to a live portfolio owned by the authenticated user", async () => {
+      const structured = makeQueryBuilder({ many: [] });
+      const service = await buildService(
+        makeRepository({ queue: [structured] }),
+      );
+
+      await service.search(query({ exactOnly: true }), "owner-7");
+
+      expect(structured.andWhere).toHaveBeenCalledWith(
+        "portfolio.userId = :userId",
+        { userId: "owner-7" },
+      );
+      expect(sqlOf(structured)).toContain("portfolio.deletedAt IS NULL");
     });
   });
 
@@ -233,7 +266,9 @@ describe("AssetSearchService", () => {
       const response = await service.search(query({ q: "stelar" }));
 
       expect(response.fuzzyMode).toBe("trigram");
-      expect(response.results.map((hit) => [hit.ticker, hit.match, hit.relevance])).toEqual([
+      expect(
+        response.results.map((hit) => [hit.ticker, hit.match, hit.relevance]),
+      ).toEqual([
         ["XLM", "trigram", 0.67],
         ["BTC", "trigram", 0.11],
       ]);
@@ -265,7 +300,9 @@ describe("AssetSearchService", () => {
       const fuzzy = makeQueryBuilder({
         rawAndEntities: { entities: [], raw: [] },
       });
-      const service = await buildService(makeRepository({ queue: [structured, fuzzy] }));
+      const service = await buildService(
+        makeRepository({ queue: [structured, fuzzy] }),
+      );
 
       await service.search(query({ minSimilarity: 0.45, maxDistance: 1 }));
 
@@ -279,7 +316,9 @@ describe("AssetSearchService", () => {
 
     it("probes the extensions once per process", async () => {
       const structured = makeQueryBuilder({ many: [] });
-      const fuzzy = makeQueryBuilder({ rawAndEntities: { entities: [], raw: [] } });
+      const fuzzy = makeQueryBuilder({
+        rawAndEntities: { entities: [], raw: [] },
+      });
       const repository = makeRepository({ queue: [structured, fuzzy] });
       const service = await buildService(repository);
 
@@ -327,7 +366,10 @@ describe("AssetSearchService", () => {
         many: [asset({ id: "btc", ticker: "BTC", name: "Bitcoin" })],
       });
       const service = await buildService(
-        makeRepository({ queue: [structured, window], extensions: "unavailable" }),
+        makeRepository({
+          queue: [structured, window],
+          extensions: "unavailable",
+        }),
       );
 
       const response = await service.search(query({ q: "wrapped sol" }));
@@ -345,14 +387,16 @@ describe("AssetSearchService", () => {
       const structured = makeQueryBuilder({ many: [] });
       const fuzzy = makeQueryBuilder({
         throwOnRaw: Object.assign(
-          new Error('function similarity(text, text) does not exist'),
+          new Error("function similarity(text, text) does not exist"),
           { code: "42883" },
         ),
       });
       const window = makeQueryBuilder({
         many: [asset({ id: "xlm", ticker: "XLM", name: "Stellar Lumens" })],
       });
-      const service = await buildService(makeRepository({ queue: [structured, fuzzy, window] }));
+      const service = await buildService(
+        makeRepository({ queue: [structured, fuzzy, window] }),
+      );
 
       const response = await service.search(query({ q: "stelar" }));
 
@@ -367,7 +411,9 @@ describe("AssetSearchService", () => {
           code: "08006",
         }),
       });
-      const service = await buildService(makeRepository({ queue: [structured, fuzzy] }));
+      const service = await buildService(
+        makeRepository({ queue: [structured, fuzzy] }),
+      );
 
       await expect(service.search(query({ q: "stelar" }))).rejects.toThrow(
         "connection terminated",
@@ -377,7 +423,11 @@ describe("AssetSearchService", () => {
 
   describe("merging stages", () => {
     it("keeps the higher-relevance copy of an asset both stages found", async () => {
-      const shared = asset({ id: "ethl", ticker: "ETHL", name: "Ether liquid" });
+      const shared = asset({
+        id: "ethl",
+        ticker: "ETHL",
+        name: "Ether liquid",
+      });
       const structured = makeQueryBuilder({ many: [shared] });
       const fuzzy = makeQueryBuilder({
         rawAndEntities: {
@@ -385,7 +435,9 @@ describe("AssetSearchService", () => {
           raw: [{ relevance_score: "0.4", edit_distance: "2" }],
         },
       });
-      const service = await buildService(makeRepository({ queue: [structured, fuzzy] }));
+      const service = await buildService(
+        makeRepository({ queue: [structured, fuzzy] }),
+      );
 
       const response = await service.search(query({ limit: 10 }));
 
@@ -424,22 +476,32 @@ describe("AssetSearchService", () => {
 
       const response = await service.search(query({ exactOnly: true }));
 
-      expect(response).toMatchObject({ fuzzyMode: "none", total: 0, results: [] });
+      expect(response).toMatchObject({
+        fuzzyMode: "none",
+        total: 0,
+        results: [],
+      });
       expect(repository.createQueryBuilder).toHaveBeenCalledTimes(1);
       expect(repository.query).not.toHaveBeenCalled();
     });
 
     it("clamps the page size to the documented maximum and floor", async () => {
       const structured = makeQueryBuilder({ many: [] });
-      const fuzzy = makeQueryBuilder({ rawAndEntities: { entities: [], raw: [] } });
-      const service = await buildService(makeRepository({ queue: [structured, fuzzy] }));
+      const fuzzy = makeQueryBuilder({
+        rawAndEntities: { entities: [], raw: [] },
+      });
+      const service = await buildService(
+        makeRepository({ queue: [structured, fuzzy] }),
+      );
 
       await service.search(query({ limit: 500 }));
       expect(structured.take).toHaveBeenCalledWith(50);
       expect(fuzzy.take).toHaveBeenCalledWith(50);
 
       const zeroStructured = makeQueryBuilder({ many: [] });
-      const second = await buildService(makeRepository({ queue: [zeroStructured] }));
+      const second = await buildService(
+        makeRepository({ queue: [zeroStructured] }),
+      );
       await second.search(query({ limit: 0 }));
 
       expect(zeroStructured.take).toHaveBeenCalledWith(1);
@@ -447,9 +509,13 @@ describe("AssetSearchService", () => {
 
     it("returns the original query verbatim alongside the normalised one", async () => {
       const structured = makeQueryBuilder({ many: [] });
-      const service = await buildService(makeRepository({ queue: [structured] }));
+      const service = await buildService(
+        makeRepository({ queue: [structured] }),
+      );
 
-      const response = await service.search(query({ q: "  ETH  ", exactOnly: true }));
+      const response = await service.search(
+        query({ q: "  ETH  ", exactOnly: true }),
+      );
 
       expect(response.query).toBe("  ETH  ");
       expect(response.normalizedQuery).toBe("eth");
