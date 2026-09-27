@@ -346,6 +346,38 @@ export class EnvironmentVariables {
   @Transform(({ value }) => (value ? parseInt(value, 10) : 5000))
   HEALTH_CHECK_TIMEOUT_MS?: number;
 
+  // External dependency health checks (see src/dependency-health)
+  /** Set to "false" to turn the dependency health endpoints off entirely. */
+  @IsOptional()
+  @IsString()
+  DEPENDENCY_HEALTH_ENABLED?: string = "true";
+
+  /** Maximum time a single dependency probe may take. Minimum: 100 ms. */
+  @IsOptional()
+  @IsNumber()
+  @Min(100)
+  @Transform(({ value }) => (value ? parseInt(value, 10) : 3000))
+  DEPENDENCY_HEALTH_TIMEOUT_MS?: number;
+
+  /** Latency above which a reachable dependency is reported as degraded. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Transform(({ value }) => (value ? parseInt(value, 10) : 1500))
+  DEPENDENCY_HEALTH_DEGRADED_LATENCY_MS?: number;
+
+  /** How long a dependency report is reused before probing again. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Transform(({ value }) => (value ? parseInt(value, 10) : 15000))
+  DEPENDENCY_HEALTH_CACHE_TTL_MS?: number;
+
+  /** Set to "false" to forbid outbound third-party probes even for maintainers. */
+  @IsOptional()
+  @IsString()
+  DEPENDENCY_HEALTH_NETWORK_PROBES?: string = "true";
+
   // Additional OpenAI Configuration
   @IsOptional()
   @IsString()

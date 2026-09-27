@@ -40,6 +40,9 @@ import { AlertsModule } from "./growth/alerts/alerts.module";
 
 // Modules – health
 import { HealthModule } from "./health/health.module";
+import { ChangelogModule } from "./changelog/changelog.module";
+// Modules – dependency health
+import { DependencyHealthModule } from "./dependency-health/dependency-health.module";
 // Modules – observability
 import { ObservabilityModule } from "./observability/observability.module";
 // Modules – monitoring
@@ -290,6 +293,8 @@ import { IdempotencyRecord } from "./common/idempotency/entities/idempotency-rec
     DeFiModule,
     AlertsModule,
     HealthModule,
+    ChangelogModule,
+    DependencyHealthModule,
     ObservabilityModule,
     MonitoringModule,
     ProfilingModule,

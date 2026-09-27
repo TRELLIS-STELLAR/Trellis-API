@@ -44,6 +44,9 @@
     "openapi:validate": "ts-node -r tsconfig-paths/register scripts/validate-openapi.ts",
     "diagnostics": "ts-node -r tsconfig-paths/register scripts/diagnostics.ts",
     "diagnostics:quick": "ts-node -r tsconfig-paths/register scripts/diagnostics.ts --quick",
+    "deps:health": "ts-node -r tsconfig-paths/register scripts/dependency-health.ts",
+    "test:faults": "jest src/testing/fault-injection src/reconciliation/reconciliation.faults.spec.ts src/blockchain/oracle/services/submitter.faults.spec.ts",
+    "changelog:validate": "ts-node -r tsconfig-paths/register scripts/validate-protocol-changelog.ts",
     "openapi:client": "npm run openapi:export && npx @openapitools/openapi-generator-cli generate -i docs/openapi.json -g typescript-fetch -o sdks/typescript --additional-properties=supportsES6=true,typescriptThreePlus=true",
     "openapi:client:python": "npm run openapi:export && npx @openapitools/openapi-generator-cli generate -i docs/openapi.json -g python -o sdks/python --additional-properties=packageName=trellis_api,packageVersion=$(npm run -s get-version 2>/dev/null || echo '0.1.0')",
     "openapi:client:all": "npm run openapi:client && npm run openapi:client:python",
@@ -55,6 +58,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",
     "@aws-sdk/s3-request-presigner": "^3.1115.0",
+    "ajv": "8.12.0",
     "@azure/storage-blob": "12.32.0",
     "@elastic/elasticsearch": "^9.4.2",
     "@graphql-typed-document-node/core": "^3.2.0",
