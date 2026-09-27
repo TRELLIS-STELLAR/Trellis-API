@@ -21,7 +21,6 @@ import {
 } from "./profiling.service";
 import { RolesGuard } from "../common/guard/roles.guard";
 import { Role } from "../common/guard/roles.enum";
-import { Public } from "../common/decorators/public.decorator";
 import { JwtAuthGuard } from "../core/auth/guards/jwt-auth.guard";
 import { Roles } from "../common/guard/roles.decorator";
 
@@ -39,6 +38,7 @@ export class ProfilingController {
   private ensureEnabled() {
     if (
       this.configService.get<string>("NODE_ENV") === "production" &&
+      this.configService.get<boolean | string>("ENABLE_PROFILING") !== true &&
       this.configService.get<string>("ENABLE_PROFILING") !== "true"
     ) {
       throw new HttpException("Profiling is disabled", HttpStatus.NOT_FOUND);
