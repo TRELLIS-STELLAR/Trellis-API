@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { v4 as uuidv4 } from "uuid";
 import { ConnectionInfo } from "../interfaces/websocket.interfaces";
 import { ConfigService } from "@nestjs/config";
@@ -16,7 +16,7 @@ export class ConnectionManagerService {
   // Map of clientId -> disconnectedAt timestamp
   private disconnectedClients: Map<string, Date> = new Map();
 
-  constructor(private readonly configService?: ConfigService) {}
+  constructor(@Optional() private readonly configService?: ConfigService) {}
 
   /**
    * Register a new WebSocket connection
