@@ -364,6 +364,8 @@ POST /api/v1/exports
 
 ## Documentation
 
+- [docs/OPERATIONAL_RUNBOOK.md](docs/OPERATIONAL_RUNBOOK.md) - Incident triage, mitigation, rollback, and recovery procedures
+
 Every markdown document in this repository, grouped by topic:
 
 ### Project
