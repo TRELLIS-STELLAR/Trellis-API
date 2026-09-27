@@ -206,6 +206,7 @@ export class RebalancingService {
 
   /**
    * Executes rebalancing trades for a portfolio with idempotency, partial failure reporting, and dry-run support.
+   * Handles best-effort execution, tracking executed vs failed trades, pre/post audit logs, and dry run simulation.
    */
   async executeRebalancing(
     portfolioId: string,
