@@ -13,6 +13,14 @@ import { Server, Socket } from "socket.io";
 import { Logger, UseFilters, UsePipes, ValidationPipe } from "@nestjs/common";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { createSpan, extractContext } from "../../config/tracing";
+import {
+  clearWebsocketSubscriptions,
+  setWebsocketSubscriptions,
+  trackWebsocketConnectionClosed,
+  trackWebsocketConnectionOpened,
+  trackWebsocketError,
+  trackWebsocketMessagePublished,
+} from "../../config/metrics";
 import { JwtService } from "@nestjs/jwt";
 import { ConnectionManagerService } from "./services/connection-manager.service";
 import { EventBufferService } from "./services/event-buffer.service";
@@ -114,6 +122,11 @@ export class DashboardGateway
         return;
       }
 
+      // Issue #143: record the open connection against the dashboard
+      // transport. Counted here, after authentication succeeds, so an
+      // unauthenticated socket that is rejected never inflates the gauge.
+      trackWebsocketConnectionOpened("dashboard");
+
       // Join user room for broadcasting
       client.join(`user:${userId}`);
 
@@ -171,6 +184,10 @@ export class DashboardGateway
 
     const connectionInfo = this.connectionManager.getConnectionInfo(client.id);
 
+    // Issue #143: decrement the same transport the open incremented, so the
+    // gauge cannot drift above zero after a clean disconnect.
+    trackWebsocketConnectionClosed("dashboard");
+
     if (connectionInfo) {
       // Keep connection info for event buffering (up to 5 minutes)
       this.connectionManager.markDisconnected(client.id);
@@ -227,6 +244,14 @@ export class DashboardGateway
 
     this.connectionManager.subscribeToPortfolio(client.id, portfolioId);
 
+    // Issue #143: keep the per-portfolio subscription gauge equal to the
+    // number of live subscribers. Recomputed from the connection manager
+    // rather than incremented, so a double-subscribe cannot drift it.
+    setWebsocketSubscriptions(
+      portfolioId,
+      this.connectionManager.getPortfolioSubscribers(portfolioId).length,
+    );
+
     this.logger.log(
       `Client ${client.id} subscribed to portfolio ${portfolioId}`,
     );
@@ -249,6 +274,16 @@ export class DashboardGateway
 
     client.leave(`portfolio:${portfolioId}`);
     this.connectionManager.unsubscribeFromPortfolio(client.id, portfolioId);
+
+    // Issue #143: the gauge is recomputed from the connection manager; when
+    // the last subscriber leaves it is explicitly zeroed rather than left to
+    // drift.
+    const remaining = this.connectionManager.getPortfolioSubscribers(portfolioId).length;
+    if (remaining === 0) {
+      clearWebsocketSubscriptions(portfolioId);
+    } else {
+      setWebsocketSubscriptions(portfolioId, remaining);
+    }
 
     return {
       event: DashboardEvent.UNSUBSCRIPTION_CONFIRMED,
@@ -285,11 +320,25 @@ export class DashboardGateway
 
   // Broadcast methods for server-side use
   broadcastToPortfolio(portfolioId: string, event: DashboardEvent, data: any) {
-    this.server.to(`portfolio:${portfolioId}`).emit(event, data);
+    // Issue #143: a publish that throws is counted, so a failing broadcast is
+    // visible as a rate rather than as silently missing traffic.
+    try {
+      this.server.to(`portfolio:${portfolioId}`).emit(event, data);
+      trackWebsocketMessagePublished(event);
+    } catch (error) {
+      trackWebsocketError("publish_failed");
+      throw error;
+    }
   }
 
   broadcastToUser(userId: string, event: DashboardEvent, data: any) {
-    this.server.to(`user:${userId}`).emit(event, data);
+    try {
+      this.server.to(`user:${userId}`).emit(event, data);
+      trackWebsocketMessagePublished(event);
+    } catch (error) {
+      trackWebsocketError("publish_failed");
+      throw error;
+    }
   }
 
   // Buffer event during disconnection

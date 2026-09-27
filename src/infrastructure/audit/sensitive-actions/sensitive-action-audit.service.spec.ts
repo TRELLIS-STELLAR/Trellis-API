@@ -4,6 +4,7 @@ import {
   SensitiveActionEvent,
   SensitiveActionStatus,
 } from "../entities/sensitive-action-event.entity";
+import { SensitiveActionChainHead } from "../entities/sensitive-action-chain-head.entity";
 import { REDACTED } from "./audit-payload.sanitizer";
 import { SensitiveActionAuditService } from "./sensitive-action-audit.service";
 import { SensitiveAction, SensitiveActionScope } from "./sensitive-action.enum";
@@ -114,16 +115,30 @@ class FakeSensitiveActionRepository {
 
 function buildHarness() {
   const repo = new FakeSensitiveActionRepository();
-  const service = new SensitiveActionAuditService(repo as any);
-  return { service, repo };
+  const headRepo = {
+    head: null as SensitiveActionChainHead | null,
+    create(partial: Partial<SensitiveActionChainHead>) {
+      return { ...partial } as SensitiveActionChainHead;
+    },
+    async findOne() {
+      return this.head;
+    },
+    async save(head: SensitiveActionChainHead) {
+      this.head = head;
+      return head;
+    },
+  };
+  const service = new SensitiveActionAuditService(repo as any, headRepo as any);
+  return { service, repo, headRepo };
 }
 
 describe("SensitiveActionAuditService", () => {
   let service: SensitiveActionAuditService;
   let repo: FakeSensitiveActionRepository;
+  let headRepo: ReturnType<typeof buildHarness>["headRepo"];
 
   beforeEach(() => {
-    ({ service, repo } = buildHarness());
+    ({ service, repo, headRepo } = buildHarness());
   });
 
   it("records actor attribution and a catalogue-derived event shape", async () => {
@@ -181,6 +196,7 @@ describe("SensitiveActionAuditService", () => {
         actorId: "actor-1",
       })
     ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repo.rows).toHaveLength(0);
   });
 
   it("requires an actor", async () => {
@@ -288,6 +304,58 @@ describe("SensitiveActionAuditService", () => {
     const verification = await service.verifyChain();
     expect(verification.valid).toBe(false);
     expect(verification.reason).toMatch(/Chain link mismatch/);
+  });
+
+  it("detects deletion of the newest event using the saved chain head", async () => {
+    await service.recordSensitiveAction({
+      action: SensitiveAction.LOGIN_SUCCEEDED,
+      actorId: "user-1",
+    });
+    await service.recordSensitiveAction({
+      action: SensitiveAction.API_KEY_CREATED,
+      actorId: "user-1",
+    });
+    const lastEventId = repo.rows[1].id;
+
+    repo.rows.pop();
+
+    const verification = await service.verifyChain();
+    expect(verification.valid).toBe(false);
+    expect(verification.brokenAt).toBe(lastEventId);
+    expect(verification.reason).toMatch(/chain head/);
+  });
+
+  it("refuses to append when existing history has lost its chain head", async () => {
+    await service.recordSensitiveAction({
+      action: SensitiveAction.LOGIN_SUCCEEDED,
+      actorId: "user-1",
+    });
+    const eventCount = repo.rows.length;
+    headRepo.head = null;
+
+    await expect(
+      service.recordSensitiveAction({
+        action: SensitiveAction.LOGIN_SUCCEEDED,
+        actorId: "user-1",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repo.rows).toHaveLength(eventCount);
+  });
+
+  it("detects a sequence gap even when rows are returned in sequence order", async () => {
+    await service.recordSensitiveAction({
+      action: SensitiveAction.LOGIN_SUCCEEDED,
+      actorId: "user-1",
+    });
+    await service.recordSensitiveAction({
+      action: SensitiveAction.API_KEY_CREATED,
+      actorId: "user-1",
+    });
+    repo.rows[1].sequence = "3";
+
+    const verification = await service.verifyChain();
+    expect(verification.valid).toBe(false);
+    expect(verification.reason).toMatch(/Sequence gap or ordering error/);
   });
 
   it("filters queries by actor, action, resource, and status", async () => {

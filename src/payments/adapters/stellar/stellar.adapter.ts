@@ -70,6 +70,7 @@ export class StellarAdapter implements IPaymentProcessor<
     requiresClientSideSigning: false,
     currencies: ["XLM"],
   };
+  readonly supportsSafeSubmissionRetry = true;
 
   private readonly logger = new Logger(StellarAdapter.name);
   private networkPassphrase: string;
@@ -186,6 +187,36 @@ export class StellarAdapter implements IPaymentProcessor<
       };
     } catch (err) {
       throw this.toStellarError(err, "Failed to submit transaction to Horizon");
+    }
+  }
+
+  getSubmissionHash(signed: SignedTransaction): string {
+    const transaction = TransactionBuilder.fromXdr(
+      signed.signedPayload,
+      this.networkPassphrase,
+    );
+    return transaction.hash().toString("hex");
+  }
+
+  matchesCreatedPayment(
+    created: CreatedPayment,
+    signed: SignedTransaction,
+  ): boolean {
+    if (typeof created.unsignedTransaction !== "string") {
+      return false;
+    }
+    try {
+      const unsigned = TransactionBuilder.fromXdr(
+        created.unsignedTransaction,
+        this.networkPassphrase,
+      );
+      const submitted = TransactionBuilder.fromXdr(
+        signed.signedPayload,
+        this.networkPassphrase,
+      );
+      return unsigned.hash().toString("hex") === submitted.hash().toString("hex");
+    } catch {
+      return false;
     }
   }
 

@@ -9,6 +9,12 @@ import { User } from "./entities/user.entity";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { Role } from "src/common/guard/roles.enum";
+import { SensitiveActionAuditService } from "src/infrastructure/audit/sensitive-actions/sensitive-action-audit.service";
+import {
+  AuditActorType,
+  SensitiveActionStatus,
+} from "src/infrastructure/audit/entities/sensitive-action-event.entity";
+import { SensitiveAction } from "src/infrastructure/audit/sensitive-actions/sensitive-action.enum";
 
 /**
  * Pairs of roles that are mutually exclusive and must never be held together.
@@ -24,6 +30,7 @@ export class UserService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly sensitiveActionAudit: SensitiveActionAuditService,
   ) {}
 
   create(createUserDto: CreateUserDto) {
@@ -71,13 +78,49 @@ export class UserService {
    * {@link CONFLICTING_ROLE_PAIRS} — assigning a role that conflicts with the
    * user's current role throws a BadRequestException.
    */
-  async assignRole(userId: string, newRole: Role): Promise<User> {
+  async assignRole(
+    userId: string,
+    newRole: Role,
+    auditContext?: { actorId?: string; actorRole?: string; reason?: string },
+  ): Promise<User> {
     const user = await this.findOneOrFail(userId);
+    const previousRole = user.role;
+    if (previousRole === newRole) return user;
 
-    this.assertNoRoleConflict(user.role, newRole);
+    const action =
+      newRole === Role.USER
+        ? SensitiveAction.ROLE_REVOKED
+        : SensitiveAction.ROLE_ASSIGNED;
+    const reason =
+      auditContext?.reason?.trim() || `Role changed from ${previousRole} to ${newRole}`;
+    const auditInput = {
+      action,
+      actorId: auditContext?.actorId ?? userId,
+      actorType: auditContext?.actorId
+        ? AuditActorType.MAINTAINER
+        : AuditActorType.USER,
+      actorRole: auditContext?.actorRole,
+      resourceType: "user",
+      resourceId: user.id,
+      reason,
+      beforeState: { role: previousRole },
+      afterState: { role: newRole },
+    };
+
+    try {
+      this.assertNoRoleConflict(previousRole, newRole);
+    } catch (error) {
+      await this.sensitiveActionAudit.recordSensitiveAction({
+        ...auditInput,
+        status: SensitiveActionStatus.FAILED,
+      });
+      throw error;
+    }
 
     user.role = newRole;
-    return this.userRepository.save(user);
+    const saved = await this.userRepository.save(user);
+    await this.sensitiveActionAudit.recordSensitiveAction(auditInput);
+    return saved;
   }
 
   /**
