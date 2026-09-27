@@ -111,6 +111,17 @@ export const billingEstimatedChargesCents = new client.Gauge({
   registers: [register],
 });
 
+// Proration applied on mid-cycle plan changes (issue #82). The counter is
+// labelled by direction, a closed set the service itself chooses, so a client
+// cannot mint series; the value is the absolute cents moved (charge or credit)
+// because a counter cannot go negative.
+export const billingProrationNetCents = new client.Counter({
+  name: "trellis_billing_proration_cents_total",
+  help: "Absolute cents moved by proration on plan changes, by direction",
+  labelNames: ["direction"],
+  registers: [register],
+});
+
 // ── WebSocket gateway metrics (issue #143) ────────────────────────────────
 //
 // #143 asked for connection-pool and subscription visibility. The four series

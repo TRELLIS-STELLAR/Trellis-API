@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsBoolean,
   IsUrl,
+  Matches,
   Min,
   Max,
 } from "class-validator";
@@ -72,8 +73,27 @@ export class EnvironmentVariables {
   @IsString()
   LLAMA_API_BASE_URL?: string;
 
+  /**
+   * Explicit CORS allow-list (issue #83). Comma-separated origins, each a full
+   * `scheme://host[:port]` with an optional `*.` subdomain wildcard. The
+   * wildcard `*` on its own is rejected at startup in production by
+   * `resolveAllowedOrigins()`; this pattern at least rejects malformed entries
+   * such as a bare hostname or a value carrying a path.
+   */
+  @IsOptional()
+  @Matches(
+    /^$|^([a-z]+:\/\/)(\*\.)?[a-z0-9.-]+(:\d{1,5})?(,([a-z]+:\/\/)(\*\.)?[a-z0-9.-]+(:\d{1,5})?)*$/i,
+    { message: "CORS_ALLOWED_ORIGINS must be a comma-separated list of origins" },
+  )
+  CORS_ALLOWED_ORIGINS?: string;
+
+  /** Legacy single-list variable, superseded by CORS_ALLOWED_ORIGINS. */
   @IsString()
   @IsNotEmpty()
+  @Matches(
+    /^([a-z]+:\/\/)(\*\.)?[a-z0-9.-]+(:\d{1,5})?(,([a-z]+:\/\/)(\*\.)?[a-z0-9.-]+(:\d{1,5})?)*$/i,
+    { message: "CORS_ORIGIN must be a comma-separated list of origins" },
+  )
   CORS_ORIGIN: string = "http://localhost:3001";
 
   @IsOptional()

@@ -9,6 +9,7 @@ import {
   ConnectedSocket,
   WsException,
 } from "@nestjs/websockets";
+import { OnModuleDestroy } from "@nestjs/common";
 import { Server, Socket } from "socket.io";
 import { Logger, UseFilters, UsePipes, ValidationPipe } from "@nestjs/common";
 import { SpanStatusCode } from "@opentelemetry/api";
@@ -22,6 +23,7 @@ import {
   trackWebsocketMessagePublished,
 } from "../../config/metrics";
 import { JwtService } from "@nestjs/jwt";
+import { createGatewayCorsOptions } from "../../config/cors.config";
 import { ConnectionManagerService } from "./services/connection-manager.service";
 import { EventBufferService } from "./services/event-buffer.service";
 import { DashboardMetricsService } from "./services/dashboard-metrics.service";
@@ -36,22 +38,34 @@ import {
 
 @WebSocketGateway({
   namespace: "/dashboard",
-  cors: {
-    origin: "*",
-    credentials: true,
-  },
+  // Issue #83: the gateway used to accept `origin: "*"` with credentials,
+  // exposing an authenticated session to any site. It now shares the HTTP
+  // allow-list, so a browser can only open a dashboard socket from an origin an
+  // operator actually named.
+  cors: createGatewayCorsOptions(),
   pingInterval: 30000, // 30 second heartbeat interval
   pingTimeout: 5000, // 5 second timeout for pong response
 })
 @UseFilters(WsExceptionFilter)
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class DashboardGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
 {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(DashboardGateway.name);
+
+  /**
+   * Issue #96: the heartbeat and stale-connection timers used to be fire-and-
+   * forget `setInterval` calls. They are now tracked so a shutdown (or a stress
+   * test) can release them instead of leaving two timers per gateway behind.
+   */
+  private readonly timers = new Set<NodeJS.Timeout>();
 
   constructor(
     private readonly connectionManager: ConnectionManagerService,
@@ -68,6 +82,21 @@ export class DashboardGateway
 
     // Initialize stale connection cleanup
     this.startStaleConnectionCleanup();
+  }
+
+  onModuleDestroy(): void {
+    for (const timer of this.timers) {
+      clearInterval(timer);
+    }
+    this.timers.clear();
+  }
+
+  /** Register a periodic task and keep a handle so it can be cleared. */
+  private schedule(task: () => void, everyMs: number): void {
+    const timer = setInterval(task, everyMs);
+    // Never let a background timer hold the process (or a test run) open.
+    timer.unref?.();
+    this.timers.add(timer);
   }
 
   async handleConnection(client: Socket) {
@@ -378,7 +407,7 @@ export class DashboardGateway
 
   private startHealthMonitoring() {
     // Send heartbeat check every 30 seconds
-    setInterval(() => {
+    this.schedule(() => {
       this.server.emit(DashboardEvent.HEARTBEAT, {
         timestamp: new Date().toISOString(),
       });
@@ -387,7 +416,7 @@ export class DashboardGateway
 
   private startStaleConnectionCleanup() {
     // Check for stale connections every 60 seconds
-    setInterval(async () => {
+    this.schedule(async () => {
       const staleConnections = this.connectionManager.getStaleConnections(
         5 * 60 * 1000,
       ); // 5 minutes
