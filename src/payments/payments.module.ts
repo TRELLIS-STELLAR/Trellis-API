@@ -2,6 +2,7 @@ import { HttpModule } from "@nestjs/axios";
 import { Module, OnModuleInit } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { DiscoveryModule, DiscoveryService, Reflector } from "@nestjs/core";
+import { TypeOrmModule } from "@nestjs/typeorm";
 import { Horizon } from "@stellar/stellar-sdk";
 import { GrantfoxAdapter } from "./adapters/grantfox/grantfox.adapter";
 import { StellarAdapter } from "./adapters/stellar/stellar.adapter";
@@ -16,6 +17,7 @@ import { PaymentsController } from "./payments.controller";
 import { PaymentsService } from "./payments.service";
 import { PaymentProcessorRegistry } from "./registry/payment-processor.registry";
 import { StellarPaymentsController } from "./stellar-payments.controller";
+import { PaymentOperation } from "./entities/payment-operation.entity";
 
 /**
  * Wires the payment-processor plugin system.
@@ -30,7 +32,12 @@ import { StellarPaymentsController } from "./stellar-payments.controller";
  * so tests can override it with an in-memory fake (no network I/O offline).
  */
 @Module({
-  imports: [ConfigModule, HttpModule, DiscoveryModule],
+  imports: [
+    ConfigModule,
+    HttpModule,
+    DiscoveryModule,
+    TypeOrmModule.forFeature([PaymentOperation]),
+  ],
   // StellarPaymentsController MUST precede PaymentsController: its static
   // `payments/stellar/{submit,status}` routes would otherwise be shadowed by the
   // generic dynamic `payments/:id/{submit,status}` routes (Express matches in
