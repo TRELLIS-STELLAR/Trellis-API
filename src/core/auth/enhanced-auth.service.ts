@@ -317,27 +317,6 @@ export class EnhancedAuthService {
     };
   }
 
-  private readonly clockSkewWindow = 1; // +/- 1 step tolerance (30s)
-  private readonly usedTotpTokens = new Map<string, number>();
-
-  async validateTotpToken(
-    userId: string,
-    token: string,
-    window: number = this.clockSkewWindow,
-  ): Promise<boolean> {
-    const twoFactor = await this.twoFactorRepository.findOne({
-      where: { userId, isEnabled: true, status: TwoFactorStatus.VERIFIED },
-    });
-    if (!twoFactor || !twoFactor.secret) return false;
-
-    return speakeasy.totp.verify({
-      secret: twoFactor.secret,
-      encoding: "base32",
-      token,
-      window,
-    });
-  }
-
   async verifyTwoFactorSetup(
     userId: string,
     code: string,
@@ -350,12 +329,12 @@ export class EnhancedAuthService {
       throw new NotFoundException("Two-factor authentication setup not found");
     }
 
-    // Verify TOTP code with clock skew tolerance window
+    // Verify TOTP code
     const verified = speakeasy.totp.verify({
       secret: twoFactor.secret,
       encoding: "base32",
       token: code,
-      window: this.clockSkewWindow,
+      window: 2, // Allow 2 time steps (30 seconds) tolerance
     });
 
     if (verified) {
@@ -438,22 +417,12 @@ export class EnhancedAuthService {
     let usedBackupCode = false;
 
     if (verifyDto.code) {
-      const replayKey = `totp:used:${userId}:${verifyDto.code.trim()}`;
-      const exp = this.usedTotpTokens.get(replayKey);
-      if (exp && Date.now() < exp) {
-        throw new UnauthorizedException("TOTP token has already been used");
-      }
-
       verified = speakeasy.totp.verify({
         secret: twoFactor.secret,
         encoding: "base32",
-        token: verifyDto.code.trim(),
-        window: this.clockSkewWindow,
+        token: verifyDto.code,
+        window: 2,
       });
-
-      if (verified) {
-        this.usedTotpTokens.set(replayKey, Date.now() + 60 * 1000);
-      }
     } else if (verifyDto.backupCode) {
       const storedHashes: string[] = JSON.parse(twoFactor.backupCodes || "[]");
       const candidate = this.hashBackupCode(verifyDto.backupCode);

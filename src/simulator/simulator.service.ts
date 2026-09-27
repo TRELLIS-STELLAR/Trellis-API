@@ -3,7 +3,6 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
-  Optional,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
@@ -15,12 +14,6 @@ import {
   SupportedChain,
 } from "./entities/simulation.entity";
 import { CreateSimulationDto, RunSimulationDto } from "./dto/simulation.dto";
-import {
-  SimulationWorkerRunner,
-  MonteCarloSimulationParams,
-  MonteCarloSimulationResult,
-  WorkerExecutionOptions,
-} from "./workers/simulation-worker-runner";
 
 interface AgentAction {
   blockNumber: number;
@@ -46,7 +39,6 @@ interface GasReport {
 @Injectable()
 export class SimulatorService {
   private readonly logger = new Logger(SimulatorService.name);
-  private readonly workerRunner: SimulationWorkerRunner;
 
   private readonly rpcUrls: Record<SupportedChain, string> = {
     [SupportedChain.ETHEREUM]: "",
@@ -59,9 +51,7 @@ export class SimulatorService {
     @InjectRepository(Simulation)
     private readonly simulationRepo: Repository<Simulation>,
     private readonly configService: ConfigService,
-    @Optional() workerRunner?: SimulationWorkerRunner,
   ) {
-    this.workerRunner = workerRunner ?? new SimulationWorkerRunner();
     this.rpcUrls[SupportedChain.ETHEREUM] =
       configService.get<string>("ETH_RPC_URL") || "https://eth.llamarpc.com";
     this.rpcUrls[SupportedChain.POLYGON] =
@@ -73,16 +63,6 @@ export class SimulatorService {
     this.rpcUrls[SupportedChain.OPTIMISM] =
       configService.get<string>("OPTIMISM_RPC_URL") ||
       "https://optimism.llamarpc.com";
-  }
-
-  /**
-   * Run Monte Carlo simulation offloaded to isolated worker thread.
-   */
-  async runMonteCarloSimulation(
-    params: MonteCarloSimulationParams,
-    options?: WorkerExecutionOptions,
-  ): Promise<MonteCarloSimulationResult> {
-    return this.workerRunner.runMonteCarloSimulation(params, options);
   }
 
   async createSimulation(
