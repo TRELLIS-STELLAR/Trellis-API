@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { LessThan, Repository } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { AuditLog } from "./entities/audit-log.entity";
+import { AuditLog, AuditLogVisibility } from "./entities/audit-log.entity";
 import { QueryAuditLogDto, ExportAuditLogDto } from "./dto/query-audit-log.dto";
 import { AuditLogListResponseDto } from "./dto/audit-log-response.dto";
 import { ExportSigningService } from "./algorithms/export-signing.service";
@@ -49,6 +49,7 @@ export class AuditLogService {
     userAgent?: string;
     details?: string;
     metadata?: Record<string, unknown>;
+    visibility?: AuditLogVisibility;
   }): Promise<AuditLog> {
     const searchText = [
       entry.action,
@@ -97,6 +98,47 @@ export class AuditLogService {
 
     const [rows, total] = await qb.getManyAndCount();
     const hasNext = Boolean(dto.cursor && rows.length > limit);
+    const data = hasNext ? rows.slice(0, limit) : rows;
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      nextCursor:
+        hasNext && data.length > 0
+          ? this.cursorPagination.encode({
+              createdAt: data[data.length - 1].createdAt,
+              id: data[data.length - 1].id,
+            })
+          : null,
+    };
+  }
+
+  async getTimeline(
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+    cursor?: string
+  ): Promise<AuditLogListResponseDto> {
+    const qb = this.repo.createQueryBuilder("log");
+    
+    qb.where("log.userId = :userId", { userId })
+      .andWhere("log.visibility = :visibility", { visibility: AuditLogVisibility.PUBLIC });
+
+    if (cursor) {
+      this.cursorPagination.applyDescendingKeyset(qb, "log", cursor);
+      qb.take(limit + 1);
+    } else {
+      qb.orderBy("log.createdAt", "DESC")
+        .addOrderBy("log.id", "DESC")
+        .skip((page - 1) * limit)
+        .take(limit);
+    }
+
+    const [rows, total] = await qb.getManyAndCount();
+    const hasNext = Boolean(cursor && rows.length > limit);
     const data = hasNext ? rows.slice(0, limit) : rows;
 
     return {
