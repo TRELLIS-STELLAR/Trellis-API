@@ -35,6 +35,11 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   DATABASE_URL: string;
 
+  /** Explicit database identifier override used during the legacy-name compatibility window. */
+  @IsOptional()
+  @IsString()
+  DB_DATABASE?: string;
+
   @IsString()
   @IsNotEmpty()
   JWT_SECRET: string;
