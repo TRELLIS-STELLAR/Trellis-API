@@ -2,7 +2,7 @@ import { QueryRunner } from "typeorm";
 import { AddRefreshTokenFamily1787600000000 } from "src/migrations/1787600000000-add-refresh-token-family";
 
 describe("AddRefreshTokenFamily1787600000000", () => {
-  let queryRunner: { query: jest.Mock } as unknown as QueryRunner;
+  let queryRunner: QueryRunner;
   let migration: AddRefreshTokenFamily1787600000000;
 
   beforeEach(() => {

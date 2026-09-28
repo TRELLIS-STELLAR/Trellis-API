@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { BackgroundWorkerService } from "../background-worker.service";
-import { JobStatus, JobPriority, DEFAULT_RETRY_POLICY } from "../worker.interface";
+import { BackgroundWorkerService } from "./background-worker.service";
+import { JobStatus, JobPriority, DEFAULT_RETRY_POLICY } from "./worker.interface";
 
 describe("BackgroundWorkerService", () => {
   let service: BackgroundWorkerService;

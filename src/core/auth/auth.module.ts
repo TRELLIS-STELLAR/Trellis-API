@@ -40,6 +40,7 @@ import { ImpersonationController } from "./impersonation.controller";
 
 import { BullModule } from "@nestjs/bull";
 import { AuthEmailProcessor } from "./email-processor.service";
+import { ReferralFraudService } from "src/growth/referral/referral-fraud.service";
 
 /**
  * AuthModule — Authentication Architecture Overview
@@ -115,6 +116,8 @@ import { AuthEmailProcessor } from "./email-processor.service";
     RecoveryService,
     SessionRecoveryService,
     DelegationService,
+    // Referral fraud screening (self-referral, subnet clustering, gating)
+    ReferralFraudService,
     // New enhanced services
     EnhancedAuthService,
     JwtStrategy,
@@ -135,6 +138,7 @@ import { AuthEmailProcessor } from "./email-processor.service";
   exports: [
     // Legacy exports
     AuthService,
+    ReferralFraudService,
     ChallengeService,
     WalletAuthService,
     EmailLinkingService,
