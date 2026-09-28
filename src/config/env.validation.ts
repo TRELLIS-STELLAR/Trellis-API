@@ -348,6 +348,29 @@ export class EnvironmentVariables {
   @IsString()
   REDIS_URL?: string;
 
+  /**
+   * Comma-separated Redis URLs of independent masters used for Redlock
+   * distributed locks (use an odd count, e.g. 3). Falls back to REDIS_URL.
+   */
+  @IsOptional()
+  @IsString()
+  REDLOCK_NODES?: string;
+
+  /** Key prefix for distributed locks. Default: "trellis:lock:". */
+  @IsOptional()
+  @IsString()
+  REDLOCK_KEY_PREFIX?: string;
+
+  /** Extra disposable email domains to reject (comma-separated). */
+  @IsOptional()
+  @IsString()
+  DISPOSABLE_EMAIL_DOMAINS?: string;
+
+  /** Domains to exempt from the built-in disposable list (comma-separated). */
+  @IsOptional()
+  @IsString()
+  DISPOSABLE_EMAIL_ALLOWLIST?: string;
+
   /** Cache version prefix (e.g. "v1", "v2"). Default: "v1". */
   @IsOptional()
   @IsString()

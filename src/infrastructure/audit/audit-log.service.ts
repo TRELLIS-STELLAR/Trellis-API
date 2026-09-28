@@ -7,6 +7,7 @@ import { QueryAuditLogDto, ExportAuditLogDto } from "./dto/query-audit-log.dto";
 import { AuditLogListResponseDto } from "./dto/audit-log-response.dto";
 import { ExportSigningService } from "./algorithms/export-signing.service";
 import { CursorPaginationService } from "../../common/pagination/cursor-pagination.service";
+import { DistributedLock } from "../distributed-lock/distributed-lock.decorator";
 
 const RETENTION_YEARS = 7;
 const ARCHIVE_AFTER_YEARS = 1;
@@ -209,6 +210,7 @@ export class AuditLogService {
   // Cold-storage transfer is delegated to an external sink (S3/Glacier);
   // this only flips the archivedAt marker once the transfer succeeds.
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  @DistributedLock("audit:archive-old-logs", 30 * 60_000)
   async archiveOldLogs(
     coldStorageWriter?: (logs: AuditLog[]) => Promise<void>,
   ) {
@@ -235,6 +237,7 @@ export class AuditLogService {
 
   // Permanently deletes unprotected logs past the 7-year retention period.
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  @DistributedLock("audit:enforce-retention", 30 * 60_000)
   async enforceRetention(): Promise<RetentionReport> {
     const cutoff = new Date();
     cutoff.setFullYear(cutoff.getFullYear() - RETENTION_YEARS);

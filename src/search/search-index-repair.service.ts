@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { SearchService } from "./search.service";
+import { DistributedLock } from "../infrastructure/distributed-lock/distributed-lock.decorator";
 
 @Injectable()
 export class SearchIndexRepairService {
@@ -9,6 +10,7 @@ export class SearchIndexRepairService {
   constructor(private readonly searchService: SearchService) {}
 
   @Cron(CronExpression.EVERY_HOUR)
+  @DistributedLock("search:index-repair", 10 * 60_000)
   async repair(): Promise<void> {
     try {
       const result = await this.searchService.repairIndex();

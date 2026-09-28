@@ -17,6 +17,7 @@ import {
   StellarTransaction,
   StellarTransactionStatus,
 } from "./entities/stellar-transaction.entity";
+import { DistributedLock } from "../infrastructure/distributed-lock/distributed-lock.decorator";
 
 /**
  * Injection token for the user-facing balance source (the API's own balance
@@ -451,6 +452,7 @@ export class DryRunReconciliationService {
    * read the logged summary and act through the regular reconciliation paths.
    */
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  @DistributedLock("reconciliation:daily-dry-run", 30 * 60_000)
   async scheduledDryRun(): Promise<void> {
     try {
       const report = await this.runDryRun();

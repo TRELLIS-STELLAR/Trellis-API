@@ -181,6 +181,7 @@ import { SnapshotModule } from "./snapshot/snapshot.module";
 // Modules – recovery center (issue #122)
 import { RecoveryModule } from "./recovery/recovery.module";
 import { QuotaBudgetModule } from "./common/quota/quota-budget.module";
+import { DistributedLockModule } from "./infrastructure/distributed-lock/distributed-lock.module";
 import { ApiDeprecationMiddleware } from "./common/versioning/api-deprecation.middleware";
 import { ModuleEntity } from "./modules/registry/entities/module.entity";
 import { TenantModuleState } from "./modules/registry/entities/tenant-module-state.entity";
@@ -350,6 +351,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     ExportModule,
     ModuleRegistryModule,
     QuotaBudgetModule,
+    DistributedLockModule,
     SnapshotModule,
     RecoveryModule,
     VersioningModule,

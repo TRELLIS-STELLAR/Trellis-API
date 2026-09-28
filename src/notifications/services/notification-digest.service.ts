@@ -5,6 +5,7 @@ import { MoreThan, Not, Repository } from 'typeorm';
 import { Notification, NotificationPriority, NotificationStatus, NotificationChannel } from '../entities/notification.entity';
 import { NotificationPreference, NotificationChannelPreference, NotificationDeliveryMode } from '../entities/notification-preference.entity';
 import { NotificationQueueService } from './notification-queue.service';
+import { DistributedLock } from "../../infrastructure/distributed-lock/distributed-lock.decorator";
 
 @Injectable()
 export class NotificationDigestService {
@@ -17,6 +18,7 @@ export class NotificationDigestService {
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
+  @DistributedLock("notifications:dispatch-digests", 10 * 60_000)
   async dispatchDueDigests(): Promise<number> {
     const now = new Date();
     const routine = await this.notificationRepo.find({

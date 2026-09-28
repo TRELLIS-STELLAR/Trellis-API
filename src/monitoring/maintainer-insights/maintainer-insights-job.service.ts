@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { MaintainerInsightsService } from "./maintainer-insights.service";
+import { DistributedLock } from "../../infrastructure/distributed-lock/distributed-lock.decorator";
 
 /**
  * Background aggregation and retention lifecycle worker for Maintainer Insights.
@@ -23,6 +24,7 @@ export class MaintainerInsightsJobService {
    * Runs at minute 1 of every hour.
    */
   @Cron("1 * * * *")
+  @DistributedLock("maintainer-insights:hourly-aggregation", 10 * 60_000)
   async handleHourlyAggregation(): Promise<void> {
     this.logger.debug("Executing scheduled hourly maintainer insights aggregation...");
     try {
@@ -40,6 +42,7 @@ export class MaintainerInsightsJobService {
    * Runs daily at 01:05 UTC.
    */
   @Cron("5 1 * * *")
+  @DistributedLock("maintainer-insights:daily-rollup", 30 * 60_000)
   async handleDailyRollup(): Promise<void> {
     this.logger.debug("Executing scheduled daily maintainer insights rollup...");
     try {
@@ -55,6 +58,7 @@ export class MaintainerInsightsJobService {
    * Runs daily at 02:15 UTC.
    */
   @Cron("15 2 * * *")
+  @DistributedLock("maintainer-insights:retention-cleanup", 30 * 60_000)
   async handleRetentionCleanup(): Promise<void> {
     this.logger.debug("Executing scheduled maintainer insights retention cleanup...");
     try {
