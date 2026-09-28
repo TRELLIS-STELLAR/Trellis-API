@@ -52,6 +52,10 @@ Provide the off‑chain infrastructure required for agents, oracles, and operato
 - Secure by default — Wallet‑based auth flows, least privilege for service accounts, rigorous input validation, and rate limiting.
 - Observable & auditable — Structured logs, metrics, traces, and persistent event history for debugging and compliance.
 
+### Signed Oracle payloads
+
+Oracle payloads are serialized as canonical JSON before hashing, EIP-712 signing, and contract submission. Object keys are sorted recursively, JSON whitespace is omitted, and negative zero is normalized to zero. Non-finite numbers, unsafe integer values, undefined values, and non-plain objects are rejected; encode large integer amounts as decimal strings. Payload type values are trimmed and lowercased. Property names and string values keep their original casing and whitespace. Verification attempts the legacy insertion-order representation for older signatures when the original property order is available; new payloads always use canonical serialization.
+
 ## High‑level architecture (NestJS mapping)
 
 - NestJS Modules — Logical separation: ComputeBridgeModule, DashboardModule, AuthModule, IndexerModule, OracleModule, SimulatorModule, SubmitterModule.
