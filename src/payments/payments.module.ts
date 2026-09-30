@@ -18,6 +18,7 @@ import {
 } from "./adapters/stellar/stellar.constants";
 import { PAYMENT_PROCESSOR_METADATA } from "./decorators/register-payment-processor.decorator";
 import { IPaymentProcessor } from "./interfaces/payment-processor.interface";
+import { PaymentOperation } from "./entities/payment-operation.entity";
 import { PaymentProcessorFactory } from "./payment-processor.factory";
 import { PaymentsController } from "./payments.controller";
 import { PaymentsService } from "./payments.service";
@@ -41,8 +42,20 @@ import { WebhookSignatureService } from "./webhooks/webhook-signature.service";
  * The Stellar Horizon `Server` is provided via {@link STELLAR_HORIZON_SERVER}
  * so tests can override it with an in-memory fake (no network I/O offline).
  */
+
+/** DI token for the Horizon node pool + failover policy (issue #160). */
+export const HORIZON_NODE_POOL = "HORIZON_NODE_POOL";
+
 @Module({
-  imports: [ConfigModule, HttpModule, DiscoveryModule],
+  // PaymentOperation backs the create → sign → submit checkpoints in
+  // PaymentsService (#154). Registered here so the repository token resolves
+  // in every module context, including integration tests.
+  imports: [
+    ConfigModule,
+    HttpModule,
+    DiscoveryModule,
+    TypeOrmModule.forFeature([PaymentOperation]),
+  ],
   // Static segments MUST precede dynamic ones: both
   // `payments/webhooks/:provider` and `payments/stellar/{submit,status}` would
   // otherwise be shadowed by the generic `payments/:id/{submit,status}` routes
@@ -66,13 +79,10 @@ import { WebhookSignatureService } from "./webhooks/webhook-signature.service";
     {
       provide: STELLAR_HORIZON_SERVER,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const url = config.get<string>(
-          "STELLAR_HORIZON_URL",
-          DEFAULT_HORIZON_URL,
-        );
-        return new Horizon.Server(url);
-      },
+      useFactory: (config: ConfigService) =>
+        new Horizon.Server(
+          config.get<string>("STELLAR_HORIZON_URL", DEFAULT_HORIZON_URL),
+        ),
     },
   ],
   exports: [PaymentProcessorRegistry, PaymentProcessorFactory, PaymentsService],
