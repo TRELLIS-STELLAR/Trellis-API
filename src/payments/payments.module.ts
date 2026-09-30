@@ -12,10 +12,9 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { Horizon } from "@stellar/stellar-sdk";
 import { GrantfoxAdapter } from "./adapters/grantfox/grantfox.adapter";
 import { StellarAdapter } from "./adapters/stellar/stellar.adapter";
-import {
-  DEFAULT_HORIZON_URL,
-  STELLAR_HORIZON_SERVER,
-} from "./adapters/stellar/stellar.constants";
+import { STELLAR_HORIZON_SERVER } from "./adapters/stellar/stellar.constants";
+import { HorizonNodePool } from "./adapters/stellar/horizon-node-pool";
+import { ResilientHorizonProxy } from "./adapters/stellar/resilient-horizon-proxy";
 import { PAYMENT_PROCESSOR_METADATA } from "./decorators/register-payment-processor.decorator";
 import { IPaymentProcessor } from "./interfaces/payment-processor.interface";
 import { PaymentOperation } from "./entities/payment-operation.entity";
@@ -77,12 +76,21 @@ export const HORIZON_NODE_POOL = "HORIZON_NODE_POOL";
     StellarAdapter,
     GrantfoxAdapter,
     {
-      provide: STELLAR_HORIZON_SERVER,
+      provide: HORIZON_NODE_POOL,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        new Horizon.Server(
-          config.get<string>("STELLAR_HORIZON_URL", DEFAULT_HORIZON_URL),
-        ),
+      useFactory: (config: ConfigService) => new HorizonNodePool(config as any),
+    },
+    {
+      // Issue #160: serve Horizon RPC through a failover proxy so a degraded
+      // primary node (timeout, 5xx, network error) transparently retries and
+      // falls over to the configured fallback nodes without interrupting the
+      // payment flow. With a single configured node this is behaviour-neutral
+      // (retries only).
+      provide: STELLAR_HORIZON_SERVER,
+      inject: [HORIZON_NODE_POOL],
+      useFactory: (pool: HorizonNodePool) =>
+        new ResilientHorizonProxy(pool, (url) => new Horizon.Server(url))
+          .target,
     },
   ],
   exports: [PaymentProcessorRegistry, PaymentProcessorFactory, PaymentsService],
