@@ -3,6 +3,7 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ReconciliationController } from "./reconciliation.controller";
 import { ReconciliationService } from "./reconciliation.service";
+import { TransactionDetailsService } from "./transaction-details.service";
 import { HorizonPollingService } from "./horizon-polling.service";
 import { DryRunReconciliationController } from "./dry-run-reconciliation.controller";
 import { DryRunReconciliationService } from "./dry-run-reconciliation.service";
@@ -31,8 +32,9 @@ import { UserModule } from "../core/user/user.module";
     ReconciliationService,
     HorizonPollingService,
     DryRunReconciliationService,
+    TransactionDetailsService,
     FeatureFlagsService,
   ],
-  exports: [ReconciliationService, DryRunReconciliationService],
+  exports: [ReconciliationService, DryRunReconciliationService, TransactionDetailsService],
 })
 export class ReconciliationModule {}
