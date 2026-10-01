@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectQueue } from "@nestjs/bull";
 import { Queue } from "bull";
-import { JobStatus, WorkerJob, RetryPolicy, DEFAULT_RETRY_POLICY, WorkerJobPayload } from "./worker.interface";
+import { JobStatus, JobPriority, WorkerJob, RetryPolicy, DEFAULT_RETRY_POLICY, WorkerJobPayload } from "./worker.interface";
 
 @Injectable()
 export class BackgroundWorkerService implements OnModuleInit {
@@ -18,10 +18,10 @@ export class BackgroundWorkerService implements OnModuleInit {
 
   private registerDefaultPolicies() {
     const defaults: Record<string, Partial<RetryPolicy>> = {
-      webhook.delivery: { maxAttempts: 5, backoffMs: 2000, backoffMultiplier: 2, maxBackoffMs: 60000 },
-      email.send: { maxAttempts: 3, backoffMs: 1000, backoffMultiplier: 2, maxBackoffMs: 30000 },
-      data.export: { maxAttempts: 2, backoffMs: 5000, maxBackoffMs: 60000 },
-      reconciliation.sync: { maxAttempts: 4, backoffMs: 3000, backoffMultiplier: 1.5, maxBackoffMs: 120000 },
+      "webhook.delivery": { maxAttempts: 5, backoffMs: 2000, backoffMultiplier: 2, maxBackoffMs: 60000 },
+      "email.send": { maxAttempts: 3, backoffMs: 1000, backoffMultiplier: 2, maxBackoffMs: 30000 },
+      "data.export": { maxAttempts: 2, backoffMs: 5000, maxBackoffMs: 60000 },
+      "reconciliation.sync": { maxAttempts: 4, backoffMs: 3000, backoffMultiplier: 1.5, maxBackoffMs: 120000 },
     };
 
     for (const [type, policy] of Object.entries(defaults)) {
@@ -95,7 +95,6 @@ export class BackgroundWorkerService implements OnModuleInit {
       },
     );
 
-    this.updateJobStatus(id, JobStatus.ACTIVE);
     this.logger.log(`Enqueued job ${id} of type ${type}`);
     return job;
   }
@@ -152,7 +151,10 @@ export class BackgroundWorkerService implements OnModuleInit {
       return false;
     }
 
-    await this.queue.remove(job.id);
+    const bullJob = await this.queue.getJob(job.id);
+    if (bullJob) {
+      await bullJob.remove();
+    }
     job.status = JobStatus.FAILED;
     job.updatedAt = new Date();
     job.error = "Cancelled by user";
