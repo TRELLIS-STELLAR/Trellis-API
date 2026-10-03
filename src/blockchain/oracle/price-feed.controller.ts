@@ -16,11 +16,19 @@ import {
   PriceResponseDto,
 } from "./dto/price-feed.dto";
 import { SupportedChain } from "./entities/price-record.entity";
+import { CacheService } from "../../common/cache/cache.service";
+import {
+  MARKET_DATA_CACHE_TTL_SECONDS,
+  PRICE_FEED_CACHE_NAMESPACE,
+} from "../../common/cache/market-cache.constants";
 
 @ApiTags("Price Feed")
 @Controller("price-feed")
 export class PriceFeedController {
-  constructor(private readonly priceFeedService: PriceFeedService) {}
+  constructor(
+    private readonly priceFeedService: PriceFeedService,
+    private readonly cache: CacheService,
+  ) {}
 
   @Get(":chain/:asset")
   @ApiOperation({
@@ -36,7 +44,21 @@ export class PriceFeedController {
     @Param("chain") chain: SupportedChain,
     @Param("asset") asset: string,
   ): Promise<PriceResponseDto> {
-    return this.priceFeedService.getCurrentPrice(asset, chain);
+    const cacheArgs = [chain, asset.toUpperCase()];
+    const cached = await this.cache.get<PriceResponseDto>(
+      PRICE_FEED_CACHE_NAMESPACE,
+      ...cacheArgs,
+    );
+    if (cached !== null) return cached;
+
+    const price = await this.priceFeedService.getCurrentPrice(asset, chain);
+    await this.cache.set(
+      PRICE_FEED_CACHE_NAMESPACE,
+      price,
+      cacheArgs,
+      MARKET_DATA_CACHE_TTL_SECONDS,
+    );
+    return price;
   }
 
   /**

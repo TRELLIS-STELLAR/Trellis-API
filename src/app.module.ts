@@ -56,6 +56,7 @@ import { EmailModule } from "./email/email.module";
 import { LoggerModule } from "./logging/logger.module";
 // Modules – cache
 import { CacheModule } from "./common/cache/cache.module";
+import { MarketCacheWarmersModule } from "./common/cache/market-cache-warmers.module";
 // Modules – idempotency (replay protection for mutating requests)
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
 import { BillingModule } from "./billing/billing.module";
@@ -358,6 +359,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     RecoveryModule,
     VersioningModule,
     CacheModule,
+    MarketCacheWarmersModule,
     IdempotencyModule,
     RateLimitingModule.forRoot(),
     LoggerModule.forRootAsync({

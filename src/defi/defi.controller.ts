@@ -45,6 +45,15 @@ import {
   ProtocolRegistry,
   ProtocolAdapterMetadata,
 } from "./protocols/protocol-registry";
+import { CacheService } from "../common/cache/cache.service";
+import {
+  DEFAULT_YIELD_CHAIN,
+  DEFAULT_YIELD_TOKENS,
+  MARKET_DATA_CACHE_TTL_SECONDS,
+  YIELD_OPPORTUNITY_CACHE_NAMESPACE,
+  yieldOpportunityCacheArgs,
+} from "../common/cache/market-cache.constants";
+import type { YieldOpportunity } from "./services/yield-optimization.service";
 
 @Controller("defi")
 @UseGuards(JwtAuthGuard)
@@ -56,6 +65,7 @@ export class DeFiController {
     private transactionOptimizationService: TransactionOptimizationService,
     private protocolRegistry: ProtocolRegistry,
     private stakingService: StakingService,
+    private cache: CacheService,
   ) {}
 
   // ==================== Protocols ====================
@@ -358,13 +368,30 @@ export class DeFiController {
   @Get("opportunities")
   async getYieldOpportunities(
     @Query("tokens") tokens: string,
-    @Query("chain") chain: string = "ethereum",
+    @Query("chain") chain: string = DEFAULT_YIELD_CHAIN,
   ) {
-    const tokenList = tokens ? tokens.split(",") : ["USDC", "DAI", "USDT"];
-    return this.yieldOptimizationService.findHighestYieldOpportunities(
-      tokenList,
-      chain,
+    const tokenList = tokens
+      ? tokens.split(",").map((token) => token.trim()).filter(Boolean)
+      : [...DEFAULT_YIELD_TOKENS];
+    const cacheArgs = yieldOpportunityCacheArgs(chain, tokenList);
+    const cached = await this.cache.get<Record<string, YieldOpportunity[]>>(
+      YIELD_OPPORTUNITY_CACHE_NAMESPACE,
+      ...cacheArgs,
     );
+    if (cached !== null) return cached;
+
+    const opportunities = await this.yieldOptimizationService.findHighestYieldOpportunities(
+      [...new Set(tokenList.map((token) => token.toUpperCase()))],
+      cacheArgs[0],
+    );
+    const response = Object.fromEntries(opportunities);
+    await this.cache.set(
+      YIELD_OPPORTUNITY_CACHE_NAMESPACE,
+      response,
+      cacheArgs,
+      MARKET_DATA_CACHE_TTL_SECONDS,
+    );
+    return response;
   }
 
   @Post("opportunities/optimize")
