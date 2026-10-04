@@ -109,6 +109,18 @@ npm run sandbox:demo
 npm run test:sandbox
 ```
 
+### Deterministic Fixtures for Testing
+
+Contributors can generate seedable, repeatable test datasets covering standard user operations, edge cases, corrupt payloads, auth failure states, and boundary conditions.
+
+```bash
+# Generate deterministic fixtures with default seed (42) to stdout
+npm run fixtures:generate
+
+# Generate fixtures with custom seed and write output to file
+npm run fixtures:generate -- --seed=12345 --output=test/fixtures/local.json
+```
+
 Set `SANDBOX_MODE=true` in `.env` to enable it for the running API and select
 the processor per request with `X-Payment-Processor: sandbox` (or
 `PAYMENTS_DEFAULT_PROCESSOR=sandbox`). It is refused when

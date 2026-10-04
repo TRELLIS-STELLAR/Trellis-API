@@ -36,6 +36,7 @@
     "migration:run": "npm run typeorm -- migration:run -d src/config/typeorm.config.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.config.ts",
     "seed:audit": "ts-node src/seeds/seed-audit-data.ts",
+    "fixtures:generate": "ts-node -r tsconfig-paths/register scripts/generate-fixtures.ts",
     "docs:generate": "nest start --watch",
     "docs:serve": "nest start",
     "docs:build": "nest build && node dist/main.js",
@@ -139,7 +140,7 @@
     "winston": "^3.19.0",
     "winston-cloudwatch": "^6.3.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "winston-transport": "^4.14.0"
+    "winston-transport": "^4.9.0"
   },
   "devDependencies": {
     "@graphql-codegen/cli": "^7.2.0",
