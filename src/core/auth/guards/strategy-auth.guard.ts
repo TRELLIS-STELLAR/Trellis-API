@@ -4,13 +4,16 @@ import {
   ExecutionContext,
   UnauthorizedException,
   Logger,
+  ForbiddenException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Reflector } from "@nestjs/core";
-import { StrategyRegistry } from "../strategies/strategy.registry";
-import { AuthPayload } from "../strategies/interfaces/auth-strategy.interface";
-import { ALLOWED_STRATEGIES_KEY } from "../decorators/allowed-strategies.decorator";
+import { StrategyRegistry } from "src/core/auth/strategies/strategy.registry";
+import { AuthPayload } from "src/core/auth/strategies/interfaces/auth-strategy.interface";
+import { ALLOWED_STRATEGIES_KEY } from "src/core/auth/decorators/allowed-strategies.decorator";
 import { IS_PUBLIC_KEY } from "src/common/decorators/public.decorator";
+import { PERMISSIONS_KEY } from "src/common/guard/permissions.decorator";
+import { ApiKeyStrategy } from "src/core/auth/strategies/api-key/api-key.strategy";
 
 /**
  * Authentication guard that supports multiple strategies
@@ -40,13 +43,30 @@ export class StrategyAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const token = this.extractTokenFromHeader(request);
 
-    if (!token) {
+    const apiKey = request.headers?.["x-api-key"];
+    if (!token && !apiKey) {
       throw new UnauthorizedException("Access token is required");
     }
 
     try {
       // Try to validate token with any enabled strategy
-      const payload = await this.validateTokenWithStrategies(token);
+      let payload: AuthPayload | null;
+      if (apiKey) {
+        if (typeof apiKey !== "string")
+          throw new UnauthorizedException("Invalid API key header");
+        const strategy = this.strategyRegistry.get("api-key") as ApiKeyStrategy;
+        if (!strategy?.isEnabled)
+          throw new UnauthorizedException("API key authentication is disabled");
+        const result = await strategy.authenticate({ apiKey });
+        payload = await strategy.validateToken(result.token);
+      } else {
+        payload = await this.validateTokenWithStrategies(token);
+        // Other strategies share the JWT secret. Always recheck key state for API key JWTs.
+        if (payload?.type === "api-key") {
+          const strategy = this.strategyRegistry.get("api-key");
+          payload = strategy ? await strategy.validateToken(token) : null;
+        }
+      }
 
       if (!payload) {
         throw new UnauthorizedException("Invalid or expired token");
@@ -64,12 +84,29 @@ export class StrategyAuthGuard implements CanActivate {
         );
       }
 
+      if (payload.type === "api-key") {
+        const required = this.reflector.getAllAndOverride<string[]>(
+          PERMISSIONS_KEY,
+          [context.getHandler(), context.getClass()],
+        );
+        const scopes = payload.permissions ?? [];
+        const methodScope = ["GET", "HEAD", "OPTIONS"].includes(request.method)
+          ? "read"
+          : "write";
+        const permitted = required?.length
+          ? required.every((permission) => scopes.includes(permission))
+          : scopes.includes(methodScope);
+        if (!permitted)
+          throw new ForbiddenException("API key has insufficient scopes");
+      }
+
       // Attach user to request
       request.user = this.transformPayloadToUser(payload);
       request.authType = payload.type;
 
       return true;
     } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
       this.logger.warn("Authentication failed", error);
       throw new UnauthorizedException("Authentication failed");
     }
@@ -125,6 +162,7 @@ export class StrategyAuthGuard implements CanActivate {
     tier?: string;
     roles: string[];
     type: string;
+    permissions?: string[];
   } {
     return {
       id: payload.sub,
@@ -135,6 +173,8 @@ export class StrategyAuthGuard implements CanActivate {
       tier: payload.tier,
       roles: payload.roles || [payload.role],
       type: payload.type,
+      // Key scopes only restrict access; they must not become grants in PermissionsGuard.
+      permissions: payload.type === "api-key" ? undefined : payload.permissions,
     };
   }
 }

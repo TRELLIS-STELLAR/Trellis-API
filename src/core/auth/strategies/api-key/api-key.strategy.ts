@@ -8,14 +8,14 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import * as crypto from "crypto";
 import {
   AuthStrategy,
   AuthResult,
   AuthPayload,
   ApiKeyCredentials,
-} from "../interfaces/auth-strategy.interface";
+} from "src/core/auth/strategies/interfaces/auth-strategy.interface";
 import { User } from "src/core/user/entities/user.entity";
+import { ApiKeysService, hashApiKey } from "src/core/auth/api-keys.service";
 import {
   RateLimitTier,
   resolveRateLimitTierFromRole,
@@ -25,6 +25,7 @@ import {
  * API Key metadata
  */
 interface ApiKeyMetadata {
+  id?: string;
   userId: string;
   name: string;
   permissions: string[];
@@ -49,6 +50,7 @@ export class ApiKeyStrategy implements AuthStrategy {
     private readonly jwtService: JwtService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly persistedKeys: ApiKeysService,
   ) {
     this.loadSystemApiKeys();
   }
@@ -68,7 +70,7 @@ export class ApiKeyStrategy implements AuthStrategy {
           tier?: RateLimitTier;
         }> = JSON.parse(systemApiKeys);
         keys.forEach(({ key, userId, name, permissions, tier }) => {
-          this.apiKeys.set(key, {
+          this.apiKeys.set(hashApiKey(key), {
             userId,
             name,
             permissions,
@@ -76,7 +78,9 @@ export class ApiKeyStrategy implements AuthStrategy {
             createdAt: new Date(),
           });
         });
-        this.logger.log(`Loaded ${keys.length} system API keys`);
+        this.logger.warn(
+          `Loaded ${keys.length} deprecated SYSTEM_API_KEYS; migrate to user-managed API keys`,
+        );
       } catch (error) {
         this.logger.error("Failed to parse SYSTEM_API_KEYS", error);
       }
@@ -130,6 +134,9 @@ export class ApiKeyStrategy implements AuthStrategy {
         keyMetadata.tier || resolveRateLimitTierFromRole(user.role, "api-key"),
       iat: Math.floor(Date.now() / 1000),
       type: "api-key",
+      apiKeyId: keyMetadata.id,
+      systemKeyHash: keyMetadata.id ? undefined : hashApiKey(apiKey),
+      permissions: keyMetadata.permissions,
     };
 
     const token = this.jwtService.sign(payload, {
@@ -163,7 +170,7 @@ export class ApiKeyStrategy implements AuthStrategy {
     apiSecret?: string,
   ): Promise<ApiKeyMetadata | null> {
     // Check in-memory keys
-    const metadata = this.apiKeys.get(apiKey);
+    const metadata = this.apiKeys.get(hashApiKey(apiKey));
     if (metadata) {
       // Check expiration
       if (metadata.expiresAt && metadata.expiresAt < new Date()) {
@@ -172,85 +179,19 @@ export class ApiKeyStrategy implements AuthStrategy {
       return metadata;
     }
 
-    // TODO: Add database lookup for user-generated API keys
-    // This would involve hashing the key and looking it up in a database
-
-    return null;
-  }
-
-  /**
-   * Generate a new API key for a user
-   * @param userId - User ID
-   * @param name - Key name/description
-   * @param permissions - Array of permissions
-   * @param expiresInDays - Optional expiration in days
-   * @returns The generated API key
-   */
-  generateApiKey(
-    userId: string,
-    name: string,
-    permissions: string[] = ["read"],
-    expiresInDays?: number,
-    tier: RateLimitTier = "enterprise",
-  ): { key: string; secret: string } {
-    const key = `sk_${crypto.randomBytes(24).toString("hex")}`;
-    const secret = crypto.randomBytes(32).toString("hex");
-
-    this.apiKeys.set(key, {
-      userId,
-      name,
-      permissions,
-      tier,
-      createdAt: new Date(),
-      expiresAt: expiresInDays
-        ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
-        : undefined,
-    });
-
-    this.logger.log(`Generated API key: ${name} for user ${userId}`);
-
-    return { key, secret };
-  }
-
-  /**
-   * Revoke an API key
-   * @param apiKey - The API key to revoke
-   * @returns True if revoked successfully
-   */
-  revokeApiKey(apiKey: string): boolean {
-    const deleted = this.apiKeys.delete(apiKey);
-    if (deleted) {
-      this.logger.log("API key revoked");
-    }
-    return deleted;
-  }
-
-  /**
-   * Get all API keys for a user
-   * @param userId - User ID
-   * @returns Array of API key metadata (without actual keys)
-   */
-  getUserApiKeys(
-    userId: string,
-  ): Array<Omit<ApiKeyMetadata, "userId"> & { id: string }> {
-    const keys: Array<Omit<ApiKeyMetadata, "userId"> & { id: string }> = [];
-    let index = 0;
-
-    for (const [key, metadata] of this.apiKeys.entries()) {
-      if (metadata.userId === userId) {
-        keys.push({
-          id: `key_${index++}`,
-          name: metadata.name,
-          permissions: metadata.permissions,
-          tier: metadata.tier,
-          createdAt: metadata.createdAt,
-          expiresAt: metadata.expiresAt,
-          lastUsedAt: metadata.lastUsedAt,
-        });
-      }
-    }
-
-    return keys;
+    const stored = await this.persistedKeys.validate(apiKey);
+    return stored
+      ? {
+          id: stored.id,
+          userId: stored.userId,
+          name: stored.name,
+          permissions: stored.permissions,
+          createdAt: stored.createdAt,
+          expiresAt: stored.expiresAt,
+          lastUsedAt: stored.lastUsedAt,
+          tier: undefined,
+        }
+      : null;
   }
 
   /**
@@ -260,7 +201,20 @@ export class ApiKeyStrategy implements AuthStrategy {
    */
   async validateToken(token: string): Promise<AuthPayload | null> {
     try {
-      return this.jwtService.verify(token) as AuthPayload;
+      const payload = this.jwtService.verify(token) as AuthPayload;
+      if (payload.type !== "api-key") return null;
+      if (payload.apiKeyId) {
+        const key = await this.persistedKeys.validateTokenKey(
+          payload.apiKeyId,
+          payload.sub,
+        );
+        payload.permissions = key.permissions;
+      } else {
+        const key = this.apiKeys.get(payload.systemKeyHash);
+        if (!key || key.userId !== payload.sub) return null;
+        payload.permissions = key.permissions;
+      }
+      return payload;
     } catch (error) {
       this.logger.warn("Token validation failed", error);
       return null;
