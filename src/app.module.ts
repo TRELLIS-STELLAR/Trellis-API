@@ -17,6 +17,7 @@ import { EnvironmentVariables } from "./config/env.validation";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { TargetAllocationVersion } from "./portfolio/entities/target-allocation.entity";
+import { SubmissionHistory } from "./blockchain/oracle/entities/submission-history.entity";
 import { PortfolioModule as TargetAllocationModule } from "./portfolio/portfolio.module";
 
 // Modules – core
@@ -253,6 +254,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
             Wallet,
             SignedPayload,
             SubmissionNonce,
+            SubmissionHistory,
             PriceRecord,
             AgentEvent,
             ComputeResult,

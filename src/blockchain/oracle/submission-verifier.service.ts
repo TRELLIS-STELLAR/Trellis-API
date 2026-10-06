@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AuditLogService } from "src/infrastructure/audit/audit-log.service";
 import { telemetryService } from "src/observability/telemetry.service";
+import { SubmissionHistoryService } from "./services/submission-history.service";
 
 interface OnChainSubmission {
   id: string;
@@ -26,6 +27,7 @@ export class SubmissionVerifierService {
   constructor(
     private readonly auditLogService: AuditLogService,
     private readonly configService: ConfigService,
+    private readonly submissionHistory: SubmissionHistoryService,
   ) {
     // Only enable if blockchain configuration is present
     const rpcUrl = this.configService.get<string>("ETH_RPC_URL");
@@ -57,11 +59,14 @@ export class SubmissionVerifierService {
   // VERIFY LOOP
   // -------------------------------------
   async verifyCycle() {
-    const endTelemetry = telemetryService.startTimer("oracle.verify_submission", {
-      actorType: "service_actor",
-      funnel: "oracle_sync",
-      step: "submission_verify",
-    });
+    const endTelemetry = telemetryService.startTimer(
+      "oracle.verify_submission",
+      {
+        actorType: "service_actor",
+        funnel: "oracle_sync",
+        step: "submission_verify",
+      },
+    );
 
     try {
       const onChain = await this.fetchOnChainSubmissions();
@@ -104,8 +109,12 @@ export class SubmissionVerifierService {
   // FETCH OFF-CHAIN
   // -------------------------------------
   private async fetchOffChainSubmissions(): Promise<OffChainSubmission[]> {
-    // TODO: Replace with DB query
-    return [{ id: "1", hash: "abc", createdAt: new Date() }];
+    const submissions = await this.submissionHistory.pending();
+    return submissions.map((submission) => ({
+      id: submission.id,
+      hash: submission.payloadHash,
+      createdAt: submission.createdAt,
+    }));
   }
 
   // -------------------------------------
