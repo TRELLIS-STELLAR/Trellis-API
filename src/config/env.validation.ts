@@ -300,6 +300,31 @@ export class EnvironmentVariables {
 
   // Oracle configuration
   @IsOptional()
+  @IsUrl({ require_tld: false, protocols: ["https"], require_protocol: true })
+  SOROBAN_RPC_URL?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(1000)
+  @Transform(({ value }) => (value === undefined ? 1 : Number(value)))
+  ORACLE_MIN_CONFIRMATIONS?: number = 1;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(10)
+  @Transform(({ value }) => (value === undefined ? 3 : Number(value)))
+  ORACLE_RPC_MAX_RETRIES?: number = 3;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(10000)
+  @Transform(({ value }) => (value === undefined ? 250 : Number(value)))
+  ORACLE_RPC_RETRY_DELAY_MS?: number = 250;
+
+  @IsOptional()
   @IsString()
   ORACLE_CONTRACT_ADDRESS?: string;
 

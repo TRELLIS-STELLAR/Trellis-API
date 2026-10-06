@@ -17,6 +17,7 @@ import { AuditModule } from "src/infrastructure/audit/audit.module";
 import { SubmissionHistory } from "./entities/submission-history.entity";
 import { SubmissionHistoryService } from "./services/submission-history.service";
 import { SubmissionHistoryController } from "./submission-history.controller";
+import { StellarOracleAdapter } from "./services/stellar-oracle.adapter";
 
 /**
  * Oracle Module
@@ -39,6 +40,7 @@ import { SubmissionHistoryController } from "./submission-history.controller";
     SubmissionHistoryController,
   ],
   providers: [
+    StellarOracleAdapter,
     SubmissionHistoryService,
     OracleService,
     PayloadSigningService,
