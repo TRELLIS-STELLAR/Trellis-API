@@ -1,5 +1,16 @@
-import { Injectable, Logger, Optional, Inject } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  Optional,
+  Inject,
+  BadRequestException,
+  NotFoundException,
+} from "@nestjs/common";
 import { TradingTransactionService, TradeResult } from "src/investment/portfolio/services/trading-transaction.service";
+import { DataSource } from "typeorm";
+import { Portfolio } from "src/investment/portfolio/entities/portfolio.entity";
+import { PortfolioAsset } from "src/investment/portfolio/entities/portfolio-asset.entity";
+import { TargetAllocationVersion } from "src/portfolio/entities/target-allocation.entity";
 
 export interface RebalancingRecommendation {
   asset: string;
@@ -45,8 +56,7 @@ export interface AssetHolding {
 export class RebalancingService {
   private readonly logger = new Logger(RebalancingService.name);
 
-  // In-memory data store for portfolio target allocations and holdings
-  private targetAllocationsMap: Map<string, Record<string, number>> = new Map();
+  // In-memory holdings; allocation targets are persisted.
   private holdingsMap: Map<string, Record<string, AssetHolding>> = new Map();
   private thresholdMap: Map<string, number> = new Map();
   private executionHistoryMap: Map<string, RebalancingExecutionResult> = new Map();
@@ -56,6 +66,7 @@ export class RebalancingService {
   private minTradeSize = 10.0; // $10 minimum trade size
 
   constructor(
+    private readonly dataSource: DataSource,
     @Optional() private readonly tradingService?: TradingTransactionService,
   ) {}
 
@@ -80,17 +91,106 @@ export class RebalancingService {
     portfolioId: string,
     allocations: Map<string, number> | Record<string, number>,
   ): Promise<void> {
-    const allocRecord: Record<string, number> =
+    if (
+      !allocations ||
+      typeof allocations !== "object" ||
+      Array.isArray(allocations)
+    ) {
+      throw new BadRequestException(
+        "Allocations must be a map of asset symbols to percentages",
+      );
+    }
+    const entries =
       allocations instanceof Map
-        ? Object.fromEntries(allocations.entries())
-        : { ...allocations };
-
-    this.targetAllocationsMap.set(portfolioId, allocRecord);
-    this.logger.log(`Target allocations set for portfolio ${portfolioId}`);
+        ? [...allocations]
+        : Object.entries(allocations);
+    // Accept up to six decimal places; floating point addition tolerance is 1e-8 percentage points.
+    if (
+      !entries.length ||
+      entries.some(
+        ([ticker, weight]) =>
+          typeof ticker !== "string" ||
+          !ticker.trim() ||
+          typeof weight !== "number" ||
+          !Number.isFinite(weight) ||
+          weight < 0 ||
+          weight > 100 ||
+          Math.abs(weight * 1e6 - Math.round(weight * 1e6)) > 1e-6,
+      )
+    ) {
+      throw new BadRequestException(
+        "Weights must be finite percentages from 0 to 100 with at most six decimal places",
+      );
+    }
+    if (
+      Math.abs(entries.reduce((total, [, weight]) => total + weight, 0) - 100) >
+      1e-8
+    ) {
+      throw new BadRequestException("Target weights must sum to 100%");
+    }
+    await this.dataSource.transaction(async (manager) => {
+      const portfolio = await manager.findOne(Portfolio, {
+        where: { id: portfolioId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!portfolio) throw new NotFoundException("Portfolio not found");
+      const assets = await manager.find(PortfolioAsset, {
+        where: { portfolioId },
+      });
+      const targets = entries.map(([ticker, targetWeight]) => {
+        const matches = assets.filter((asset) => asset.ticker === ticker);
+        if (matches.length !== 1) {
+          throw new BadRequestException(
+            `Unknown or ambiguous portfolio asset: ${ticker}`,
+          );
+        }
+        return { assetId: matches[0].id, ticker, targetWeight };
+      });
+      const previous = await manager.findOne(TargetAllocationVersion, {
+        where: { portfolioId },
+        order: { version: "DESC" },
+      });
+      await manager.save(
+        TargetAllocationVersion,
+        manager.create(TargetAllocationVersion, {
+          portfolioId,
+          version: (previous?.version ?? 0) + 1,
+          allocations: targets,
+        }),
+      );
+      await manager.update(Portfolio, portfolioId, {
+        targetAllocation: Object.fromEntries(entries),
+      });
+    });
   }
 
-  async getTargetAllocations(portfolioId: string): Promise<Record<string, number>> {
-    return this.targetAllocationsMap.get(portfolioId) || {};
+  async getTargetAllocationVersion(portfolioId: string) {
+    const latest = await this.dataSource
+      .getRepository(TargetAllocationVersion)
+      .findOne({
+        where: { portfolioId },
+        order: { version: "DESC" },
+      });
+    return latest ?? null;
+  }
+
+  getTargetAllocationHistory(portfolioId: string) {
+    return this.dataSource.getRepository(TargetAllocationVersion).find({
+      where: { portfolioId },
+      order: { version: "DESC" },
+    });
+  }
+
+  async getTargetAllocations(
+    portfolioId: string,
+  ): Promise<Record<string, number>> {
+    const latest = await this.getTargetAllocationVersion(portfolioId);
+    return Object.fromEntries(
+      (latest?.allocations ?? []).map(({ ticker, targetWeight }) => [
+        ticker,
+        targetWeight,
+      ]),
+    );
   }
 
   /**
