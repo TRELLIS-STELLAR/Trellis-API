@@ -68,6 +68,9 @@ export interface AuthUser {
  * Payload contained in JWT token
  */
 export interface AuthPayload {
+  apiKeyId?: string;
+  systemKeyHash?: string;
+  permissions?: string[];
   /** User ID */
   sub?: string;
 

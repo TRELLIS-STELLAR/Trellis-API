@@ -16,6 +16,10 @@ import { EnvironmentVariables } from "./config/env.validation";
 
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
+import { TargetAllocationVersion } from "./portfolio/entities/target-allocation.entity";
+import { SubmissionHistory } from "./blockchain/oracle/entities/submission-history.entity";
+import { ApiKey } from "./core/auth/entities/api-key.entity";
+import { PortfolioModule as TargetAllocationModule } from "./portfolio/portfolio.module";
 
 // Modules – core
 import { AuthModule } from "./core/auth/auth.module";
@@ -247,10 +251,12 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
           database: "swaptrade",
           entities: [
             User,
+            ApiKey,
             EmailVerification,
             Wallet,
             SignedPayload,
             SubmissionNonce,
+            SubmissionHistory,
             PriceRecord,
             AgentEvent,
             ComputeResult,
@@ -259,6 +265,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
             SensitiveActionEvent,
             SensitiveActionChainHead,
             Portfolio,
+            TargetAllocationVersion,
             PortfolioAsset,
             Transaction,
             RiskProfile,
@@ -326,6 +333,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
       },
     }),
 
+    TargetAllocationModule,
     EventEmitterModule.forRoot(),
 
     AuthModule,

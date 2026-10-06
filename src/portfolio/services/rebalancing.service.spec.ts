@@ -1,3 +1,5 @@
+import { DataSource } from "typeorm";
+import { Portfolio } from "src/investment/portfolio/entities/portfolio.entity";
 import { Test, TestingModule } from "@nestjs/testing";
 import { RebalancingService } from "./rebalancing.service";
 import { TradingTransactionService } from "src/investment/portfolio/services/trading-transaction.service";
@@ -12,9 +14,23 @@ describe("RebalancingService (portfolio)", () => {
       processTrade: jest.fn(),
     } as any;
 
+    const versions = new Map<string, any>();
+    const manager: any = {
+      findOne: async (entity, options) => entity === Portfolio ? { id: options.where.id } : versions.get(options.where.portfolioId),
+      find: async () => ["BTC", "ETH", "XLM"].map(ticker => ({ id: ticker, ticker })),
+      create: (_, value) => value,
+      save: async (_, value) => { versions.set(value.portfolioId, value); return value; },
+      update: jest.fn(),
+    };
+    const dataSource = {
+      transaction: async callback => callback(manager),
+      getRepository: () => ({ findOne: async options => versions.get(options.where.portfolioId) }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RebalancingService,
+        { provide: DataSource, useValue: dataSource },
         { provide: TradingTransactionService, useValue: mockTradingService },
       ],
     }).compile();

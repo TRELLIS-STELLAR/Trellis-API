@@ -14,6 +14,10 @@ import { SignedPayload } from "./entities/signed-payload.entity";
 import { SubmissionNonce } from "./entities/submission-nonce.entity";
 import { PriceRecord } from "./entities/price-record.entity";
 import { AuditModule } from "src/infrastructure/audit/audit.module";
+import { SubmissionHistory } from "./entities/submission-history.entity";
+import { SubmissionHistoryService } from "./services/submission-history.service";
+import { SubmissionHistoryController } from "./submission-history.controller";
+import { StellarOracleAdapter } from "./services/stellar-oracle.adapter";
 
 /**
  * Oracle Module
@@ -21,12 +25,23 @@ import { AuditModule } from "src/infrastructure/audit/audit.module";
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SignedPayload, SubmissionNonce, PriceRecord]),
+    TypeOrmModule.forFeature([
+      SignedPayload,
+      SubmissionNonce,
+      PriceRecord,
+      SubmissionHistory,
+    ]),
     ConfigModule,
     AuditModule,
   ],
-  controllers: [OracleController, PriceFeedController],
+  controllers: [
+    OracleController,
+    PriceFeedController,
+    SubmissionHistoryController,
+  ],
   providers: [
+    StellarOracleAdapter,
+    SubmissionHistoryService,
     OracleService,
     PayloadSigningService,
     NonceManagementService,
@@ -36,6 +51,7 @@ import { AuditModule } from "src/infrastructure/audit/audit.module";
     PriceFeedService,
   ],
   exports: [
+    SubmissionHistoryService,
     OracleService,
     PayloadSigningService,
     NonceManagementService,
