@@ -51,6 +51,10 @@ export class CreatePaymentDto implements PaymentRequest {
   idempotencyKey: string;
 
   @IsOptional()
+  @IsString()
+  quoteId?: string;
+
+  @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>;
 }

@@ -1,12 +1,19 @@
 import {
+  BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { createHash } from "crypto";
+import Redis from "ioredis";
 import { In, LessThan, Repository } from "typeorm";
+import { v4 as uuidv4 } from "uuid";
+import { CACHE_REDIS_CLIENT } from "../common/cache/cache.constants";
 import { PaymentProcessorFactory } from "./payment-processor.factory";
 import { PaymentProcessorRegistry } from "./registry/payment-processor.registry";
 import {
@@ -22,6 +29,24 @@ import {
   PaymentOperation,
   PaymentOperationState,
 } from "./entities/payment-operation.entity";
+import { CreateRateQuoteDto, RateQuoteResponseDto } from "./dto/rate-quote.dto";
+
+/** 15-minute exchange rate lock window in seconds */
+export const RATE_LOCK_TTL_SECONDS = 900;
+/** 15-minute exchange rate lock window in milliseconds */
+export const RATE_LOCK_TTL_MS = RATE_LOCK_TTL_SECONDS * 1000;
+/** 1% market volatility safety buffer */
+export const VOLATILITY_BUFFER_PERCENT = 1.0;
+
+/** Default conversion rates (crypto per 1 USD) used when external spot rate is not supplied */
+const DEFAULT_CONVERSION_RATES: Record<string, number> = {
+  USD_TO_XLM: 8.5,
+  EUR_TO_XLM: 9.2,
+  GBP_TO_XLM: 10.8,
+  USD_TO_USDC: 1.0,
+  USD_TO_BTC: 0.000015,
+  USD_TO_ETH: 0.00035,
+};
 
 /**
  * Thin orchestrator the controller delegates to. Every operation resolves the
@@ -34,11 +59,21 @@ import {
  */
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+  /** In-memory fallback cache when Redis is not available */
+  private readonly inMemoryRateLocks = new Map<
+    string,
+    { quote: RateQuoteResponseDto; expiresAt: number }
+  >();
+
   constructor(
     private readonly factory: PaymentProcessorFactory,
     private readonly registry: PaymentProcessorRegistry,
     @InjectRepository(PaymentOperation)
     private readonly operationRepository: Repository<PaymentOperation>,
+    @Optional()
+    @Inject(CACHE_REDIS_CLIENT)
+    private readonly redis: Redis | null = null,
   ) {}
 
   async createPayment(
@@ -46,6 +81,12 @@ export class PaymentsService {
     selector: string | undefined,
     ownerId: string,
   ): Promise<CreatedPayment> {
+    const effectiveQuoteId =
+      request.quoteId ?? (request.metadata?.quoteId as string | undefined);
+    if (effectiveQuoteId) {
+      await this.validateRateQuote(effectiveQuoteId);
+    }
+
     const processor = this.factory.resolve(selector);
     const requestFingerprint = this.fingerprint(request);
     let operation = await this.operationRepository.findOne({
@@ -401,6 +442,158 @@ export class PaymentsService {
   disableProcessor(name: string): PaymentProcessorInfo[] {
     this.registry.disable(name);
     return this.registry.info();
+  }
+
+  /**
+   * Generates a multi-currency conversion rate quote with a 1% safety buffer
+   * against market volatility and locks the exchange rate for 15 minutes.
+   *
+   * Rate lock is stored in Redis under `rate_lock:{quoteId}` with a 900-second (15-min) TTL,
+   * with fallback to an in-memory lock store when Redis is unavailable.
+   */
+  async createRateQuote(dto: CreateRateQuoteDto): Promise<RateQuoteResponseDto> {
+    const fromCurrency = dto.fromCurrency.toUpperCase().trim();
+    const toCurrency = dto.toCurrency.toUpperCase().trim();
+    const fromAmountNum = parseFloat(dto.fromAmount);
+
+    if (isNaN(fromAmountNum) || fromAmountNum <= 0) {
+      throw new BadRequestException("fromAmount must be a positive number.");
+    }
+
+    const spotRate = dto.spotRate ?? this.resolveSpotRate(fromCurrency, toCurrency);
+    if (!spotRate || spotRate <= 0) {
+      throw new BadRequestException(
+        `Unable to determine conversion rate between ${fromCurrency} and ${toCurrency}.`,
+      );
+    }
+
+    // Apply 1% market volatility safety buffer to conversion rate calculation
+    const bufferMultiplier = 1 + VOLATILITY_BUFFER_PERCENT / 100;
+    const effectiveRate = Number((spotRate * bufferMultiplier).toFixed(8));
+
+    // Calculate toAmount based on buffered rate
+    const calculatedToAmount = (fromAmountNum * effectiveRate).toFixed(7);
+
+    const now = Date.now();
+    const expiresAt = now + RATE_LOCK_TTL_MS;
+    const quoteId = uuidv4();
+
+    const quote: RateQuoteResponseDto = {
+      quoteId,
+      fromCurrency,
+      toCurrency,
+      fromAmount: dto.fromAmount,
+      spotRate,
+      bufferPercent: VOLATILITY_BUFFER_PERCENT,
+      effectiveRate,
+      toAmount: calculatedToAmount,
+      createdAt: now,
+      expiresAt,
+      expiresInSeconds: RATE_LOCK_TTL_SECONDS,
+    };
+
+    await this.storeRateLock(quote);
+    return quote;
+  }
+
+  /**
+   * Retrieves a locked rate quote by quoteId.
+   * Throws BadRequestException if expired (>15 min) requiring a fresh quote.
+   */
+  async getRateQuote(quoteId: string): Promise<RateQuoteResponseDto> {
+    const quote = await this.retrieveRateLock(quoteId);
+    if (!quote) {
+      throw new NotFoundException(`Rate quote with id '${quoteId}' not found.`);
+    }
+
+    if (Date.now() > quote.expiresAt) {
+      throw new BadRequestException(
+        "Rate quote has expired (>15 min). Please generate a fresh rate quote.",
+      );
+    }
+
+    return quote;
+  }
+
+  /**
+   * Validates that a locked rate quote is active and within its 15-minute window.
+   * Throws BadRequestException if expired (>15 min) or missing.
+   */
+  async validateRateQuote(quoteId: string): Promise<RateQuoteResponseDto> {
+    const quote = await this.retrieveRateLock(quoteId);
+    if (!quote) {
+      throw new BadRequestException(
+        `Rate quote with id '${quoteId}' was not found or has expired. Please request a new quote.`,
+      );
+    }
+
+    if (Date.now() > quote.expiresAt) {
+      throw new BadRequestException(
+        "Rate quote has expired (>15 min). Please generate a fresh rate quote.",
+      );
+    }
+
+    return quote;
+  }
+
+  private async storeRateLock(quote: RateQuoteResponseDto): Promise<void> {
+    const key = `rate_lock:${quote.quoteId}`;
+    if (this.redis) {
+      try {
+        await this.redis.set(key, JSON.stringify(quote), "EX", RATE_LOCK_TTL_SECONDS);
+        return;
+      } catch (err) {
+        this.logger.warn(
+          `Failed to store rate lock in Redis for key ${key}; falling back to memory: ${this.errorMessage(err)}`,
+        );
+      }
+    }
+    this.inMemoryRateLocks.set(quote.quoteId, {
+      quote,
+      expiresAt: quote.expiresAt,
+    });
+  }
+
+  private async retrieveRateLock(
+    quoteId: string,
+  ): Promise<RateQuoteResponseDto | null> {
+    const key = `rate_lock:${quoteId}`;
+    if (this.redis) {
+      try {
+        const data = await this.redis.get(key);
+        if (data) {
+          return JSON.parse(data) as RateQuoteResponseDto;
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to retrieve rate lock from Redis for key ${key}; checking fallback: ${this.errorMessage(err)}`,
+        );
+      }
+    }
+
+    const memoryEntry = this.inMemoryRateLocks.get(quoteId);
+    if (memoryEntry) {
+      return memoryEntry.quote;
+    }
+
+    return null;
+  }
+
+  private resolveSpotRate(fromCurrency: string, toCurrency: string): number {
+    const pair = `${fromCurrency}_TO_${toCurrency}`;
+    if (DEFAULT_CONVERSION_RATES[pair]) {
+      return DEFAULT_CONVERSION_RATES[pair];
+    }
+    const reversePair = `${toCurrency}_TO_${fromCurrency}`;
+    if (DEFAULT_CONVERSION_RATES[reversePair]) {
+      return Number((1 / DEFAULT_CONVERSION_RATES[reversePair]).toFixed(8));
+    }
+    // Same currency conversion
+    if (fromCurrency === toCurrency) {
+      return 1.0;
+    }
+    // Fallback baseline spot rate
+    return 1.0;
   }
 
   private async findOperation(

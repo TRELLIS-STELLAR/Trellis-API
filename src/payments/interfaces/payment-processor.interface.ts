@@ -49,6 +49,8 @@ export interface PaymentRequest {
    * backend; true dedup requires persistence (see the DB seam in the README).
    */
   idempotencyKey: string;
+  /** Optional payment rate quote id (locks exchange rate for 15 minutes). */
+  quoteId?: string;
   /** Free-form processor-specific extras. */
   metadata?: Record<string, unknown>;
 }

@@ -24,6 +24,7 @@ import { RolesGuard } from "src/common/guard/roles.guard";
 import { Role } from "src/common/guard/roles.enum";
 import { PaymentsService } from "./payments.service";
 import { CreatePaymentDto, SignTransactionDto } from "./dto/create-payment.dto";
+import { CreateRateQuoteDto, RateQuoteResponseDto } from "./dto/rate-quote.dto";
 import { SubmitTransactionDto } from "./dto/submit-transaction.dto";
 import { RefundDto } from "./dto/refund.dto";
 import {
@@ -54,6 +55,25 @@ const PROCESSOR_HEADER = "x-payment-processor";
 @UseGuards(JwtAuthGuard)
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
+
+  @Post("quote")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      "Generate a multi-currency conversion rate quote with a 1% volatility buffer locked for 15 minutes",
+  })
+  createQuote(@Body() dto: CreateRateQuoteDto): Promise<RateQuoteResponseDto> {
+    return this.paymentsService.createRateQuote(dto);
+  }
+
+  @Get("quote/:quoteId")
+  @ApiOperation({
+    summary: "Retrieve an active conversion rate quote by quoteId",
+  })
+  @ApiParam({ name: "quoteId", description: "Quote id returned by createQuote" })
+  getQuote(@Param("quoteId") quoteId: string): Promise<RateQuoteResponseDto> {
+    return this.paymentsService.getRateQuote(quoteId);
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
