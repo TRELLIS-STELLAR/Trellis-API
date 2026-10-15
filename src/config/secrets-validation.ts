@@ -1,3 +1,5 @@
+import { StrKey } from "@stellar/stellar-sdk";
+
 /**
  * Secrets validation utilities for Trellis API.
  *
@@ -238,6 +240,57 @@ export function validateSecrets(
         issues.push({ key, severity: "error", message: hint });
       }
     }
+
+    if (env.PAYMENTS_DEFAULT_PROCESSOR?.toLowerCase() === "stellar") {
+      for (const key of [
+        "STELLAR_HORIZON_URL",
+        "STELLAR_NETWORK_PASSPHRASE",
+        "STELLAR_SIGNING_SECRET",
+      ]) {
+        if (!env[key]?.trim()) {
+          issues.push({
+            key,
+            severity: "error",
+            message: `${key} is required when Stellar is the production payment processor.`,
+          });
+        }
+      }
+    }
+  }
+
+  // Soroban verification is enabled only by this pair. Catch partial or
+  // malformed configuration before the adapter silently disables itself.
+  const rpcUrl = env.SOROBAN_RPC_URL?.trim();
+  const contractId = env.ORACLE_CONTRACT_ADDRESS?.trim();
+  if (Boolean(rpcUrl) !== Boolean(contractId)) {
+    const missingKey = rpcUrl ? "ORACLE_CONTRACT_ADDRESS" : "SOROBAN_RPC_URL";
+    issues.push({
+      key: missingKey,
+      severity: isProduction ? "error" : "warning",
+      message: `SOROBAN_RPC_URL and ORACLE_CONTRACT_ADDRESS must be configured together; ${missingKey} is missing.`,
+    });
+  }
+  if (rpcUrl) {
+    let validHttpsUrl = false;
+    try {
+      validHttpsUrl = new URL(rpcUrl).protocol === "https:";
+    } catch {
+      // URL parsing below reports the key without echoing a possibly secret URL.
+    }
+    if (!validHttpsUrl) {
+      issues.push({
+        key: "SOROBAN_RPC_URL",
+        severity: isProduction ? "error" : "warning",
+        message: "SOROBAN_RPC_URL must be a valid HTTPS URL.",
+      });
+    }
+  }
+  if (contractId && !StrKey.isValidContract(contractId)) {
+    issues.push({
+      key: "ORACLE_CONTRACT_ADDRESS",
+      severity: isProduction ? "error" : "warning",
+      message: "ORACLE_CONTRACT_ADDRESS must be a valid Stellar contract ID.",
+    });
   }
 
   const hasErrors = issues.some((i) => i.severity === "error");

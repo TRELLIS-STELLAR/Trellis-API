@@ -1,3 +1,4 @@
+import { StrKey } from "@stellar/stellar-sdk";
 import {
   validateSecrets,
   assertSecretsValid,
@@ -137,6 +138,50 @@ describe("validateSecrets – production environment", () => {
     const result = validateSecrets(env, true);
     const issue = result.issues.find((i) => i.key === "STELLAR_HORIZON_URL");
     expect(issue!.severity).toBe("error");
+  });
+
+  it("requires complete Stellar payment settings in production", () => {
+    const result = validateSecrets(
+      { ...VALID_PROD_ENV, PAYMENTS_DEFAULT_PROCESSOR: "stellar" },
+      true,
+    );
+    for (const key of [
+      "STELLAR_HORIZON_URL",
+      "STELLAR_NETWORK_PASSPHRASE",
+      "STELLAR_SIGNING_SECRET",
+    ]) {
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ key, severity: "error" }),
+      );
+    }
+  });
+
+  it("accepts a complete Soroban endpoint and valid contract ID", () => {
+    const result = validateSecrets(
+      {
+        ...VALID_PROD_ENV,
+        SOROBAN_RPC_URL: "https://soroban.example.com",
+        ORACLE_CONTRACT_ADDRESS: StrKey.encodeContract(Buffer.alloc(32, 7)),
+      },
+      true,
+    );
+    expect(result.issues.filter((issue) =>
+      ["SOROBAN_RPC_URL", "ORACLE_CONTRACT_ADDRESS"].includes(issue.key),
+    )).toHaveLength(0);
+  });
+
+  it.each([
+    ["SOROBAN_RPC_URL", "https://soroban.example.com", "ORACLE_CONTRACT_ADDRESS"],
+    ["ORACLE_CONTRACT_ADDRESS", "invalid-contract-id", "SOROBAN_RPC_URL"],
+    ["SOROBAN_RPC_URL", "http://soroban.example.com", "SOROBAN_RPC_URL"],
+  ])("rejects inconsistent oracle config (%s)", (key, value, expectedKey) => {
+    const result = validateSecrets(
+      { ...VALID_PROD_ENV, [key]: value },
+      true,
+    );
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({ key: expectedKey, severity: "error" }),
+    );
   });
 
   it("errors when Grantfox encryption key is too short", () => {
