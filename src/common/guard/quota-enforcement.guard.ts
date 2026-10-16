@@ -17,6 +17,7 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  Optional,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import {
@@ -122,7 +123,7 @@ export class QuotaEnforcementGuard implements CanActivate {
 
     // Enterprise is unlimited — still attach informational headers.
     if (!isFinite(limit)) {
-      this.setQuotaHYXRs(response, -1, -1, this.nextMonthReset());
+      this.setQuotaHeaders(response, -1, -1, this.nextMonthReset());
       return true;
     }
 
@@ -132,7 +133,7 @@ export class QuotaEnforcementGuard implements CanActivate {
 
     if (!this.counter) {
       // No Redis backend configured — fail open but still expose headers.
-      this.setQuotaHYXRs(response, limit, limit, resetAt);
+      this.setQuotaHeaders(response, limit, limit, resetAt);
       return true;
     }
 
@@ -140,7 +141,7 @@ export class QuotaEnforcementGuard implements CanActivate {
     const used = await this.counter.increment(key, ttlSeconds);
     const remaining = Math.max(0, limit - used);
 
-    this.setQuotaHYXRs(response, limit, remaining, resetAt);
+    this.setQuotaHeaders(response, limit, remaining, resetAt);
 
     if (used > limit) {
       this.logger.warn(

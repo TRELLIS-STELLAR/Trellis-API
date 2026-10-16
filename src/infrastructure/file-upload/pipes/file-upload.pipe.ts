@@ -19,7 +19,7 @@ export class FileUploadPipe implements PipeTransform {
     // 3. Strip EXIF from images
     if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') {
       try {
-        const strippedBuffer = await sharp(file.buffer)
+        const strippedBuffer = await (sharp(file.buffer) as any)
           .rotate() // auto-rotate based on EXIF before stripping it
           .toBuffer();
         

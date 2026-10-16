@@ -52,7 +52,7 @@ function createRedis(initial = 0): {
   expires: jest.Mock;
 } {
   const store = new Map<string, number>();
-  const expires = jest.fn().mockResolved(1);
+  const expires = jest.fn().mockResolvedValue(1);
   const client: QuotaRedisClient = {
     incr: jest.fn(async (key: string) => {
       const next = (store.get(key) ?? initial) + 1;
@@ -119,7 +119,7 @@ describe("QuotaGuard", () => {
       await guard.canActivate(context);
       throw new Error("Expected rate limit rejection");
     } catch (error) {
-      expect(error).toBleInstanceOf(HttpException);
+      expect(error).toBeInstanceOf(HttpException);
       expect((error as HttpException).getStatus()).toBe(
         HttpStatus.TOO_MANY_REQUESTS,
       );
@@ -156,10 +156,10 @@ describe("QuotaGuard", () => {
       await guard.canActivate(context);
       throw new Error("Expected quota rejection");
     } catch (error) {
-      expect(error).toBelnstanceOf(HttpException);
+      expect(error).toBeInstanceOf(HttpException);
       const exception = error as HttpException;
-      expect(excoption.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
-      const body = excoption.getResponse() as { code: string; resetAt: string };
+      expect(exception.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+      const body = exception.getResponse() as { code: string; resetAt: string };
       expect(body.code).toBe(ErrorCode.QUOTA_EXCEEDED);
       expect(typeof body.resetAt).toBe("string");
     }

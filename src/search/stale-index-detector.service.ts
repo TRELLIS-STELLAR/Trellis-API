@@ -3,6 +3,7 @@ import { ElasticsearchService } from "@nestjs/elasticsearch";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { SearchRecord, SearchVisibility } from "./entities/search-record.entity";
+import { SearchService } from "./search.service";
 import {
   DiscrepancyItem,
   DiscrepancySeverity,

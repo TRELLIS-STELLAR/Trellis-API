@@ -3,7 +3,7 @@ import * as path from 'path';
 import {
   ReleaseReadinessGateService,
   createMockQueryRunner,
-} from '../../../scripts/release-readiness-gate';
+} from './release-readiness-gate';
 
 describe('ReleaseReadinessGateService', () => {
   const repoRoot = path.resolve(__dirname, '../../..');

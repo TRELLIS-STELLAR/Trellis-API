@@ -632,7 +632,7 @@ export class IncidentDrillService {
       },
       {
         operationId: 'op-port-102',
-        operationType: OperationType.Rebalance,
+        operationType: OperationType.Rebalancing,
         userId: 'usr-102',
         title: 'Portfolio Valuation Re-sync',
         description: 'Recalculate portfolio totalValue from verified holdings.',

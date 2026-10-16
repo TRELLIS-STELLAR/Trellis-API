@@ -311,7 +311,7 @@ export class QuotaBudgetService {
     // Memory fallback
     const now = Date.now();
     return [...this.memStore.entries()]
-      .filter(([i, v]) => k.endsWith(`:${resource}`) && v.resetAt > now)
+      .filter(([k, v]) => k.endsWith(`:${resource}`) && v.resetAt > now)
       .map(([k, v]) => {
         const actor = k.replace(`:${resource}`, "");
         return {
@@ -474,7 +474,7 @@ export class QuotaBudgetService {
       try {
         const pipeline = this.redis.pipeline();
         pipeline.incrby(this.redisKey(key), cost);
-        pipeline.ptl();i
+        pipeline.pttl(this.redisKey(key));
         const results = (await pipeline.exec()) as [
           [null, number],
           [null, number],
@@ -589,7 +589,7 @@ export class QuotaBudgetService {
 
   private maybeCleanMemStore(now: number): void {
     if (this.memStore.size < 500 && now - this.lastMemCleanup < 60_000) return;
-    for (const [i, v] of this.memStore.entries()) {
+    for (const [k, v] of this.memStore.entries()) {
       if (v.resetAt <= now) this.memStore.delete(k);
     }
     this.lastMemCleanup = now;

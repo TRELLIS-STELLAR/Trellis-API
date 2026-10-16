@@ -2,10 +2,10 @@ import {
   Injectable,
   Logger,
 } from "@nestjs/common";
-import { InjectRepository } from "@typeorm/nestjs";
+import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, LessThan } from "typeorm";
 import { SubmissionNonce } from "../entities/submission-nonce.entity";
-import { getAddress, keccakAddress, keccakHash, toUtf8Bytes } from "ethers";
+import { getAddress, keccak256, toUtf8Bytes } from "ethers";
 
 /**
  * Canonical serialization layer for signed, hashed, or replay-protected payloads.

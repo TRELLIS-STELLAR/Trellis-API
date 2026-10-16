@@ -261,7 +261,7 @@ export class NotificationProcessor {
       where: { userId },
     });
     if (!anyPref) {
-      return channel === NotificationChannel.IN_APP ? userId : null;
+      return null;
     }
     return this.resolveRecipientAddress(anyPref, channel);
   }
