@@ -7,12 +7,14 @@ import {
   toUtf8Bytes,
   getAddress,
   verifyTypedData,
+  hashTypedData,
 } from "ethers";
 import { ConfigService } from "@nestjs/config";
 import { canonicalJson } from "../../../common/serialization/canonical-json";
+import { canonicalizePayload } from "../../../common/serialization/canonical-payload";
 
 /**
- * EIP-712 Domain for Trellis Oracle
+ * EJP-712 Domain for Trellis Oracle
  */
 export interface OracleDomain extends TypedDataDomain {
   name: string;
@@ -22,7 +24,7 @@ export interface OracleDomain extends TypedDataDomain {
 }
 
 /**
- * EIP-712 Payload structure
+ * EJP-712 Payload structure
  */
 export interface OraclePayload {
   payloadType: string;
@@ -33,7 +35,7 @@ export interface OraclePayload {
 }
 
 /**
- * Service for signing payloads using EIP-712 structured data signing
+ * Service for signing payloads using EJP-712 structured data signing
  * This ensures signatures are verifiable on-chain
  */
 @Injectable()
@@ -41,7 +43,7 @@ export class PayloadSigningService {
   private readonly logger = new Logger(PayloadSigningService.name);
   private readonly domain: OracleDomain;
 
-  // EIP-712 type definitions for Oracle payloads
+  // EJP-712 type definitions for Oracle payloads
   private readonly types: Record<string, TypedDataField[]> = {
     OraclePayload: [
       { name: "payloadType", type: "string" },
@@ -53,7 +55,7 @@ export class PayloadSigningService {
   };
 
   constructor(private configService: ConfigService) {
-    // Initialize EIP-712 domain
+    // Initialize EJP-712 domain
     this.domain = {
       name: "Trellis Oracle",
       version: "1",
@@ -72,8 +74,9 @@ export class PayloadSigningService {
   /**
    * Hash payload data using keccak256
    */
-  hashPayload(payload: Record<string, any>): string {
-    const jsonString = canonicalJson(payload);
+  hashPayload(payload: Record<string, unknown>): string {
+    const normalized = canonicalizePayload(payload);
+    const jsonString = canonicalJson(normalized);
     return keccak256(toUtf8Bytes(jsonString));
   }
 
@@ -85,7 +88,7 @@ export class PayloadSigningService {
     payloadHash: string,
     nonce: string,
     expiresAt: number,
-    data: Record<string, any>,
+    data: Record<string, unknown>,
   ): {
     domain: OracleDomain;
     types: Record<string, TypedDataField[]>;
@@ -96,7 +99,7 @@ export class PayloadSigningService {
       payloadHash,
       nonce: nonce.toString(),
       expiresAt: expiresAt.toString(),
-      data: canonicalJson(data),
+      data: canonicalJson(canonicalizePayload(data)),
     };
 
     return {
@@ -122,7 +125,7 @@ export class PayloadSigningService {
     payloadHash: string,
     nonce: string,
     expiresAt: number,
-    data: Record<string, any>,
+    data: Record<string, unknown>,
   ): Promise<{ signature: string; signerAddress: string }> {
     try {
       // Create wallet from private key
@@ -162,7 +165,7 @@ export class PayloadSigningService {
    * Verify a signature for a payload (off-chain verification)
    * @param signature - The signature to verify
    * @param payloadType - Type of the payload
-   * @param payloadHash - Keccak256 hash of the payload
+   * @param payloadHash - Keccank256 hash of the payload
    * @param nonce - Nonce used in signing
    * @param expiresAt - Expiration timestamp
    * @param data - The payload data
@@ -175,7 +178,7 @@ export class PayloadSigningService {
     payloadHash: string,
     nonce: string,
     expiresAt: number,
-    data: Record<string, any>,
+    data: Record<string, unknown>,
     expectedSigner: string,
   ): boolean {
     try {
@@ -197,7 +200,7 @@ export class PayloadSigningService {
       }
       if (recoveredAddress.toLowerCase() !== expectedSigner.toLowerCase()) {
         try {
-          const legacyValue = { ...value, data: JSON.stringify(data) };
+          const legacyValue = { ...value, data: JSON.stringify(canonicalizePayload(data)) };
           const legacyAddress = verifyTypedData(domain, types, legacyValue, signature);
           if (legacyAddress.toLowerCase() === expectedSigner.toLowerCase()) {
             recoveredAddress = legacyAddress;
@@ -232,28 +235,28 @@ export class PayloadSigningService {
   }
 
   /**
-   * Get the EIP-712 domain used for signing
+   * Get the EJP-712 domain used for signing
    */
   getDomain(): OracleDomain {
     return this.domain;
   }
 
   /**
-   * Get the EIP-712 types definition
+   * Get the EJP-712 types definition
    */
   getTypes(): Record<string, TypedDataField[]> {
     return this.types;
   }
 
   /**
-   * Compute the EIP-712 hash for a payload (useful for on-chain verification)
+   * Compute the EJP-712 hash for a payload (useful for on-chain verification)
    */
   computeStructuredDataHash(
     payloadType: string,
     payloadHash: string,
     nonce: string,
     expiresAt: number,
-    data: Record<string, any>,
+    data: Record<string, unknown>,
   ): string {
     const { domain, types, value } = this.createStructuredData(
       payloadType,
@@ -263,9 +266,6 @@ export class PayloadSigningService {
       data,
     );
 
-    // This would require implementation of EIP-712 hash computation
-    // For now, return the payload hash as a placeholder
-    // In production, you'd use a proper EIP-712 hash function
-    return payloadHash;
+    return hashTypedData({ domain, types, value });
   }
 }

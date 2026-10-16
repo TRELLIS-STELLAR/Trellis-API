@@ -34,10 +34,14 @@ export function canonicalJson(value: unknown): string {
         throw new TypeError("Canonical JSON objects must be plain objects");
       }
       const record = current as Record<string, unknown>;
-      return `{${Object.keys(record).sort().map((key) => {
-        if (record[key] === undefined) throw new TypeError("Canonical JSON cannot contain undefined values");
-        return `${JSON.stringify(key)}:${serialize(record[key])}`;
-      }).join(",")}}`;
+      const body = Object.keys(record)
+        .sort()
+        .map((key: string) => {
+          if (record[key] === undefined) throw new TypeError("Canonical JSON cannot contain undefined values");
+          return `${JSON.stringify(key)}:${serialize(record[key])}`;
+        })
+        .join(",");
+      return `{${body}}`;
     } finally {
       ancestors.delete(current);
     }
