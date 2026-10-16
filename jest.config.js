@@ -9,7 +9,7 @@ module.exports = {
     // transformIgnorePatterns below); down-level just those files with an
     // isolated, no-type-check transpile so they load under CommonJS.
     '.+/node_modules/.+\\.js$': ['ts-jest', { isolatedModules: true }],
-    '^.+\\.(t|j)s$': 'ts-jest',
+    '^.+\\.(t|j)s$': ['ts-jest', { isolatedModules: true }],
   },
   transformIgnorePatterns: [
     // Keep ignoring node_modules EXCEPT the ESM-only chain under
