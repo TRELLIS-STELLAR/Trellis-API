@@ -42,6 +42,7 @@ adapter, callback, data export, or privileged operational control is added.
 | A contributor submits a malicious or incompatible optional module/adapter, or a privileged caller changes enablement for another tenant. | Untrusted code or cross-tenant configuration can access service privileges or alter tenant behavior. | The registry validates manifests and versions, checks compatibility again on enable, resolves tenant overrides before global defaults, and wraps lifecycle changes in database transactions. Only administrator-role routes can mutate the module registry. Run the registry service spec in `npm run test:threat-model`. Manifest validation is not a sandbox: module code must be trusted, reviewed, and deployed under the normal code-release controls. |
 | A provider, chain node, database, or Redis becomes unavailable after the API has accepted a request or side effect. An operator blindly retries it. | Duplicate payments/trades or local state diverging from the authoritative ledger/provider. | Use the existing operation/idempotency and reconciliation records; pause risky writes when the result is uncertain and query the provider/ledger before resubmission. Run `npm run dr:validate` and the focused fault tests as appropriate; use the [operational runbook](OPERATIONAL_RUNBOOK.md) and [disaster recovery invariants](disaster-recovery-invariants.md). |
 | Sensitive values are copied into logs, audit events, notifications, traces, or metrics during a failure. | Credential compromise or disclosure of personal/financial data. | Keep secrets out of diagnostic context; use the audit payload sanitizer and sensitive-content boundary. Restrict observability endpoints and access to stored logs. Consult [sensitive content boundary](SENSITIVE_CONTENT_BOUNDARY.md), [operational data controls](operational-data-controls.md), and [maintainer metrics privacy](MAINTAINER_METRICS_PRIVACY.md). |
+| An attacker or compromised account rapidly executes suspicious high-impact actions (treasury drain, unverified DeFi adapter swaps, mass export, credential cooling bypass). | Account takeover or protocol exploit causing catastrophic asset or data loss. | `AbuseDetectionService` computes explainable risk signals across velocity, amount spikes, destination churn, credential cooling, and DeFi drain patterns, enforcing step-up verification (`step_up_required`) or manual review (`manual_review`) while exempting low-risk legitimate use (`TRUSTED_PRINCIPAL_MITIGATION`). Run `node scripts/verify-abuse-detection.js` and consult [risk-scored abuse detection](RISK_SCORED_ABUSE_DETECTION.md). |
 
 ## Focused verification
 
@@ -51,6 +52,7 @@ webhook, payment callback, or module-registry boundary:
 ```sh
 npm run test:threat-model
 npm run test:kyc-guard-scan
+node scripts/verify-abuse-detection.js
 ```
 
 The first command runs targeted Jest tests for API-key/strategy authorization,
