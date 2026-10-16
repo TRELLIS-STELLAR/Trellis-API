@@ -33,10 +33,12 @@ import { NotificationGateway } from './websocket/notification.gateway';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationDigestService } from './services/notification-digest.service';
 import { NotificationController } from './notification.controller';
+import { PaginationModule } from '../common/pagination/pagination.module';
 
 @Module({
   imports: [
     ConfigModule,
+    PaginationModule,
     ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([
       Notification,

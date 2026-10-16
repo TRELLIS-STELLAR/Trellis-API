@@ -14,6 +14,7 @@ import { QueryNotificationHistoryDto } from '../dto/query-notification.dto';
 import { NotificationTemplateService } from './notification-template.service';
 import { NotificationAggregationService } from './notification-aggregation.service';
 import { NotificationQueueService } from './notification-queue.service';
+import { CursorPaginationService } from '../../common/pagination/cursor-pagination.service';
 
 @Injectable()
 export class NotificationService {
@@ -28,6 +29,7 @@ export class NotificationService {
     private readonly aggregationService: NotificationAggregationService,
     private readonly queueService: NotificationQueueService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly cursorPagination: CursorPaginationService,
   ) {}
 
   /**
@@ -267,26 +269,16 @@ export class NotificationService {
       qb.andWhere('n.createdAt < :before', { before: dto.before });
     }
 
-    // Cursor-based pagination
-    if (dto.cursor) {
-      const decoded = Buffer.from(dto.cursor, 'base64').toString('utf8');
-      try {
-        const { createdAt, id } = JSON.parse(decoded);
-        qb.andWhere(
-          '(n.createdAt < :cursorCreatedAt OR (n.createdAt = :cursorCreatedAt AND n.id < :cursorId))',
-          { cursorCreatedAt: createdAt, cursorId: id },
-        );
-      } catch {
-        throw new BadRequestException('Invalid cursor');
-      }
+    // Keyset pagination uses a fixed unique order. Scope and visibility filters
+    // are applied first on every request, so stale cursors cannot bypass them.
+    if (dto.sortBy && dto.sortBy !== 'createdAt') {
+      throw new BadRequestException('Notification history cursors support sortBy=createdAt only');
     }
-
-    const sortOrder = dto.sortOrder || 'DESC';
-    const sortBy = dto.sortBy || 'createdAt';
-    qb.orderBy(`n.${sortBy}`, sortOrder).addOrderBy('n.id', sortOrder);
+    const sortOrder = dto.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    this.cursorPagination.applyKeyset(qb, 'n', dto.cursor, sortOrder);
 
     // Fetch one extra to determine if there are more results
-    const limit = dto.limit || 20;
+    const limit = Math.min(Math.max(dto.limit ?? 20, 1), 100);
     qb.take(limit + 1);
 
     const results = await qb.getMany();
@@ -295,12 +287,10 @@ export class NotificationService {
 
     const nextCursor =
       hasMore && results.length > 0
-        ? Buffer.from(
-            JSON.stringify({
+          ? this.cursorPagination.encode({
               createdAt: results[results.length - 1].createdAt,
               id: results[results.length - 1].id,
-            }),
-          ).toString('base64')
+            })
         : null;
 
     const total = await qb.getCount();

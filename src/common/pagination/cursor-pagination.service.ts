@@ -38,13 +38,30 @@ export class CursorPaginationService {
 
   decode(cursor: string): CursorPosition {
     try {
-      if (
-        !cursor ||
-        cursor.length > MAX_CURSOR_LENGTH ||
-        !/^[A-Za-z0-9_-]+$/.test(cursor)
-      ) {
+      if (!cursor || cursor.length > MAX_CURSOR_LENGTH) {
         throw new Error("Malformed cursor encoding");
       }
+
+      if (/[+/=]/.test(cursor)) {
+        const legacy = Buffer.from(cursor, "base64").toString("utf8");
+        const payload = JSON.parse(legacy) as Partial<EncodedCursor>;
+        if (
+          !/^[A-Za-z0-9+/]+={0,2}$/.test(cursor) ||
+          Buffer.from(legacy, "utf8").toString("base64") !== cursor ||
+          typeof payload.createdAt !== "string" ||
+          typeof payload.id !== "string"
+        ) {
+          throw new Error("Malformed legacy cursor");
+        }
+        const position = { createdAt: new Date(payload.createdAt), id: payload.id };
+        this.assertPosition(position);
+        if (position.createdAt.toISOString() !== payload.createdAt) {
+          throw new Error("Non-canonical legacy cursor timestamp");
+        }
+        return position;
+      }
+
+      if (!/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error("Malformed cursor encoding");
 
       const decoded = Buffer.from(cursor, "base64url").toString("utf8");
       if (Buffer.from(decoded, "utf8").toString("base64url") !== cursor) {
@@ -52,11 +69,26 @@ export class CursorPaginationService {
       }
 
       const payload = JSON.parse(decoded) as Partial<EncodedCursor>;
-      if (
-        payload.v !== CURSOR_VERSION ||
-        typeof payload.createdAt !== "string" ||
-        typeof payload.id !== "string"
-      ) {
+      // Accept the original notification-history cursor shape during rollout.
+      // New cursors always include a version and use canonical base64url.
+      if (payload.v === undefined) {
+        const legacy = Buffer.from(cursor, "base64").toString("utf8");
+        const legacyPayload = JSON.parse(legacy) as Partial<EncodedCursor>;
+        if (
+          Buffer.from(legacy, "utf8").toString("base64") !== cursor ||
+          typeof legacyPayload.createdAt !== "string" ||
+          typeof legacyPayload.id !== "string"
+        ) {
+          throw new Error("Unsupported legacy cursor payload");
+        }
+        const position = { createdAt: new Date(legacyPayload.createdAt), id: legacyPayload.id };
+        this.assertPosition(position);
+        if (position.createdAt.toISOString() !== legacyPayload.createdAt) {
+          throw new Error("Non-canonical legacy cursor timestamp");
+        }
+        return position;
+      }
+      if (payload.v !== CURSOR_VERSION || typeof payload.createdAt !== "string" || typeof payload.id !== "string") {
         throw new Error("Unsupported cursor payload");
       }
 
@@ -79,15 +111,23 @@ export class CursorPaginationService {
     alias: string,
     cursor?: string,
   ): SelectQueryBuilder<T> {
-    queryBuilder
-      .orderBy(`${alias}.createdAt`, "DESC")
-      .addOrderBy(`${alias}.id`, "DESC");
+    return this.applyKeyset(queryBuilder, alias, cursor, "DESC");
+  }
+
+  applyKeyset<T>(
+    queryBuilder: SelectQueryBuilder<T>,
+    alias: string,
+    cursor: string | undefined,
+    direction: "ASC" | "DESC",
+  ): SelectQueryBuilder<T> {
+    const operator = direction === "ASC" ? ">" : "<";
+    queryBuilder.orderBy(`${alias}.createdAt`, direction).addOrderBy(`${alias}.id`, direction);
 
     if (cursor) {
       const position = this.decode(cursor);
       queryBuilder.andWhere(
-        `(${alias}.createdAt < :cursorCreatedAt OR ` +
-          `(${alias}.createdAt = :cursorCreatedAt AND ${alias}.id < :cursorId))`,
+        `(${alias}.createdAt ${operator} :cursorCreatedAt OR ` +
+          `(${alias}.createdAt = :cursorCreatedAt AND ${alias}.id ${operator} :cursorId))`,
         {
           cursorCreatedAt: position.createdAt,
           cursorId: position.id,

@@ -16,6 +16,7 @@ import {
 import { NotificationDeliveryLog } from '../entities/notification-delivery-log.entity';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { QueryNotificationHistoryDto } from '../dto/query-notification.dto';
+import { CursorPaginationService } from '../../common/pagination/cursor-pagination.service';
 
 describe('NotificationService', () => {
   let service: NotificationService;
@@ -94,6 +95,7 @@ describe('NotificationService', () => {
         { provide: NotificationAggregationService, useValue: mockAggregationService },
         { provide: NotificationQueueService, useValue: mockQueueService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
+        CursorPaginationService,
       ],
     }).compile();
 
@@ -430,7 +432,7 @@ describe('NotificationService', () => {
 
     it('should generate cursor when there are more results', async () => {
       const notifications = Array.from({ length: 21 }, (_, i) => ({
-        id: `n${i}`,
+        id: `00000000-0000-4000-8000-${i.toString().padStart(12, '0')}`,
         title: `Title ${i}`,
         createdAt: new Date(2025, 0, 1),
       }));
@@ -472,6 +474,35 @@ describe('NotificationService', () => {
       });
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('n.read = false');
+    });
+
+    it('reapplies user and visibility filters before a stable keyset cursor', async () => {
+      const createdAt = new Date('2026-10-15T12:00:00.000Z');
+      const id = '550e8400-e29b-41d4-a716-446655440000';
+      mockQueryBuilder.getMany.mockResolvedValueOnce([
+        { id, createdAt },
+        { id: '550e8400-e29b-41d4-a716-446655440001', createdAt: new Date(createdAt.getTime() - 1) },
+      ]);
+      mockQueryBuilder.getCount.mockResolvedValue(1);
+      const first = await service.getHistory({ userId: 'user-1', limit: 1 });
+      expect(first.nextCursor).toBeTruthy();
+
+      mockQueryBuilder.andWhere.mockClear();
+      mockQueryBuilder.getMany.mockResolvedValueOnce([]);
+      await service.getHistory({ userId: 'user-1', limit: 1, cursor: first.nextCursor! });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenNthCalledWith(1, 'n.deleted = false');
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        '(n.createdAt < :cursorCreatedAt OR (n.createdAt = :cursorCreatedAt AND n.id < :cursorId))',
+        { cursorCreatedAt: createdAt, cursorId: id },
+      );
+      expect(mockQueryBuilder.orderBy).toHaveBeenLastCalledWith('n.createdAt', 'DESC');
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenLastCalledWith('n.id', 'DESC');
+    });
+
+    it('rejects unsupported mutable sort keys for cursor pagination', async () => {
+      await expect(service.getHistory({ userId: 'user-1', sortBy: 'priority' as any }))
+        .rejects.toThrow('sortBy=createdAt only');
     });
   });
 
