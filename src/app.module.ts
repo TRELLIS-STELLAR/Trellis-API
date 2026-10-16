@@ -163,6 +163,8 @@ import { PauseControlModule } from "./infrastructure/pause-control/pause-control
 import { InvariantMonitorModule } from "./monitoring/invariant-monitor/invariant-monitor.module";
 // Modules – permission matrix
 import { PermissionMatrixModule } from "./common/guard/permission-matrix.module";
+// Modules – risk-scored abuse detection
+import { AbuseDetectionModule } from "./security/abuse-detection/abuse-detection.module";
 
 // Guards
 import { APP_FILTER } from "@nestjs/core";
@@ -394,6 +396,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     PauseControlModule,
     InvariantMonitorModule,
     PermissionMatrixModule,
+    AbuseDetectionModule,
   ],
 
   controllers: [AppController, QuotaAdminController],

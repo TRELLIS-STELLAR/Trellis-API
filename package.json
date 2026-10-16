@@ -58,7 +58,8 @@
     "dr:validate": "ts-node -r tsconfig-paths/register scripts/validate-dr-invariants.ts",
     "validate:maintainer-insights": "node scripts/validate-maintainer-insights.js",
     "incident:drill": "ts-node -r tsconfig-paths/register scripts/run-incident-drill.ts",
-    "incident:drill:verify": "node scripts/verify-incident-drill.js"
+    "incident:drill:verify": "node scripts/verify-incident-drill.js",
+    "verify:abuse-detection": "node scripts/verify-abuse-detection.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",
