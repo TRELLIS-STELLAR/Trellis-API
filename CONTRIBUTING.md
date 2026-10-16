@@ -84,6 +84,9 @@ npm run diagnostics
 # For a faster check that skips network probes:
 npm run diagnostics:quick
 
+# Details, failure modes, and safe recovery:
+# docs/DEVELOPER_DIAGNOSTICS.md
+
 # Start development server
 npm run start:dev
 
