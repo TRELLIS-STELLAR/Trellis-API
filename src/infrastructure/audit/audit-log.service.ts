@@ -8,6 +8,7 @@ import { AuditLogListResponseDto } from "./dto/audit-log-response.dto";
 import { ExportSigningService } from "./algorithms/export-signing.service";
 import { CursorPaginationService } from "../../common/pagination/cursor-pagination.service";
 import { DistributedLock } from "../distributed-lock/distributed-lock.decorator";
+import { minimizeAuditDetails, minimizeAuditMetadata } from "./audit-log-metadata.policy";
 
 const RETENTION_YEARS = 7;
 const ARCHIVE_AFTER_YEARS = 1;
@@ -52,17 +53,27 @@ export class AuditLogService {
     metadata?: Record<string, unknown>;
     visibility?: AuditLogVisibility;
   }): Promise<AuditLog> {
+    const details = minimizeAuditDetails(entry.details);
+    const metadata = minimizeAuditMetadata(entry.metadata);
     const searchText = [
       entry.action,
       entry.resourceType,
       entry.resourceId,
       entry.ipAddress,
-      entry.details,
+      details,
     ]
       .filter(Boolean)
       .join(" ");
 
-    const log = this.repo.create({ ...entry, searchText });
+    const log = this.repo.create({
+      ...entry,
+      details,
+      metadata,
+      // User-agent strings add device fingerprinting data but are not used by
+      // audit queries or retention decisions; do not persist them.
+      userAgent: null,
+      searchText,
+    });
     return this.repo.save(log);
   }
 

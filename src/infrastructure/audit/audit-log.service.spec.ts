@@ -26,6 +26,32 @@ describe("AuditLogService retention", () => {
   });
 });
 
+describe("AuditLogService record minimization", () => {
+  it("persists only classified metadata and omits user-agent fingerprint data", async () => {
+    const repo = {
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => value),
+    };
+    const service = new AuditLogService(repo as any, {} as any, {} as any);
+
+    await service.record({
+      userId: "user-1",
+      action: "LOGIN" as any,
+      ipAddress: "192.0.2.1",
+      userAgent: "Example browser fingerprint",
+      details: "Login for person@example.com",
+      metadata: { reasonCode: "password", rawPayload: "discard" },
+    });
+
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+      details: "Login for [email]",
+      userAgent: null,
+      metadata: { reasonCode: "password" },
+    }));
+    expect(repo.create.mock.calls[0][0].searchText).not.toContain("Example browser fingerprint");
+  });
+});
+
 describe("AuditLogService timeline", () => {
   it("should return only public logs for a specific user", async () => {
     const qbMock = {
