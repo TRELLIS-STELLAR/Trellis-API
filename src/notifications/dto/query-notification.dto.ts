@@ -8,6 +8,7 @@ import {
   IsDateString,
   IsBoolean,
   IsUUID,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -75,17 +76,14 @@ export class QueryNotificationHistoryDto {
   @IsDateString()
   before?: string;
 
-  @ApiPropertyOptional({
-    enum: ['createdAt', 'readAt', 'priority'],
-    default: 'createdAt',
-  })
+  @ApiPropertyOptional({ enum: ['createdAt'], default: 'createdAt' })
   @IsOptional()
-  @IsString()
+  @IsIn(['createdAt'])
   sortBy?: string = 'createdAt';
 
   @ApiPropertyOptional({ enum: ['ASC', 'DESC'], default: 'DESC' })
   @IsOptional()
-  @IsString()
+  @IsIn(['ASC', 'DESC'])
   sortOrder?: 'ASC' | 'DESC' = 'DESC';
 }
 

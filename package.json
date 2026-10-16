@@ -19,6 +19,7 @@
     "test": "jest",
     "test:contract": "jest src/common/contract/api-contract-drift.spec.ts",
     "test:kyc-guard-scan": "node scripts/check-kyc-guard-coverage.js",
+    "test:threat-model": "jest --runInBand src/core/auth/guards/strategy-auth.guard.spec.ts src/common/guard/kyc.guard.spec.ts src/investment/portfolio/guards/portfolio-owner.guard.spec.ts src/infrastructure/webhooks/services/webhook-inbound.service.spec.ts src/payments/webhooks/webhook-signature.service.spec.ts src/payments/webhooks/payment-webhooks.e2e.spec.ts src/modules/registry/module-registry.service.spec.ts",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
@@ -29,7 +30,7 @@
     "security:audit": "npm audit --audit-level=moderate",
     "security:audit:fix": "npm audit fix",
     "security:generate-secrets": "./scripts/generate-secrets.sh",
-    "security:check": "npm run security:audit && npm run lint && npm run test:kyc-guard-scan",
+    "security:check": "npm run security:audit && npm run lint && npm run test:kyc-guard-scan && npm run test:threat-model",
     "build:prod": "nest build --webpack",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "npm run typeorm -- migration:generate -d src/config/typeorm.config.ts src/migrations/AuditEntities",
@@ -56,7 +57,8 @@
     "module:example:register": "node modules/example-grant-module/register.cjs",
     "dr:validate": "ts-node -r tsconfig-paths/register scripts/validate-dr-invariants.ts",
     "validate:maintainer-insights": "node scripts/validate-maintainer-insights.js",
-    "validate:public-status": "node scripts/verify-public-status.js"
+    "incident:drill": "ts-node -r tsconfig-paths/register scripts/run-incident-drill.ts",
+    "incident:drill:verify": "node scripts/verify-incident-drill.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",

@@ -239,17 +239,24 @@ Run the smallest relevant check first, then the full approved gate:
 
 ```bash
 npm run diagnostics:quick
-npm run validate:public-status
+npm run incident:drill:verify
+npm run incident:drill
 npm run test:contract
 npm run build:tsc
 npm test -- --runInBand
 npm run security:check
 ```
 
+For repeatable incident drills covering containment pauses, pre-rollback signed
+snapshots, migration compatibility gates, cross-domain invariant validation,
+idempotent recovery replay, and redacted user-impact reporting, follow
+[INCIDENT_DRILL_RUNBOOK.md](INCIDENT_DRILL_RUNBOOK.md).
+
 For a deployment smoke test, use the health endpoints above and a safe,
 read-only API request (`GET /api/v1/status`). See [PUBLIC_STATUS_MODEL.md](PUBLIC_STATUS_MODEL.md)
 for full details on `operational`, `degraded`, `paused`, and `maintenance` states,
 secret redaction boundaries, and rollback/recovery procedures. Avoid using real
 user funds or production signing keys for validation.
+
 
 

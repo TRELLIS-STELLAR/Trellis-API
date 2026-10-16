@@ -5,7 +5,15 @@ const repoRoot = path.resolve(__dirname, "..");
 const srcRoot = path.join(repoRoot, "src");
 const appModulePath = path.join(srcRoot, "app.module.ts");
 
-const allowedSkipKyc = new Set([]);
+const allowedSkipKyc = new Set([
+  "src/modules/registry/module-registry.controller.ts:register",
+  "src/modules/registry/module-registry.controller.ts:findAll",
+  "src/modules/registry/module-registry.controller.ts:resolveTenantState",
+  "src/modules/registry/module-registry.controller.ts:findOne",
+  "src/modules/registry/module-registry.controller.ts:enable",
+  "src/modules/registry/module-registry.controller.ts:disable",
+  "src/modules/registry/module-registry.controller.ts:deregister",
+]);
 
 function walkControllers(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });

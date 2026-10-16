@@ -61,9 +61,10 @@ These checks already exist in the repository. Contributors should run
 
 | Command                             | What it does                                                                                                                                                                     |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run security:check`            | Runs `security:audit`, `lint` and `test:kyc-guard-scan` in sequence.                                                                                                             |
+| `npm run security:check`            | Runs `security:audit`, `lint`, `test:kyc-guard-scan`, and `test:threat-model` in sequence.                                                                                        |
 | `npm run security:audit`            | `npm audit --audit-level=moderate`: fails on moderate or higher advisories in dependencies.                                                                                      |
 | `npm run test:kyc-guard-scan`       | `scripts/check-kyc-guard-coverage.js`: fails unless `KycGuard` is registered globally, no controller uses class-level `@SkipKyc()`, and every method-level `@SkipKyc()` is allowlisted. |
+| `npm run test:threat-model`         | Runs focused authorization, KYC, portfolio ownership, webhook signature/replay, and module-registry regression tests documented in [docs/SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md). |
 | `npm run security:generate-secrets` | `scripts/generate-secrets.sh`: generates strong random values for `JWT_SECRET`, `SESSION_SECRET`, `DATABASE_PASSWORD` and `REDIS_PASSWORD`.                                     |
 
 `scripts/pre-commit-security.sh` is an optional pre-commit hook that blocks

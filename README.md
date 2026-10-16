@@ -199,7 +199,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting details.
 ### Security Documentation
 
 - 🔐 [SECURITY.md](SECURITY.md) - Vulnerability reporting policy
-- 📋 [SECURITY_AUDIT.md](SECURITY_AUDIT.md) - Pre-production checklist & threat model
+- 📋 [docs/SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) - Scenario-based threat model, mitigations, verification, and recovery
 - 🛡️ [docs/RBAC.md](docs/RBAC.md) - Role-based access control: roles, guard, token-claim mapping & admin setup
 
 ## API Endpoints

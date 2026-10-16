@@ -268,6 +268,29 @@ describe("composite keyset cursors", () => {
     );
   });
 
+  it("accepts pre-version notification cursors while the new format rolls out", () => {
+    const legacy = Buffer.from(JSON.stringify({ createdAt, id }), "utf8").toString("base64");
+    expect(service.decode(legacy)).toEqual({ createdAt, id });
+  });
+
+  it("applies ascending composite keyset ordering", () => {
+    const queryBuilder = {
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+    } as unknown as SelectQueryBuilder<TestEntity>;
+    const cursor = service.encode({ id, createdAt });
+
+    service.applyKeyset(queryBuilder, "notification", cursor, "ASC");
+
+    expect(queryBuilder.orderBy).toHaveBeenCalledWith("notification.createdAt", "ASC");
+    expect(queryBuilder.addOrderBy).toHaveBeenCalledWith("notification.id", "ASC");
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      "(notification.createdAt > :cursorCreatedAt OR (notification.createdAt = :cursorCreatedAt AND notification.id > :cursorId))",
+      { cursorCreatedAt: createdAt, cursorId: id },
+    );
+  });
+
   it("does not add a keyset predicate for the first page", () => {
     const queryBuilder = {
       orderBy: jest.fn().mockReturnThis(),
