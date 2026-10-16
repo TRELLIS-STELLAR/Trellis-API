@@ -22,6 +22,9 @@ import { MaintainerInsightsJobService } from "./maintainer-insights/maintainer-i
 import { AuthModule } from "../core/auth/auth.module";
 import { UserModule } from "../core/user/user.module";
 
+import { SyntheticJourneyController } from "./synthetic-journey/synthetic-journey.controller";
+import { SyntheticJourneyMonitorService } from "./synthetic-journey/synthetic-journey.service";
+
 /**
  * Comprehensive monitoring & metrics module.
  *
@@ -32,6 +35,7 @@ import { UserModule } from "../core/user/user.module";
  *  - {@link MetricsHistoryService}   — retained historical KPI time series
  *  - {@link MonitoringController}    — /metrics, health, alerts, history, dashboard
  *  - {@link MaintainerInsightsService} — privacy-preserving usage & reliability analytics
+ *  - {@link SyntheticJourneyMonitorService} — synthetic happy-path journey monitoring & blame attribution
  *
  * The timer-driven services are started in {@link onModuleInit} rather
  * than in their constructors so importing the module (e.g. in a unit test) does
@@ -55,6 +59,7 @@ import { UserModule } from "../core/user/user.module";
     OperationalHealthController,
     PartialFailureController,
     MaintainerInsightsController,
+    SyntheticJourneyController,
   ],
   providers: [
     MonitoringMetricsService,
@@ -65,6 +70,7 @@ import { UserModule } from "../core/user/user.module";
     PartialFailureService,
     MaintainerInsightsService,
     MaintainerInsightsJobService,
+    SyntheticJourneyMonitorService,
   ],
   exports: [
     MonitoringMetricsService,
@@ -75,6 +81,7 @@ import { UserModule } from "../core/user/user.module";
     PartialFailureService,
     MaintainerInsightsService,
     MaintainerInsightsJobService,
+    SyntheticJourneyMonitorService,
   ],
 })
 export class MonitoringModule implements OnModuleInit {
@@ -82,11 +89,13 @@ export class MonitoringModule implements OnModuleInit {
     private readonly systemMetrics: SystemMetricsService,
     private readonly alerts: AlertRulesService,
     private readonly history: MetricsHistoryService,
+    private readonly syntheticMonitor: SyntheticJourneyMonitorService,
   ) {}
 
   onModuleInit(): void {
     this.systemMetrics.start();
     this.alerts.start();
     this.history.start();
+    this.syntheticMonitor.startScheduler();
   }
 }
