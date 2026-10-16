@@ -15,6 +15,7 @@ import { AppException } from "../errors/app.exception";
 import { mapDatabaseError } from "../errors/database-error-mapper";
 import { ErrorCode, ErrorDomain } from "../errors/error-codes";
 import {
+  getProblemType,
   getErrorTaxonomy,
   sanitizeClientMessage,
 } from "../errors/error-taxonomy";
@@ -130,6 +131,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     this.logError(exception, status, correlationId, request);
 
     response.status(status).json({
+      type: getProblemType(errorCode),
+      title: taxonomy.defaultMessage,
+      status,
+      detail: safeMessage,
+      instance: request.path ?? request.url,
+      remediation: recoveryGuidance,
       statusCode: status,
       errorCode,
       domain,

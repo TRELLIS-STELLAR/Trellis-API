@@ -69,6 +69,12 @@ describe("GlobalExceptionFilter", () => {
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
+          type: "https://trellis-stellar.github.io/Trellis-API/problems/VALIDATION_ERROR",
+          title: "Request validation failed",
+          status: 400,
+          detail: "Validation failed",
+          instance: "/api/v1/stellar/settlement",
+          remediation: expect.stringContaining("Review the request body"),
           statusCode: 400,
           errorCode: ErrorCode.VALIDATION_ERROR,
           domain: ErrorDomain.VALIDATION,
@@ -378,6 +384,12 @@ describe("GlobalExceptionFilter", () => {
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
+          type: "https://trellis-stellar.github.io/Trellis-API/problems/INTERNAL_ERROR",
+          title: "An internal server error occurred",
+          status: 500,
+          detail: "An internal server error occurred",
+          instance: "/api/v1/stellar/settlement",
+          remediation: expect.stringContaining("quote the correlationId"),
           statusCode: 500,
           errorCode: ErrorCode.INTERNAL_ERROR,
           domain: ErrorDomain.SYSTEM,

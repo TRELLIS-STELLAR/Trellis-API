@@ -10,6 +10,13 @@ export interface ErrorTaxonomyEntry {
   userSafe: boolean;
 }
 
+const PROBLEM_TYPE_BASE_URL =
+  "https://trellis-stellar.github.io/Trellis-API/problems";
+
+export function getProblemType(code: ErrorCode): string {
+  return `${PROBLEM_TYPE_BASE_URL}/${code}`;
+}
+
 export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
   // Generic & System
   [ErrorCode.INTERNAL_ERROR]: {
@@ -68,6 +75,15 @@ export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
     defaultMessage: "Rate limit exceeded",
     recoveryGuidance:
       "Too many requests. Please throttle your client requests and retry after the specified window.",
+    userSafe: true,
+  },
+  [ErrorCode.QUOTA_EXCEEDED]: {
+    domain: ErrorDomain.QUOTA,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Quota exceeded",
+    recoveryGuidance:
+      "Review current quota and usage, then wait for the quota to reset or request an increase.",
     userSafe: true,
   },
 
