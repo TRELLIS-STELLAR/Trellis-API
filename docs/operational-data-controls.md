@@ -24,3 +24,7 @@ Audit logs are retained for seven years. `previewRetention()` reports candidate 
 ## Stable lists
 
 Audit-log and review connections use opaque descending keyset cursors ordered by `(createdAt, id)`. Filters are applied before the cursor predicate, so hidden or restricted records cannot change the visible ordering. The legacy page parameters remain available for compatibility.
+
+## Evidence Bundles for Support Investigations
+
+Exportable evidence bundles for customer disputes and compliance investigations are generated via `POST /api/v1/audit-trail/evidence-bundles/generate`. Bundles sanitize secrets, tokens, PII, and client network fingerprints while preserving verifiable transaction hashes, monetary amounts, and timestamps. When requested with `placeRetentionHold: true`, records receive `auditCaseId` metadata protecting them from scheduled retention purge until the investigation concludes. See [`docs/audit-evidence-bundles.md`](audit-evidence-bundles.md) for complete specification and rollback procedures.

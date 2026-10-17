@@ -63,6 +63,7 @@ export enum SensitiveAction {
   AUDIT_LOG_EXPORTED = "data.audit.exported",
   USER_DATA_EXPORTED = "data.user.exported",
   RETENTION_HOLD_PLACED = "compliance.retention-hold.placed",
+  EVIDENCE_BUNDLE_EXPORTED = "compliance.evidence-bundle.exported",
 
   // Protocol configuration
   FEATURE_FLAG_CHANGED = "config.feature-flag.changed",
@@ -265,6 +266,12 @@ export const SENSITIVE_ACTION_CATALOGUE: Record<
     description: "A retention hold was placed to protect records from purge.",
     reasonRequired: true,
     capturesState: false,
+  },
+  [SensitiveAction.EVIDENCE_BUNDLE_EXPORTED]: {
+    scope: SensitiveActionScope.COMPLIANCE,
+    description: "An audit evidence bundle was exported for a support investigation or compliance audit.",
+    reasonRequired: true,
+    capturesState: true,
   },
   [SensitiveAction.FEATURE_FLAG_CHANGED]: {
     scope: SensitiveActionScope.PROTOCOL_CONFIG,
