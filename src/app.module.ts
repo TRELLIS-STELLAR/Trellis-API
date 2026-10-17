@@ -54,6 +54,8 @@ import { ObservabilityModule } from "./observability/observability.module";
 import { MonitoringModule } from "./monitoring/monitoring.module";
 // Modules – profiling
 import { ProfilingModule } from "./profiling/profiling.module";
+// Modules – accessibility contracts
+import { AccessibilityModule } from "./common/accessibility/accessibility.module";
 // Modules - email
 import { EmailModule } from "./email/email.module";
 // Modules – logging
@@ -397,6 +399,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     InvariantMonitorModule,
     PermissionMatrixModule,
     AbuseDetectionModule,
+    AccessibilityModule,
   ],
 
   controllers: [AppController, QuotaAdminController],

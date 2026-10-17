@@ -45,10 +45,16 @@ describe("AccessibilityMiddleware", () => {
     (mockRes.json as jest.Mock)(errorBody);
     expect(mockRes.json).toHaveBeenCalledWith(
       expect.objectContaining({
-        _accessibility: {
+        _accessibility: expect.objectContaining({
           description: "Validation failed",
           suggestion: "Check the request body for missing or invalid fields.",
-        },
+          announcement: expect.objectContaining({
+            politeness: "assertive",
+          }),
+          recovery: expect.objectContaining({
+            rollbackSafe: true,
+          }),
+        }),
       }),
     );
   });
