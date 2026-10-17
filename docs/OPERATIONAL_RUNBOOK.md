@@ -69,7 +69,7 @@ Interpretation:
 
 - `live` failing usually means the process is unhealthy; restart only after
   checking for a crash loop or resource exhaustion.
-- `ready` returning `503` means traffic should remain drained while PostgreSQL
+- `ready` returning `503` means traffic should remain drained while PostgreSQL 
   or Redis is unavailable.
 - `startup` returning `503` means the instance has not completed initialization;
   check migrations and connection-pool errors before replacing it.
@@ -77,7 +77,7 @@ Interpretation:
 For a checked-out release, run the safe diagnostic command without printing
 the environment:
 
-```bash
+``bash
 npm run diagnostics:quick
 ```
 
@@ -133,7 +133,7 @@ constraint errors, or a migration that fails part-way through.
 
 Useful commands against an approved environment:
 
-```bash
+``bash
 npm run migration:run
 npm run dr:validate
 ```
@@ -177,86 +177,82 @@ Use request IDs and route-level metrics to distinguish an application defect
 from a dependency outage. If the impact began immediately after a release and
 the previous release is known healthy, use the rollback procedure below.
 
-## Safe mitigation and rollback
+## Tamper-evident audit ledger
 
-### Before changing anything
+Privileged and financial events are written to a hash-chained audit ledger.
+Each entry stores the SHA-256 hash of the previous entry plus its own
+serialized payload, so any modification or deletion breaks the chain and is
+detected by verification. The ledger is exportable and is covered by tamper
+detection tests.
 
-- Record the current release SHA, image digest, configuration revision, and
-  migration version.
-- Confirm that the proposed target is available and was previously validated.
-- Check whether the release includes a schema change; application rollback is
-  unsafe if the old binary cannot read the new schema.
-- Announce the mitigation and expected user impact in the incident channel.
+Events covered include authentication/authorization changes, role and
+permission updates, secret rotations, portfolio and DeFi adapter writes,
+notification dispatches, and settlement/chain operations.
 
-### Application rollback
+### Verifying the ledger
 
-Use the deployment platform's reviewed rollback command or select the previous
-immutable image/release. Do not rebuild from a moving branch during an incident.
-For the included Docker deployment, the conceptual sequence is:
-
-```bash
-docker compose ps
-docker compose logs --since=15m app_prod
-# Select the previously approved image digest, then redeploy through the normal
-# release automation. Do not use `latest` as a rollback target.
-```
-
-After rollback, verify `live`, `ready`, and `startup`, then run a read-only
-smoke test and inspect error rate, queue depth, and settlement confirmations.
-
-### Database rollback
-
-Prefer a forward-fix migration. If a restore is unavoidable, the data owner
-must record the point-in-time target, affected tables, expected data loss window,
-and reconciliation plan. Keep the original database protected until validation
-and sign-off are complete.
-
-### Feature/configuration mitigation
-
-Disable only the affected feature or integration, keep authentication and audit
-logging available, and record the exact configuration revision. Validate that
-the fallback path cannot create duplicate writes or silently drop jobs.
-
-## Recovery and closure
-
-The incident lead may close the incident only after:
-
-- health probes are green for at least the agreed observation window;
-- error rate, latency, queue depth, and dependency metrics are back to baseline;
-- affected writes, jobs, and on-chain/provider operations are reconciled;
-- users and stakeholders have received a resolution update;
-- temporary mitigations and emergency access have been removed;
-- a follow-up ticket exists for root cause, tests, alerts, or documentation.
-
-Record a short timeline: detection, decisions, commands/releases, mitigation,
-recovery, and owner. A SEV-1 or SEV-2 requires a blameless post-incident review
-covering root cause, contributing factors, what worked, what failed, and
-specific owners and due dates for prevention work.
-
-## Validation command reference
-
-Run the smallest relevant check first, then the full approved gate:
+Run verification against an approved environment and record the result in the
+incident timeline:
 
 ```bash
-npm run diagnostics:quick
-npm run incident:drill:verify
-npm run incident:drill
-npm run test:contract
-npm run build:tsc
-npm test -- --runInBand
-npm run security:check
+npm run audit:verify
 ```
 
-For repeatable incident drills covering containment pauses, pre-rollback signed
-snapshots, migration compatibility gates, cross-domain invariant validation,
-idempotent recovery replay, and redacted user-impact reporting, follow
-[INCIDENT_DRILL_RUNBOOK.md](INCIDENT_DRILL_RUNBOOK.md).
+The verification walks the chain in sequence, recomputes each entry hash from it
+stored payload and the previous hash, and reports the first entry that does not
+match. A non-zero exit code means the chain is broken or an entry is missing;
+treat this as SEV-1 evidence tampering until proven otherwise.
 
-For a deployment smoke test, use the health endpoints above and a safe,
-read-only API request (`GET /api/v1/status`). See [PUBLIC_STATUS_MODEL.md](PUBLIC_STATUS_MODEL.md)
-for full details on `operational`, `degraded`, `paused`, and `maintenance` states,
-secret redaction boundaries, and rollback/recovery procedures. Avoid using real
-user funds or production signing keys for validation.
+### Exporting the ledger
 
+Export a signed jsonl bundle for an incident record or audit request:
 
+```bash
+npm run audit:export -- --from "${FROM_ISO}" --to "${TO_ISO}" > audit-export.jsonl
+```
 
+The export includes each entry's sequence number, timestamp, actor, action,
+payload, and hash chain fields. Store it in the approved evidence bucket with
+retention and access controls applied. Do not attach the export to a
+public ticket if it contains tenant identifiers or financial details.
+
+### Operational edge cases and failure modes
+
+- Concurrent writes. Ledger appends are serialized; if two writers collide, the
+  loser retries against the new head. Never manually insert an entry with a
+  stale previous hash.
+- Partial failure. If a business write succeeds but the ledger append fails, the
+  application returns an error and the operation is retried with the same
+  idempotency key; the ledger append is idempotent on that key.
+- Clock skew. Entry ordering is determined by sequence number, not wall clock,
+  so clock skew does not break verification. Use timestamps for investigation
+  only.
+- Truncation or deletion. Any deleted or modified row breaks the chain at that
+  sequence number. Restore from the export bundle or an approved backup and
+  re-run verification.
+- Long chains. Verification streams entries in sequence order and is safe to
+  run against production read replicas.
+
+### Rollback and recovery
+
+1. Freeze privileged and financial writes before touching the ledger.
+2. Export the current ledger and preserve it as evidence.
+3. If a bad entry was appended, do not edit it in place. Append a corrective
+   entry that references the bad entry, then re-verify the chain.
+4. If the chain is broken by data loss or corruption, restore the ledger table
+   from the last verified export bundle or approved backup, replay any events from
+   the application audit logs that are known good, and re-run verification.
+5. Record the restore point, operator, and verification result in the incident
+   timeline and resume writes only after the chain verifies clean.
+
+## Rollback procedure
+
+1. Drain traffic or disable the affected write path through the approved gateway/feature
+   flag mechanism.
+2. Deploy the previous known-good release artifact by immutable digest; do not
+   rebuild from a branch during the incident.
+3. Confirm the rolled-back release passes liveness, readiness, startup, and a
+   known-good authenticated request.
+4. If a migration is involved, follow the database section above instead of
+   running a destructive revert.
+5. Record the rollback time, release digest, and result in the incident timeline.

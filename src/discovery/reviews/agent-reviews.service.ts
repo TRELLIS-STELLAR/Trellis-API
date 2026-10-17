@@ -4,9 +4,10 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  TooManyRequestsException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { MoreThan, Repository } from "typeorm";
 import { AgentReview, ReviewStatus } from "./entities/agent-review.entity";
 import {
   CreateReviewDto,
@@ -18,6 +19,9 @@ import { CursorPaginationService } from "src/common/pagination/cursor-pagination
 
 export const DEFAULT_REVIEW_PAGE_SIZE = 20;
 export const MAX_REVIEW_PAGE_SIZE = 50;
+export const REVIEW_RATE_LIMIT_MS = 24 * 60 * 60 * 1000;
+export const REVIEW_SIMILARITY_LOOKBACK = 500;
+export const REVIEW_DUPLICATE_SIMILARITY = 0.8;
 
 export interface AgentReviewEdge {
   cursor: string;
@@ -34,11 +38,12 @@ export interface AgentReviewConnection {
   };
 }
 
-/** Naive keyword-based spam detection — no external dependency. Returns score 0..1. */
+/** Lightweight spam scoring; suspicious content is routed to moderation. */
 function computeSpamScore(text: string): number {
   if (!text) return 0;
   const spamPatterns = [
-    /\b(buy|sell|cheap|discount|free|click here|http[s]?:\/\/)\b/gi,
+    /\b(buy|sell|cheap|discount|free|click\s+here)\b/gi,
+    /(?:https?:\/\/|www\.)\S+/gi,
     /(.)\1{4,}/g, // repeated chars e.g. "aaaaa"
     /[A-Z]{5,}/g, // long uppercase runs
   ];
@@ -48,6 +53,44 @@ function computeSpamScore(text: string): number {
     if (m) hits += m.length;
   }
   return Math.min(1, hits / 10);
+}
+
+function normalizeReviewText(text: string): string {
+  return text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function reviewTokenSet(text: string): Set<string> {
+  return new Set(normalizeReviewText(text).split(/\s+/).filter(Boolean));
+}
+
+function jaccardSimilarity(left: string, right: string): number {
+  const normalizedLeft = normalizeReviewText(left);
+  const normalizedRight = normalizeReviewText(right);
+  if (!normalizedLeft || !normalizedRight) return 0;
+  if (normalizedLeft === normalizedRight) return 1;
+
+  const leftTokens = reviewTokenSet(left);
+  const rightTokens = reviewTokenSet(right);
+  // Short phrases contain too little information to distinguish a copied
+  // review from ordinary shared wording.
+  if (leftTokens.size < 5 || rightTokens.size < 5) return 0;
+
+  let intersection = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) intersection += 1;
+  }
+  const union = leftTokens.size + rightTokens.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function containsSuspiciousSpam(text: string): boolean {
+  const containsLink = /(?:https?:\/\/|www\.)\S+/i.test(text);
+  const hasRepetitiveCharacters = /(.)\1{5,}/iu.test(text);
+  return containsLink || hasRepetitiveCharacters;
 }
 
 export interface AgentRatingAggregation {
@@ -80,6 +123,19 @@ export class AgentReviewsService {
       );
     }
 
+    const recent = await this.reviewRepo.findOne({
+      where: {
+        agentId: dto.agentId,
+        userId,
+        createdAt: MoreThan(new Date(Date.now() - REVIEW_RATE_LIMIT_MS)),
+      },
+    });
+    if (recent) {
+      throw new TooManyRequestsException(
+        "You can submit one review for this agent every 24 hours",
+      );
+    }
+
     const existing = await this.reviewRepo.findOne({
       where: { agentId: dto.agentId, userId },
     });
@@ -87,9 +143,30 @@ export class AgentReviewsService {
       throw new ConflictException("You have already reviewed this agent");
     }
 
-    const spamScore = computeSpamScore(dto.reviewText ?? "");
+    const reviewText = dto.reviewText ?? "";
+    const similarReviews = await this.reviewRepo.find({
+      where: { agentId: dto.agentId },
+      select: ["reviewText"],
+      order: { createdAt: "DESC" },
+      take: REVIEW_SIMILARITY_LOOKBACK,
+    });
+    const duplicate = similarReviews.some(
+      (candidate) =>
+        candidate.reviewText &&
+        jaccardSimilarity(reviewText, candidate.reviewText) >=
+          REVIEW_DUPLICATE_SIMILARITY,
+    );
+    if (duplicate) {
+      throw new ConflictException(
+        "This review is too similar to an existing review for this agent",
+      );
+    }
+
+    const spamScore = computeSpamScore(reviewText);
     const status =
-      spamScore >= 0.5 ? ReviewStatus.FLAGGED : ReviewStatus.PENDING;
+      spamScore >= 0.5 || containsSuspiciousSpam(reviewText)
+        ? ReviewStatus.FLAGGED
+        : ReviewStatus.PENDING;
 
     const review = this.reviewRepo.create({
       agentId: dto.agentId,

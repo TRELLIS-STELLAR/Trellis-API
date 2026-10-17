@@ -1,7 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { simulatePolicyChange } from "./policy-simulation.rules";
 import {
   PolicyDecision,
+  PolicySimulationPreviewResult,
+  PolicySimulationSnapshot,
   PolicyViolationCode,
   TradePolicyInput,
   TradeSide,
@@ -16,7 +19,7 @@ const DEFAULT_TRADING_POLICY: TradingPolicy = {
 
 @Injectable()
 export class PolicyService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(@Optional() private readonly configService?: ConfigService) {}
 
   /**
    * Evaluates trade business rules in one place. The returned decision is safe
@@ -69,18 +72,19 @@ export class PolicyService {
   }
 
   getTradingPolicy(): TradingPolicy {
-    const configuredLimit = this.configService.get<number>(
+    const configuredLimit = this.configService?.get<number>(
       "TRADING_MAX_ORDER_AMOUNT",
       DEFAULT_TRADING_POLICY.maxOrderAmount,
-    );
+    ) ?? DEFAULT_TRADING_POLICY.maxOrderAmount;
     const configuredAssets = this.readList("TRADING_ALLOWED_ASSETS");
     const configuredSides = this.readList("TRADING_ALLOWED_SIDES") as TradeSide[];
 
     return {
-      enabled: this.configService.get<boolean>(
-        "TRADING_ENABLED",
-        DEFAULT_TRADING_POLICY.enabled,
-      ),
+      enabled:
+        this.configService?.get<boolean>(
+          "TRADING_ENABLED",
+          DEFAULT_TRADING_POLICY.enabled,
+        ) ?? DEFAULT_TRADING_POLICY.enabled,
       maxOrderAmount:
         Number.isFinite(configuredLimit) && configuredLimit > 0
           ? configuredLimit
@@ -92,8 +96,30 @@ export class PolicyService {
     };
   }
 
+  /**
+   * Simulates a trading policy change against the currently configured trading
+   * policy without mutating active state.
+   */
+  previewTradingPolicyChange(
+    proposedPolicy: Partial<TradingPolicy>,
+    options: {
+      snapshot?: PolicySimulationSnapshot;
+      asOf?: string;
+      maxSnapshotAgeSeconds?: number;
+    } = {},
+  ): PolicySimulationPreviewResult<"trading"> {
+    return simulatePolicyChange({
+      domain: "trading",
+      currentPolicy: this.getTradingPolicy(),
+      proposedPolicy,
+      snapshot: options.snapshot,
+      asOf: options.asOf,
+      maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
+    });
+  }
+
   private readList(key: string): string[] {
-    const value = this.configService.get<string>(key, "");
+    const value = this.configService?.get<string>(key, "") ?? "";
     return value
       .split(",")
       .map((item) => item.trim().toUpperCase())

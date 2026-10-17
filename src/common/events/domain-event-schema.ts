@@ -1,4 +1,6 @@
-/**
+import { createHash } from 'crypto';
+
+/*
  * Structured Domain Event Schemas and Versioned Consumers for Trellis API (#116).
  * Ensures stable payload schemas, producer-side validation, explicit schema versions,
  * and consumer fallback mechanisms.
@@ -11,6 +13,10 @@ export interface DomainEventEnvelope<T = any> {
   timestamp: string;
   producer: string;
   payload: T;
+  /** Hash of the previous ledger entry (tamper-evident chain). */
+  previousHash?: string;
+  /** SHA-256 hash of this entry's canonical content. */
+  hash?: string;
 }
 
 export type FieldType = 'string' | 'number' | 'boolean' | 'object' | 'array';
@@ -82,7 +88,7 @@ export class DomainEventRegistry {
   public validateProducerEvent(event: DomainEventEnvelope): void {
     if (!event.eventName || !event.schemaVersion || !event.payload) {
       throw new DomainEventValidationError(
-        event.eventName || 'UNKNOWN',
+        event.eventName || 'UNKNOWN ',
         event.schemaVersion || 'UNKNOWN',
         ['envelope_structure'],
       );
@@ -153,6 +159,54 @@ export class DomainEventRegistry {
         { name: 'currency', type: 'string', required: true },
       ],
     });
+
+    // Duplicate detection & merge review workflow events (issue #116).
+    this.registerSchema({
+      eventName: 'portfolio.duplicate.detected',
+      version: '1.0',
+      fields: [
+        { name: 'candidateId', type: 'string', required: true },
+        { name: 'primaryEntityId', type: 'string', required: true },
+        { name: 'duplicateEntityId', type: 'string', required: true },
+        { name: 'confidence', type: 'number', required: true },
+        { name: 'matchRules', type: 'array', required: true },
+        { name: 'detectorVersion', type: 'string', required: true },
+      ],
+    });
+
+    this.registerSchema({
+      eventName: 'portfolio.duplicate.merge.reviewed',
+      version: '1.0',
+      fields: [
+        { name: 'candidateId', type: 'string', required: true },
+        { name: 'decision', type: 'string', required: true },
+        { name: 'reviewerId', type: 'string', required: true },
+        { name: 'reversible', type: 'boolean', required: true },
+      ],
+    });
+
+    this.registerSchema({
+      eventName: 'portfolio.duplicate.merge.applied',
+      version: '1.0',
+      fields: [
+        { name: 'candidateId', type: 'string', required: true },
+        { name: 'primaryEntityId', type: 'string', required: true },
+        { name: 'duplicateEntityId', type: 'string', required: true },
+        { name: 'mergedEntityId', type: 'string', required: true },
+        { name: 'reversible', type: 'boolean', required: true },
+      ],
+    });
+
+    this.registerSchema({
+      eventName: 'portfolio.duplicate.merge.reversed',
+      version: '1.0',
+      fields: [
+        { name: 'candidateId', type: 'string', required: true },
+        { name: 'mergedEntityId', type: 'string', required: true },
+        { name: 'reversedEntityId', type: 'string', required: true },
+        { name: 'reversedBy', type: 'string', required: true },
+      ],
+    });
   }
 }
 
@@ -221,5 +275,152 @@ export class VersionedDomainEventConsumer {
     }
 
     throw new UnknownEventVersionError(event.eventName, event.schemaVersion);
+  }
+}
+
+/**
+ * Tamper-evident chronological ledger for privileged and financial events.
+ * Each entry is hash-chained to its predecessor using SHA-256 over a deterministic
+ * canonical serialization of the entry payload, so any modification or deletion
+ * breaks the chain and is detected by verification.
+ */
+
+export interface LedgerEntryInput {
+  eventName: string;
+  schemaVersion: string;
+  producer: string;
+  payload: Record<string, unknown>;
+  timestamp?: string;
+}
+
+export interface LedgerEntry {
+  sequence: number;
+  eventId: string;
+  eventName: string;
+  schemaVersion: string;
+  producer: string;
+  timestamp: string;
+  payload: Record<string, unknown>;
+  previousHash: string | null;
+  hash: string;
+}
+
+export interface LedgerVerificationResult {
+  valid: boolean;
+  entriesChecked: number;
+  brokenAtSequence?: number;
+  reason?: string;
+}
+
+export interface LedgerExport {
+  generatedAt: string;
+  entries: LedgerEntry[];
+  verification: LedgerVerificationResult;
+}
+
+function canonicalize(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalize(item)).join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  return `{${keys
+    .map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`)
+    .join(',')}}`;
+}
+
+function sha256(input: string): string {
+  return createHash('sha256').update(input).digest('hex');
+}
+
+function computeEntryHash(
+  sequence: number,
+  previousHash: string | null,
+  payloadHash: string,
+): string {
+  return sha256(`${sequence}:${previousHash ?? ''}:${payloadHash}`);
+}
+
+export class TamperEvidentLedger {
+  private entries: LedgerEntry[] = [];
+
+  public append(input: LedgerEntryInput): LedgerEntry {
+    const sequence = this.entries.length + 1;
+    const previousHash = this.entries.length > 0
+      ? this.entries[this.entries.length - 1].hash
+      : null;
+    const timestamp = input.timestamp ?? new Date().toISOString();
+    const eventId = sha256(`${sequence}:${input.eventName}:${timestamp}:${canonicalize(input.payload)}`);
+
+    const payloadHash = sha256(canonicalize(input.payload));
+    const hash = computeEntryHash(sequence, previousHash, payloadHash);
+
+    const entry: LedgerEntry = {
+      sequence,
+      eventId,
+      eventName: input.eventName,
+      schemaVersion: input.schemaVersion,
+      producer: input.producer,
+      timestamp,
+      payload: input.payload,
+      previousHash,
+      hash,
+    };
+
+    this.entries.push(entry);
+    return entry;
+  }
+
+  public verify(): LedgerVerificationResult {
+    let previousHash: string | null = null;
+    let expectedSequence = 1;
+
+    for (const entry of this.entries) {
+      if (entry.sequence !== expectedSequence) {
+        return {
+          valid: false,
+          entriesChecked: this.entries.length,
+          brokenAtSequence: entry.sequence,
+          reason: `sequence gap: expected ${expectedSequence}, got ${entry.sequence}`,
+        };
+      }
+      if ((entry.previousHash ?? null) !== previousHash) {
+        return {
+          valid: false,
+          entriesChecked: this.entries.length,
+          brokenAtSequence: entry.sequence,
+          reason: 'previous hash mismatch',
+        };
+      }
+      const payloadHash = sha256(canonicalize(entry.payload));
+      const expectedHash = computeEntryHash(entry.sequence, entry.previousHash, payloadHash);
+      if (expectedHash !== entry.hash) {
+        return {
+          valid: false,
+          entriesChecked: this.entries.length,
+          brokenAtSequence: entry.sequence,
+          reason: 'chain hash mismatch',
+        };
+      }
+      previousHash = entry.hash;
+      expectedSequence += 1;
+    }
+
+    return { valid: true, entriesChecked: this.entries.length };
+  }
+
+  public export(): LedgerExport {
+    return {
+      generatedAt: new Date().toISOString(),
+      entries: this.entries.map((entry) => ({ ...entry })),
+      verification: this.verify(),
+    };
+  }
+
+  public getEntries(): LedgerEntry[] {
+    return this.entries.map((entry) => ({ ...entry }));
   }
 }

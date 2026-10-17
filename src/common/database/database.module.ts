@@ -3,9 +3,12 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
 import { DataSource, DataSourceOptions } from "typeorm";
 import { SnakeNamingStrategy } from "./strategies/snake-naming.strategy";
+import { LedgerEventEntity } from "./entities/ledger-event.entity";
+import { LedgerService } from "./ledger.service";
 
 export const DATABASE_CONFIG = "DATABASE_CONFIG";
 export const DATABASE_DATA_SOURCE = "DATABASE_DATA_SOURCE";
+export const LEDGER_SERVICE = "LEDGER_SERVICE";
 
 export interface DatabaseModuleOptions {
   configName?: string;
@@ -29,11 +32,17 @@ export class DatabaseModule {
         try {
           await dataSource.initialize();
         } catch (error) {
-          throw new Error(`Failed to initialize database: ${error.message}`);
+          throw new Error(`Failed to initialize database: ${(error as Error).message}`);
         }
         return dataSource;
       },
       inject: options.inject || [],
+    };
+
+    const ledgerServiceProvider: Provider = {
+      provide: LEDGER_SERVICE,
+      useFactory: (dataSource: DataSource) => new LedgerService(dataSource),
+      inject: [DATABASE_DATA_SOURCE],
     };
 
     return {
@@ -46,8 +55,8 @@ export class DatabaseModule {
           useFactory: options.useFactory,
         }),
       ],
-      providers: [dataSourceProvider],
-      exports: [DATABASE_DATA_SOURCE, TypeOrmModule],
+      providers: [dataSourceProvider, ledgerServiceProvider],
+      exports: [DATABASE_DATA_SOURCE, LEDGER_SERVICE, TypeOrmModule],
     };
   }
 
@@ -57,11 +66,15 @@ export class DatabaseModule {
   }): DynamicModule {
     return {
       module: DatabaseModule,
+      providers: [LedgerService],
       imports: [
         ...(options.imports || []),
-        TypeOrmModule.forFeature(options.entities || []),
+        TypeOrmModule.forFeature([
+          LedgerEventEntity,
+          ...(options.entities || []),
+        ]),
       ],
-      exports: [TypeOrmModule],
+      exports: [LedgerService, TypeOrmModule],
     };
   }
 }

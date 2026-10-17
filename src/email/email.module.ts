@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { BullModule } from "@nestjs/bull";
 import { EmailLog } from "./entities/email-log.entity";
+import { User } from "../core/user/entities/user.entity";
 import { EmailController } from "./email.controller";
 import { EmailService } from "./email.service";
 import { EmailQueueService } from "./services/email-queue.service";
@@ -15,7 +16,7 @@ import { SesEmailProvider } from "./providers/ses-email.provider";
 @Module({
   imports: [
     ConfigModule,
-    TypeOrmModule.forFeature([EmailLog]),
+    TypeOrmModule.forFeature([EmailLog, User]),
     BullModule.registerQueueAsync({
       name: "email",
       imports: [ConfigModule],

@@ -337,4 +337,102 @@ export class SemanticValidatorService {
       "Semantic validation event",
     );
   }
+
+  /**
+   * Preview an import batch without persisting anything.
+   * Returns a deterministic plan of accepted and quarantined rows so callers can
+   * show a dry-run to users and decide whether to commit.
+   */
+  previewImport<T>(
+    rows: T[],
+    options: {
+      identifierFance: (item: T) => string | number;
+      validateRow: (item: T) => void;
+      context?: Record<string, unknown>;
+    },
+  ): {
+    totalRows: number;
+    accepted: Array<{ identifier: string | number; rowIndex: number }>;
+    quarantined: Array<{
+      identifier: string | number;
+      rowIndex: number;
+      errors: SemanticValidationError[];
+    }>;
+    duplicateIdentifiers: Array<string | number>;
+  } {
+    const accepted: Array<{ identifier: string | number; rowIndex: number }> = [];
+    const quarantined: Array<{
+      identifier: string | number;
+      rowIndex: number;
+      errors: SemanticValidationError[];
+    }> = [];
+    const seenIdentifiers = new Set<string | number>();
+    const duplicateIdentifiers: Array<string | number> = [];
+
+    rows.forEach((row, rowIndex) => {
+      const identifier = options.identifierFance(row);
+      const rowErrors: SemanticValidationError[] = [];
+
+      if (seenIdentifiers.has(identifier)) {
+        duplicateIdentifiers.push(identifier);
+        rowErrors.push({
+          code: SemanticValidationErrorCode.DUPLICATE_ENTRY,
+          field: "identifier",
+          message: `Duplicate identifier ${String(identifier)}`,
+          context: { identifier, rowIndex, ...options.context },
+        });
+      } else {
+        seenIdentifiers.add(identifier);
+      }
+
+      try {
+        options.validateRow(row);
+      } catch (error) {
+        const caught = error as BadRequestException;
+        const response = caught.getResponse() as {
+          message?: string;
+          errors?: Array<Record<string, unknown>>;
+        };
+        const details = Array.isArray(response.errors) ? response.errors : [];
+        if (details.length === 0) {
+          rowErrors.push({
+            code: SemanticValidationErrorCode.INVALID_COMBINATION,
+            message: response.message ?? "Row failed semantic validation",
+            context: { rowIndex, ...options.context },
+          });
+        } else {
+          for (const detail of details) {
+            rowErrors.push({
+              code:
+                (detail.code as SemanticValidationErrorCode | string) ??
+                SemanticValidationErrorCode.INVALID_COMBINATION,
+              field: detail.field as string | undefined,
+              message:
+                (detail.message as string) ??
+                response.message ??
+                "Row failed semantic validation",
+              context: {
+                ...(detail.context as Record<string, unknown> | undefined),
+                rowIndex,
+                ...options.context,
+              },
+            });
+          }
+        }
+      }
+
+      if (rowErrors.length > 0) {
+        quarantined.push({ identifier, rowIndex, errors: rowErrors });
+      } else {
+        accepted.push({ identifier, rowIndex });
+      }
+    });
+
+    return {
+      totalRows: rows.length,
+      accepted,
+      quarantined,
+      duplicateIdentifiers,
+    };
+  }
 }

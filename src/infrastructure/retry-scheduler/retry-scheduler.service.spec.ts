@@ -333,4 +333,67 @@ describe("RetrySchedulerService", () => {
       expect(metrics.byType["email.send"]).toBeDefined();
     });
   });
+
+  describe("getFailureDashboard", () => {
+    it("filters unresolved failures and omits operation payloads", async () => {
+      const failure = {
+        operationId: "op-42",
+        operationType: "webhook.delivery",
+        status: RetryOperationStatus.DEAD_LETTER,
+        attempts: 3,
+        maxAttempts: 3,
+        lastError: "endpoint timed out",
+        retryable: true,
+        correlationId: "corr-42",
+        nextRetryAt: null,
+        updatedAt: new Date("2026-10-17T00:00:00Z"),
+        payload: { secret: "must not be returned" },
+        metadata: null,
+      };
+      const userActionFailure = {
+        ...failure,
+        operationId: "op-43",
+        status: RetryOperationStatus.FAILED,
+        retryable: false,
+        metadata: { userActionRequired: true },
+      };
+      const builder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        getManyAndCount: jest
+          .fn()
+          .mockResolvedValue([[failure, userActionFailure], 2]),
+      };
+      (mockRepository as any).createQueryBuilder = jest.fn(() => builder);
+
+      const result = await service.getFailureDashboard({
+        operationType: "webhook.delivery",
+        search: "timed out",
+        limit: 500,
+        offset: -2,
+      });
+
+      expect(builder.where).toHaveBeenCalledWith(
+        "operation.status IN (:...statuses)",
+        { statuses: [RetryOperationStatus.FAILED, RetryOperationStatus.DEAD_LETTER] },
+      );
+      expect(builder.andWhere).toHaveBeenCalledTimes(2);
+      expect(result.items[0]).toMatchObject({
+        operationId: "op-42",
+        cause: "endpoint timed out",
+        recommendedAction: "RETRY_OR_INVESTIGATE",
+      });
+      expect(result.items[0]).not.toHaveProperty("payload");
+      expect(result.items[1]).toMatchObject({
+        requiresUserAction: true,
+        recommendedAction: "REQUEST_USER_ACTION",
+      });
+      expect(result.limit).toBe(100);
+      expect(result.offset).toBe(0);
+    });
+  });
 });

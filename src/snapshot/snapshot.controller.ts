@@ -49,4 +49,13 @@ export class SnapshotController {
   verifySnapshot(@Body() dto: VerifySnapshotDto) {
     return this.snapshotService.verifySnapshot(dto);
   }
+
+  @Post('verify-restore')
+  @ApiOperation({
+    summary: 'Verify critical restored data and rebuild derived search indexes (issue #238)',
+  })
+  @ApiResponse({ status: 200, description: 'Restore verification and repair report' })
+  verifyRestoredSnapshot(@Body() dto: VerifySnapshotDto) {
+    return this.snapshotService.verifyRestoredSnapshot(dto);
+  }
 }

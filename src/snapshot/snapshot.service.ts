@@ -4,6 +4,8 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
+import { SearchService } from '../search/search.service';
 import {
   SNAPSHOT_REDACTED_FIELDS,
   REDACTED_PLACEHOLDER,
@@ -33,13 +35,53 @@ export interface SnapshotVerificationResult {
   reason?: string;
 }
 
+export interface SnapshotRestoreVerificationResult {
+  snapshotId: string;
+  valid: boolean;
+  integrityValid: boolean;
+  criticalData: {
+    matches: boolean;
+    expectedCounts: Record<string, number>;
+    actualCounts: Record<string, number>;
+    mismatches: string[];
+  };
+  derivedIndexes: {
+    search: { expected: number; rebuilt: number; verified: boolean };
+  };
+  repairSteps: string[];
+}
+
+const CRITICAL_TABLES = [
+  'users',
+  'portfolios',
+  'portfolio_assets',
+  'transactions',
+  'agent_reviews',
+  'agent_events',
+  'background_jobs',
+  'retry_operations',
+  'audit_logs',
+  'sensitive_action_events',
+  'provenance_records',
+  'search_records',
+] as const;
+
+interface SnapshotRestoreManifest {
+  criticalTableCounts: Record<string, number>;
+  activeSearchRecords: number;
+}
+
 @Injectable()
 export class SnapshotService {
   private readonly logger = new Logger(SnapshotService.name);
   private readonly snapshots = new Map<string, SnapshotRecord>();
   private readonly signingKey: string;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly dataSource: DataSource,
+    private readonly searchService: SearchService,
+  ) {
     this.signingKey =
       this.config.get<string>('SNAPSHOT_SIGNING_KEY') ??
       'trellis-snapshot-dev-key-change-in-production';
@@ -52,6 +94,7 @@ export class SnapshotService {
   async createSnapshot(dto: RequestSnapshotDto, requesterId: string): Promise<SnapshotRecord> {
     const limit = Math.min(dto.limit ?? 500, SNAPSHOT_MAX_RECORDS);
     const rawPayload = await this.collectPayload(dto.scope, dto.resourceIds, limit);
+    rawPayload.restoreManifest = await this.captureRestoreManifest();
     const { redacted, removedFields } = this.redactPayload(rawPayload);
 
     // Canonical JSON (sorted keys) so hash is deterministic regardless of insertion order
@@ -85,7 +128,10 @@ export class SnapshotService {
 
     const canonical = this.canonicalise(record.payload);
     const recomputed = this.hash(canonical);
-    const hashMatch = recomputed === record.integrityHash;
+    const payloadHashMatches = recomputed === record.integrityHash;
+    const recordCountMatches =
+      this.countRecords(record.payload) === record.recordCount;
+    const hashMatch = payloadHashMatches && recordCountMatches;
     const expectedSig = this.sign(recomputed);
     const signatureMatch =
       dto.expectedSignature
@@ -97,10 +143,120 @@ export class SnapshotService {
       valid: hashMatch && signatureMatch,
       hashMatch,
       signatureMatch,
-      reason: !hashMatch ? 'Integrity hash mismatch — payload was modified after export' :
+      reason: !payloadHashMatches ? 'Integrity hash mismatch — payload was modified after export' :
+              !recordCountMatches ? 'Record count mismatch — snapshot payload is incomplete or inconsistent' :
               !signatureMatch ? 'Signature mismatch — snapshot may have been tampered with' :
               undefined,
     };
+  }
+
+  /**
+   * Verify critical row-count invariants for a restored snapshot and rebuild
+   * the Elasticsearch search projection from its PostgreSQL source of truth.
+   */
+  async verifyRestoredSnapshot(
+    dto: VerifySnapshotDto,
+  ): Promise<SnapshotRestoreVerificationResult> {
+    const snapshot = this.snapshots.get(dto.snapshotId);
+    const emptyCounts: Record<string, number> = {};
+    const result: SnapshotRestoreVerificationResult = {
+      snapshotId: dto.snapshotId,
+      valid: false,
+      integrityValid: false,
+      criticalData: {
+        matches: false,
+        expectedCounts: emptyCounts,
+        actualCounts: emptyCounts,
+        mismatches: [],
+      },
+      derivedIndexes: {
+        search: { expected: 0, rebuilt: 0, verified: false },
+      },
+      repairSteps: [],
+    };
+
+    if (!snapshot) {
+      result.repairSteps.push(
+        'Load the retained snapshot record into this service and retry verification; the current snapshot store is process-local.',
+      );
+      return result;
+    }
+
+    const integrity = await this.verifySnapshot(dto);
+    result.integrityValid = integrity.valid;
+    if (!integrity.valid) {
+      result.repairSteps.push(
+        'Restore an unmodified snapshot with a valid signature before rebuilding derived data.',
+      );
+      return result;
+    }
+
+    const manifest = snapshot.payload.restoreManifest as
+      | SnapshotRestoreManifest
+      | undefined;
+    if (!manifest) {
+      result.repairSteps.push(
+        'Create a new snapshot so its critical-table and search-index manifest is included.',
+      );
+      return result;
+    }
+
+    let actualManifest: SnapshotRestoreManifest;
+    try {
+      actualManifest = await this.captureRestoreManifest();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      result.repairSteps.push(
+        `Critical data verification failed: ${detail}. Restore the missing schema or database connection, then retry.`,
+      );
+      return result;
+    }
+    result.criticalData.expectedCounts = manifest.criticalTableCounts;
+    result.criticalData.actualCounts = actualManifest.criticalTableCounts;
+    result.criticalData.mismatches = CRITICAL_TABLES.filter(
+      (table) =>
+        manifest.criticalTableCounts[table] !==
+        actualManifest.criticalTableCounts[table],
+    ).map(
+      (table) =>
+        `${table}: expected ${manifest.criticalTableCounts[table]}, found ${actualManifest.criticalTableCounts[table]}`,
+    );
+    if (manifest.activeSearchRecords !== actualManifest.activeSearchRecords) {
+      result.criticalData.mismatches.push(
+        `active search records: expected ${manifest.activeSearchRecords}, found ${actualManifest.activeSearchRecords}`,
+      );
+    }
+    result.criticalData.matches = result.criticalData.mismatches.length === 0;
+    result.derivedIndexes.search.expected = actualManifest.activeSearchRecords;
+
+    try {
+      const repair = await this.searchService.repairIndex();
+      result.derivedIndexes.search.rebuilt = repair.indexed;
+      result.derivedIndexes.search.verified = repair.verified;
+      if (repair.indexed !== actualManifest.activeSearchRecords) {
+        result.repairSteps.push(
+          'Reconcile search_records in PostgreSQL with the snapshot, then retry the search-index rebuild.',
+        );
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      result.repairSteps.push(
+        `Search index rebuild failed: ${detail}. Restore Elasticsearch connectivity and rerun verification.`,
+      );
+    }
+
+    if (!result.criticalData.matches) {
+      result.repairSteps.push(
+        'Restore the listed critical tables from the same snapshot; do not serve writes until the counts match.',
+      );
+    }
+    result.valid =
+      result.integrityValid &&
+      result.criticalData.matches &&
+      result.derivedIndexes.search.verified &&
+      result.derivedIndexes.search.rebuilt ===
+        result.derivedIndexes.search.expected;
+    return result;
   }
 
   getSnapshot(id: string): SnapshotRecord | undefined {
@@ -109,6 +265,32 @@ export class SnapshotService {
 
   listSnapshots(): Omit<SnapshotRecord, 'payload'>[] {
     return [...this.snapshots.values()].map(({ payload: _p, ...rest }) => rest);
+  }
+
+  private async captureRestoreManifest(): Promise<SnapshotRestoreManifest> {
+    const metadataByTable = new Map(
+      this.dataSource.entityMetadatas.map((metadata) => [
+        metadata.tableName,
+        metadata,
+      ]),
+    );
+    const criticalTableCounts: Record<string, number> = {};
+    for (const table of CRITICAL_TABLES) {
+      const metadata = metadataByTable.get(table);
+      if (!metadata) {
+        throw new Error(
+          `Cannot verify snapshot: critical table ${table} is not registered with TypeORM`,
+        );
+      }
+      criticalTableCounts[table] = await this.dataSource
+        .getRepository(metadata.target)
+        .count({ withDeleted: true });
+    }
+
+    return {
+      criticalTableCounts,
+      activeSearchRecords: await this.searchService.countActiveRecords(),
+    };
   }
 
   // --- Private helpers ---

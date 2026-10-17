@@ -21,5 +21,6 @@ import { SearchIndexRepairService } from "./search-index-repair.service";
   ],
   providers: [SearchService, SearchIndexRepairService, AssetSearchService],
   controllers: [SearchController],
+  exports: [SearchService],
 })
 export class SearchModule {}

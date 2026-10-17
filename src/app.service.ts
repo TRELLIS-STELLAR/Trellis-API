@@ -1,7 +1,15 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { DataSource } from "typeorm";
+import {
+  MigrationHistoryUnavailableError,
+  checkStorageSchemaCompatibility,
+  type StorageSchemaCompatibilityReport,
+} from "./storage-compatibility/storage-schema-compatibility";
 
 @Injectable()
 export class AppService {
+  constructor(private readonly dataSource: DataSource) {}
+
   getHealth(): { status: string; timestamp: string } {
     return {
       status: "ok",
@@ -27,5 +35,18 @@ export class AppService {
         "Price Oracles",
       ],
     };
+  }
+
+  async getStorageMigrationCompatibility(): Promise<StorageSchemaCompatibilityReport> {
+    try {
+      return await checkStorageSchemaCompatibility(this.dataSource);
+    } catch (error) {
+      if (error instanceof MigrationHistoryUnavailableError) {
+        throw new ServiceUnavailableException(
+          "Migration history is unavailable; storage compatibility cannot be verified safely.",
+        );
+      }
+      throw error;
+    }
   }
 }

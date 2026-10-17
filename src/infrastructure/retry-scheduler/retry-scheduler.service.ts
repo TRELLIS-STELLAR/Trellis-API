@@ -159,6 +159,88 @@ export class RetrySchedulerService {
     return { items, total };
   }
 
+  /**
+   * Read-only dashboard view of unresolved failures. Payloads are deliberately
+   * excluded because they may contain secrets or user supplied data.
+   */
+  async getFailureDashboard(filters: {
+    operationType?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) {
+    const rawLimit = filters.limit ?? 50;
+    const rawOffset = filters.offset ?? 0;
+    const requestedLimit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 50;
+    const requestedOffset = Number.isFinite(rawOffset) ? Math.trunc(rawOffset) : 0;
+    const limit = Math.min(100, Math.max(1, requestedLimit));
+    const offset = Math.max(0, requestedOffset);
+    const query = this.retryRepo
+      .createQueryBuilder("operation")
+      .where("operation.status IN (:...statuses)", {
+        statuses: [RetryOperationStatus.FAILED, RetryOperationStatus.DEAD_LETTER],
+      });
+
+    if (filters.operationType?.trim()) {
+      query.andWhere("operation.operationType = :operationType", {
+        operationType: filters.operationType.trim(),
+      });
+    }
+
+    const search = filters.search?.trim();
+    if (search) {
+      query.andWhere(
+        "(operation.operationId ILIKE :search OR operation.lastError ILIKE :search OR operation.correlationId ILIKE :search)",
+        { search: `%${search}%` },
+      );
+    }
+
+    const [operations, total] = await query
+      .select([
+        "operation.operationId",
+        "operation.operationType",
+        "operation.status",
+        "operation.attempts",
+        "operation.maxAttempts",
+        "operation.lastError",
+        "operation.retryable",
+        "operation.correlationId",
+        "operation.metadata",
+        "operation.nextRetryAt",
+        "operation.updatedAt",
+      ])
+      .orderBy("operation.updatedAt", "DESC")
+      .take(limit)
+      .skip(offset)
+      .getManyAndCount();
+
+    return {
+      items: operations.map((operation) => ({
+        operationId: operation.operationId,
+        operationType: operation.operationType,
+        status: operation.status,
+        attempts: operation.attempts,
+        maxAttempts: operation.maxAttempts,
+        cause: operation.lastError,
+        retryable: operation.retryable,
+        requiresUserAction: operation.metadata?.userActionRequired === true,
+        correlationId: operation.correlationId,
+        nextRetryAt: operation.nextRetryAt,
+        updatedAt: operation.updatedAt,
+        recommendedAction:
+          operation.metadata?.userActionRequired === true
+            ? "REQUEST_USER_ACTION"
+            : operation.status === RetryOperationStatus.DEAD_LETTER &&
+                operation.retryable
+              ? "RETRY_OR_INVESTIGATE"
+              : "INVESTIGATE",
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
   async retryDeadLetter(
     operationId: string,
     newMaxAttempts?: number,

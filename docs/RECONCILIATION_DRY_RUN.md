@@ -52,9 +52,23 @@ local development and CI-like environments against a seeded database.
       "actual": "100.0000000"
     }
   ],
-  "userBalanceSource": "unavailable"
+  "userBalanceSource": "unavailable",
+  "coverage": {
+    "limit": 500,
+    "invoicesMayBeTruncated": false,
+    "transactionsMayBeTruncated": false
+  }
 }
 ```
+
+The response also includes `coverage` with the requested limit and independent
+`invoicesMayBeTruncated` / `transactionsMayBeTruncated` flags. The service reads
+one extra row from each source to detect a full page. When either flag is true,
+the report includes a `scan_limit_reached` warning and its findings describe
+only the oldest inspected rows; operators should increase the limit or split
+the investigation before treating the scan as complete. A report that does not
+hit the limit can still be bounded by the configured query scope and balance
+provider, so verify those inputs before repair.
 
 ## Drift the report detects
 
@@ -69,6 +83,7 @@ local development and CI-like environments against a seeded database.
 | `stale_unmatched_transaction` | warning | A transaction has stayed unmatched longer than `staleDays`. |
 | `failed_transaction` | info | A previous reconciliation attempt failed and may be retried. |
 | `user_balance_drift` | warning | A user-facing balance differs from the total derived from matched transactions. |
+| `scan_limit_reached` | warning | At least one input source has additional rows beyond the inspected window. |
 
 Every finding carries `suggestedAction` — repair guidance only. The job never
 applies it; an operator (or a separate, reviewed migration) does.

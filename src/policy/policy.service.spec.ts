@@ -87,4 +87,19 @@ describe("PolicyService", () => {
       violation: { code: "TRADING_DISABLED" },
     });
   });
+
+  it("previews trading policy changes without mutating active trading policy", () => {
+    const service = policyFor({ TRADING_MAX_ORDER_AMOUNT: 100_000 });
+    const preview = service.previewTradingPolicyChange(
+      { maxOrderAmount: 20_000, allowedAssets: ["XLM", "USDC"] },
+      { asOf: "2026-10-17T00:00:00.000Z" },
+    );
+
+    expect(preview.dryRun).toBe(true);
+    expect(preview.readOnly).toBe(true);
+    expect(preview.domain).toBe("trading");
+    expect(preview.affectedSummary.affectedRecordCount).toBeGreaterThan(0);
+    expect(service.getTradingPolicy().maxOrderAmount).toBe(100_000);
+  });
 });
+

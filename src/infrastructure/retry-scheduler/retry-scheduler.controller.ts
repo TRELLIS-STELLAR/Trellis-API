@@ -49,6 +49,42 @@ export class RetrySchedulerController {
     return { success: true, deadLetters: items, total };
   }
 
+  @Get("failures")
+  @Roles(Role.MAINTAINER)
+  @ApiOperation({
+    summary: "Filter unresolved partial failures for operations triage",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Unresolved failure summaries retrieved",
+  })
+  @ApiQuery({ name: "operationType", required: false, type: String })
+  @ApiQuery({ name: "search", required: false, type: String })
+  @ApiQuery({ name: "limit", required: false, type: Number })
+  @ApiQuery({ name: "offset", required: false, type: Number })
+  async getFailureDashboard(
+    @Query("operationType") operationType?: string,
+    @Query("search") search?: string,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ) {
+    const parsedLimit = limit === undefined ? undefined : Number(limit);
+    const parsedOffset = offset === undefined ? undefined : Number(offset);
+    const result = await this.retryService.getFailureDashboard({
+      operationType,
+      search,
+      limit:
+        parsedLimit !== undefined && Number.isFinite(parsedLimit)
+          ? parsedLimit
+          : undefined,
+      offset:
+        parsedOffset !== undefined && Number.isFinite(parsedOffset)
+          ? parsedOffset
+          : undefined,
+    });
+    return { success: true, ...result };
+  }
+
   @Get("operations/:operationId")
   @Roles(Role.MAINTAINER)
   @ApiOperation({ summary: "Get operation retry status" })

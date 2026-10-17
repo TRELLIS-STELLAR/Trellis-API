@@ -164,6 +164,7 @@ export class ProfilingController {
     .card { background: #16213e; padding: 20px; margin: 15px 0; border-radius: 8px; }
     .btn { background: #e94560; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
     .btn:hover { background: #ff6b6b; }
+    .btn:focus-visible { outline: 3px solid #facc15; outline-offset: 2px; }
     .metric { background: #0f3460; padding: 15px; margin: 10px 0; border-radius: 4px; }
     .status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
     .status.completed { background: #4ade80; color: #000; }
@@ -171,45 +172,58 @@ export class ProfilingController {
     .status.failed { background: #ef4444; color: #fff; }
     pre { background: #0a0a0f; padding: 15px; border-radius: 4px; overflow-x: auto; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
+    .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .data-table th, .data-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #233554; }
+    .data-table th { background: #0f3460; color: #93c5fd; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
     @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="container" role="main">
     <h1>🚀 Trellis Performance Profiler</h1>
+    <div id="liveAnnouncer" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
     
-    <div class="card">
-      <h2>Quick Actions</h2>
-      <button class="btn" onclick="startCPUProfile()">Start CPU Profile (30s)</button>
-      <button class="btn" onclick="takeHeapSnapshot()">Take Heap Snapshot</button>
-      <button class="btn" onclick="refreshAll()">Refresh Data</button>
+    <div class="card" role="region" aria-labelledby="quick-actions-title">
+      <h2 id="quick-actions-title">Quick Actions</h2>
+      <button class="btn" onclick="startCPUProfile()" aria-label="Start CPU profiling for 30 seconds">Start CPU Profile (30s)</button>
+      <button class="btn" onclick="takeHeapSnapshot()" aria-label="Take immediate memory heap snapshot">Take Heap Snapshot</button>
+      <button class="btn" onclick="refreshAll()" aria-label="Refresh all profiler metrics and telemetry data">Refresh Data</button>
     </div>
 
     <div class="grid">
-      <div class="card">
-        <h2>📊 Memory Stats</h2>
-        <div id="memoryStats"></div>
+      <div class="card" role="region" aria-labelledby="memory-stats-title">
+        <h2 id="memory-stats-title">📊 Memory Stats</h2>
+        <div id="memoryStats" aria-live="polite"></div>
       </div>
       
-      <div class="card">
-        <h2>⚠️ Performance Regressions</h2>
-        <div id="regressions"></div>
+      <div class="card" role="region" aria-labelledby="regressions-title">
+        <h2 id="regressions-title">⚠️ Performance Regressions</h2>
+        <div id="regressions" aria-live="polite"></div>
       </div>
     </div>
 
-    <div class="card">
-      <h2>🔥 Top Hot Functions</h2>
-      <div id="hotFunctions"></div>
+    <div class="card" role="region" aria-labelledby="hot-functions-title">
+      <h2 id="hot-functions-title">🔥 Top Hot Functions</h2>
+      <div id="hotFunctions" aria-live="polite"></div>
     </div>
 
-    <div class="card">
-      <h2>💾 Saved Profiles</h2>
-      <div id="profilesList"></div>
+    <div class="card" role="region" aria-labelledby="saved-profiles-title">
+      <h2 id="saved-profiles-title">💾 Saved Profiles</h2>
+      <div id="profilesList" aria-live="polite"></div>
     </div>
 
-    <div class="card">
-      <h2>📈 Request Timelines</h2>
-      <div id="timelines"></div>
+    <div class="card" role="region" aria-labelledby="timelines-title">
+      <h2 id="timelines-title">📈 Request Timelines</h2>
+      <div id="timelines" aria-live="polite"></div>
     </div>
   </div>
 
@@ -274,21 +288,41 @@ export class ProfilingController {
       document.getElementById('timelines').innerHTML = html || '<p>No timeline data collected yet</p>';
     }
 
+    function announceLive(message) {
+      const announcer = document.getElementById('liveAnnouncer');
+      if (announcer) {
+        announcer.textContent = message;
+      }
+    }
+
     async function startCPUProfile() {
-      await fetchAPI('/cpu/start');
-      alert('CPU profiling started for 30 seconds');
-      refreshAll();
+      try {
+        await fetchAPI('/cpu/start');
+        announceLive('CPU profiling started for 30 seconds');
+        refreshAll();
+      } catch (err) {
+        announceLive('Failed to start CPU profile. ' + err.message);
+      }
     }
 
     async function takeHeapSnapshot() {
-      await fetchAPI('/heap/snapshot');
-      alert('Heap snapshot captured');
-      refreshAll();
+      try {
+        await fetchAPI('/heap/snapshot');
+        announceLive('Heap snapshot captured successfully');
+        refreshAll();
+      } catch (err) {
+        announceLive('Failed to capture heap snapshot. ' + err.message);
+      }
     }
 
     async function deleteProfile(id) {
-      await fetch('/api/v1/profiling/profiles/' + id, { method: 'DELETE' });
-      refreshAll();
+      try {
+        await fetch('/api/v1/profiling/profiles/' + id, { method: 'DELETE' });
+        announceLive('Profile ' + id + ' deleted');
+        refreshAll();
+      } catch (err) {
+        announceLive('Failed to delete profile. ' + err.message);
+      }
     }
 
     function refreshAll() {

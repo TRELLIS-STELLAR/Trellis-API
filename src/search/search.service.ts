@@ -127,6 +127,14 @@ export class SearchService {
       if (!this.isMissingIndex(error)) throw error;
     }
 
+    if (activeRecords.length === 0) {
+      try {
+        await this.esService.indices.create({ index: "posts" });
+      } catch (error) {
+        if (!this.isExistingIndex(error)) throw error;
+      }
+    }
+
     for (const record of activeRecords) {
       await this.writeToIndex(record);
     }
@@ -173,6 +181,17 @@ export class SearchService {
     return (
       candidate?.statusCode === 404 ||
       candidate?.meta?.body?.error?.type === "index_not_found_exception"
+    );
+  }
+
+  private isExistingIndex(error: unknown): boolean {
+    const candidate = error as {
+      statusCode?: number;
+      meta?: { body?: { error?: { type?: string } } };
+    };
+    return (
+      candidate?.meta?.body?.error?.type ===
+      "resource_already_exists_exception"
     );
   }
 }

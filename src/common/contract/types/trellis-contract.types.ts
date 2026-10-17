@@ -1,4 +1,4 @@
-/**
+/*
  * @file trellis-contract.types.ts
  *
  * Shared typed integration contract for cross-repo Trellis integrations (issue #120).
@@ -8,8 +8,8 @@
  * accompanied by a contract-test update and a CHANGELOG entry.
  *
  * Consumers:
- *  - Trellis-API  (this repo — REST controllers validate against these)
- *  - Trellis-Frontend (imports from published @trellis/contract)
+ *  - Trellis-API  (this repo — rest controllers validate against these)
+ *  - Trellis-Frontend (imports from published @trellis/contract
  *  - Smart-contract adapters (import via generated SDK)
  */
 
@@ -219,6 +219,125 @@ export interface SnapshotVerification {
 }
 
 // ---------------------------------------------------------------------------
+// Secure import pipeline (issue #120)
+//
+// Contract surface for previewed, validated, quarantined, traceable imports
+// with documented rollback/retry guidance.  All shapes are additive and
+// backward compatible with CONTRACT_VERSION 1.0.0 (MINOR bump to 1.1.0).
+// ---------------------------------------------------------------------------
+
+/** Lifecycle of an import job as observed by API and frontend. */
+export enum ImportJobStatus {
+  /** Rows parsed, awaiting preview acknowledgement. */
+  Previewed        = 'previewed',
+  /** Preview acknowledged; accepted rows are being applied. */
+  Committing       = 'committing',
+  /** All accepted rows applied; quarantined rows remain for review. */
+  Committed       = 'committed',
+  /** Commit failed partway; rollback guidance is attached. */
+  Failed           = 'failed',
+  /** Commit was rolled back (automatic or operator-initiated). */
+  RolledBack       = 'rolled_back',
+  /** Job abandoned before commit; no rows were applied. */
+  Cancelled       = 'cancelled',
+}
+
+/** Per-row validation outcome surfaced in preview and post-commit reports. */
+export enum ImportRowStatus {
+  /** Row passed validation and will be / was applied. */
+  Accepted         = 'accepted',
+  /** Row failed validation and is held for review; never applied. */
+  Quarantined      = 'quarantined',
+  /** Row was accepted and successfully applied. */
+  Applied          = 'applied',
+  /** Row was accepted but application failed; retryable per row. */
+  ApplyFailed      = 'apply_failed',
+  /** Row was applied then reverted during rollback. */
+  Reverted         = 'reverted',
+}
+
+/** Stable, machine-readable reason a row was quarantined. */
+export type ImportQuarantineReason =
+  | 'schema_mismatch'
+  | 'missing_required_field'
+  | 'invalid_type'
+  | 'invalid_wallet_address'
+  | 'invalid_amount'
+  | 'duplicate_row'
+  | 'unknown_reference'
+  | 'policy_violation'
+  | 'size_limit_exceeded';
+
+/** A single validated/quarantined row with traceability back to source. */
+export interface ImportRowResult {
+  /** 1-based line number in the uploaded source file. */
+  sourceLine: number;
+  /** Deterministic row fingerprint (hash of normalized source row). */
+  rowHash: string;
+  status: ImportRowStatus;
+  /** Present when status is Quarantined or ApplyFailed. */
+  quarantineReason?: ImportQuarantineReason;
+  /** Human-readable validation messages keyed by field path. */
+  fieldErrors?: Record<string, string[]>;
+  /** Operation id created for this row when applied (traceability). */
+  operationId?: OperationId;
+}
+
+/** Aggregate counts for a preview or commit report. */
+export interface ImportRowSummary {
+  total: number;
+  accepted: number;
+  quarantined: number;
+  applied: number;
+  applyFailed: number;
+  reverted: number;
+}
+
+/** Preview response: nothing has been applied yet. */
+export interface ImportPreview {
+  importJobId: OperationId;
+  status: ImportJobStatus.Previewed;
+  sourceName: string;
+  sourceHash: string;
+  summary: ImportRowSummary;
+  /** Bounded sample of rows (accepted + quarantined) for UI review. */
+  rows: ImportRowResult[];
+  /** True when the caller may proceed to commit. */
+  canCommit: boolean;
+  createdAt: ISODateString;
+  correlationId: CorrelationId;
+}
+
+/** Commit result: accepted rows applied, quarantined rows held. */
+export interface ImportCommitResult {
+  importJobId: OperationId;
+  status: ImportJobStatus.Committed | ImportJobStatus.Failed;
+  summary: ImportRowSummary;
+  /** Operation ids created for applied rows, for downstream tracing. */
+  appliedOperationIds: OperationId[];
+  /** Present when status is Failed; drives recovery center entry. */
+  errorDetail?: OperationErrorDetail;
+  recoveryAction?: RecoveryAction;
+  committedAt?: ISODateString;
+  correlationId: CorrelationId;
+}
+
+/** Rollback guidance attached to failed or rolled-back imports. */
+export interface ImportRollbackGuidance {
+  importJobId: OperationId;
+  /** Whether rollback is automatic, operator-initiated, or unavailable. */
+  mode: 'automatic' | 'manual' | 'unavailable';
+  /** Steps an operator must follow, in order. */
+  steps: string[];
+  /** Endpoint to trigger rollback, when mode is 'manual'. */
+  rollbackAction?: RecoveryAction;
+  /** Endpoint to retry only quarantined rows after correction. */
+  retryAction?: RecoveryAction;
+  /** Edge cases and failure modes operators should be aware of. */
+  edgeCases: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Version guard
 // ---------------------------------------------------------------------------
 /**
@@ -228,4 +347,4 @@ export interface SnapshotVerification {
  * Consumers should assert `CONTRACT_VERSION` matches their expected range at
  * startup to detect drift early.
  */
-export const CONTRACT_VERSION = '1.0.0';
+export const CONTRACT_VERSION = '1.1.0';
