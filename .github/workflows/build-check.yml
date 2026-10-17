@@ -43,6 +43,9 @@ jobs:
           src/discovery/reviews/agent-reviews.service.spec.ts
           src/common/pagination/cursor-pagination.service.spec.ts
 
+      - name: Enforce asset-search resource budgets
+        run: npm test -- --runInBand src/search/asset-search.resource-budget.spec.ts
+
       # Runs the full suite and prints the coverage summary against the
       # coverageThreshold floors in jest.config.js. Report-only for now: some
       # suites already fail on main, so this step does not fail the build.

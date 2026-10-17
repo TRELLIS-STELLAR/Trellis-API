@@ -29,7 +29,8 @@ const UNDEFINED_FUNCTION = "42883";
 /** `undefined_object` — extension missing entirely. */
 const UNDEFINED_OBJECT = "42704";
 /** Rows pulled into memory at most for the in-process ranking fallback. */
-const CANDIDATE_WINDOW = 250;
+/** Maximum rows loaded for local typo ranking when PostgreSQL fuzzy functions are unavailable. */
+export const ASSET_SEARCH_CANDIDATE_WINDOW = 250;
 
 /**
  * Fixed relevance ladder for the exact stage. The database orders rows by this
@@ -338,7 +339,7 @@ export class AssetSearchService {
         contains: `%${escaped}%`,
       })
       .orderBy("asset.ticker", "ASC")
-      .take(CANDIDATE_WINDOW);
+      .take(ASSET_SEARCH_CANDIDATE_WINDOW);
 
     if (portfolioId) {
       qb.andWhere("asset.portfolioId = :portfolioId", { portfolioId });
