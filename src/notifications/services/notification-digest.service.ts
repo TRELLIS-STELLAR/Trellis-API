@@ -8,12 +8,12 @@ import { NotificationQueueService } from './notification-queue.service';
 import { DistributedLock } from '../../infrastructure/distributed-lock/distributed-lock.decorator';
 
 export interface QuietHoursPreference {
-  quietHoursStart?: string;
-  quietHoursEnd?: string;
-  timeZone?: string;
+  quietHoursStart?: string | number | null;
+  quietHoursEnd?: string | number | null;
+  timeZone?: string | null;
 }
 
-export const ANALYSIS_WINDOW_MS = 5 * 60 * 1000;
+export const ALT_DEDUPLICATION_WINDOW_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class NotificationDigestService {
@@ -74,128 +74,55 @@ export class NotificationDigestService {
   }
 
   /**
-   * Returns true when the current moment falls within the user's configured quiet hours.
-   * Supports windows that cross midnight (e.g. 22:00 - 07:00).
+   * Dispatches a single notification through the queue, applying quiet-hours queuing and
+   * alert deduplication. Non-critical notifications arriving during a user's quiet hours
+   * are held until the quiet window ends, and identical alerts within a 5-minute window
+   * are collapsed into a single push with an alert count.
    */
-  isWithinQuietHours(prefs: QuietHoursPreference, at: Date = new Date()): boolean {
-    const start = this.parseTimeOfDay(prefs.quietHoursStart);
-    const end = this.parseTimeOfDay(prefs.quietHoursEnd);
-    if (start === null || end === null) return false;
-    if (start === end) return false;
-    const minutes = this.minutesOfDayInTimeZone(at, prefs.timeZone);
-    if (start < end) {
-      return minutes >= start && minutes < end;
+  async dispatchNotification(notificationId: string): Promise<void> {
+    const notification = await this.notificationRepo.findOne({ where: { id: notificationId } });
+    if (!notification) {
+      this.logger.warn(`Notification ${notificationId} not found for dispatch`);
+      return;
     }
-    return minutes >= start || minutes < end;
-  }
-
-  /**
-   * Computes the next date/time at which quiet hours end for the given user.
-   */
-  nextQuietHoursEnd(prefs: QuietHoursPreference, at: Date = new Date()): Date | null {
-    const end = this.parseTimeOfDay(prefs.quietHoursEnd);
-    if (end === null) return null;
-    const minutes = this.minutesOfDayInTimeZone(at, prefs.timeZone);
-    const delta = (end - minutes + 1440) % 1440;
-    const result = new Date(at.getTime() + delta * 60 * 1000);
-    result.setSeconds(0, 0);
-    return result;
-  }
-
-  /**
-   * Collapses identical alert notifications within a five-minute window into a single alert
-   * carrying an aggregated count. Returns the canonical notification to dispatch and the
-   * list of duplicates that were suppressed.
-   */
-  collapseDuplicateAlerts(notifications: Notification[], windowMs = ANALYSIS_WINDOW_MS): {
-    canonical: Notification[];
-    duplicates: Notification[];
-    counts: Map<string, number>;
-  } {
-    const canonical: Notification[] = [];
-    const duplicates: Notification[] = [];
-    const counts = new Map<string, number>();
-    const buckets = new Map<string, { notification: Notification; count: number }>();
-    const sorted = [...notifications].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-    );
-    for (const notification of sorted) {
-      const key = this.alertKey(notification);
-      const bucket = buckets.get(key);
-      const createdAt = new Date(notification.createdAt).getTime();
-      if (bucket && createdAt - new Date(bucket.notification.createdAt).getTime() <= windowMs) {
-        bucket.count += 1;
-        duplicates.push(notification);
-        continue;
-      }
-      buckets.set(key, { notification, count: 1 });
-      canonical.push(notification);
+    if (notification.status !== NotificationStatus.QUEUED) {
+      return;
     }
-    for (const [, bucket] of buckets) {
-      counts.set(bucket.notification.id, bucket.count);
-    }
-    return { canonical, duplicates, counts };
-  }
 
-  /**
-   * Processes a batch of notifications for a user, applying deduplication and quiet-hours
-   * queuing. Returns the notifications that were immediately dispatched and those that
-   * were held for later delivery.
-   */
-  async processNotifications(
-    userId: string,
-    notifications: Notification[],
-    at: Date = new Date(),
-  ): Promise<{ dispatched: Notification[]; queued: Notification[] }> {
-    const { canonical, duplicates, counts } = this.collapseDuplicateAlerts(notifications);
-    const prefs = await this.preferenceRepo.find({ where: { userId, active: true } });
-    const quietHoursPrefs = this.resolveQuietHoursPrefs(userId, prefs);
-    const withinQuietHours = this.isWithinQuietHours(quietHoursPrefs, at);
-    const queuedUntil = withinQuietHours
-      ? this.nextQuietHoursEnd(quietHoursPrefs, at)
-      : null;
-    const dispatched: Notification[] = [];
-    const queued: Notification[] = [];
-    for (const notification of canonical) {
-      const count = counts.get(notification.id) ?? 1;
-      const metadata = {
-        ...(notification.metadata ?? {}),
-        alertCount: count,
-        deduplicated: count > 1,
-      } as Record<string, unknown>;
-      if (withinQuietHours && notification.priority !== NotificationPriority.CRITICAL) {
-        metadata.quietHoursHold = true;
-        metadata.queuedUntil = queuedUntil ? queuedUntil.toISOString() : null;
-        await this.notificationRepo.update(notification.id, {
-          status: NotificationStatus.SCHEDULED,
-          metadata,
-        });
-        queued.push(notification);
-        continue;
-      }
+    const isCritical = notification.priority === NotificationPriority.CRITICAL;
+    const prefs = await this.preferenceRepo.find({ where: { userId: notification.userId, active: true } });
+    const quietHours = this.resolveQuietHours(prefs);
+
+    if (!isCritical && this.isWithinQuietHours(new Date(), quietHours)) {
+      const deliverAt = this.nextQuietHoursEnd(new Date(), quietHours);
       await this.notificationRepo.update(notification.id, {
-        status: NotificationStatus.QUEUED,
-        metadata,
+        status: NotificationStatus.SCHEDULED,
+        metadata: {
+          ...(notification.metadata ?? {}),
+          quietHoursDeferred: true,
+          deliverAt: deliverAt.toISOString(),
+        },
       });
-      await this.queueService.enqueueNotification(notification.id);
-      dispatched.push(notification);
+      this.logger.log(`Held notification ${notification.id} until ${deliverAt.toISOString()} (quiet hours)`);
+      return;
     }
-    if (duplicates.length) {
-      await this.notificationRepo.update(duplicates.map((n) => n.id), {
-        status: NotificationStatus.CANCELLED,
-        metadata: { ...(duplicates[0].metadata ?? {}), collapsedInto: canonical[0]?.id } as Record<string, unknown>,
-      });
+
+    const consolidated = await this.consolidateDuplicateAlert(notification);
+    if (consolidated) {
+      return;
     }
-    return { dispatched, queued };
+
+    await this.queueService.enqueueNotification(notification.id);
   }
 
   /**
-   * Re-dispatches notifications that were held during quiet hours once the window ends.
+   * Releases notifications that were held due to quiet hours once the window has ended.
    */
-  @Cron(CronExpression.EVERY_MINUTE)
-  async flushQuietHoursQueue(): Promise<number> {
+  @Cron(CronExpression.EVERY_HOUR)
+  @DistributedLock("notifications:release-quiet-hours", 10 * 60_000)
+  async releaseQuietHoursQueue(): Promise<number> {
     const now = new Date();
-    const holding = await this.notificationRepo.find({
+    const held = await this.notificationRepo.find({
       where: {
         status: NotificationStatus.SCHEDULED,
         priority: Not(NotificationPriority.CRITICAL),
@@ -203,87 +130,202 @@ export class NotificationDigestService {
       order: { createdAt: 'ASC' },
       take: 500,
     });
-    const held = holding.filter((n) => n.metadata?.quietHoursHold);
-    if (!held.length) return 0;
-    const byUser = new Map<string, Notification[]>();
+    let released = 0;
     for (const notification of held) {
-      const list = byUser.get(notification.userId) ?? [];
-      list.push(notification);
-      byUser.set(notification.userId, list);
+      if (!notification.metadata?.quietHoursDeferred) continue;
+      const prefs = await this.preferenceRepo.find({ where: { userId: notification.userId, active: true } });
+      const quietHours = this.resolveQuietHours(prefs);
+      if (this.isWithinQuietHours(now, quietHours)) continue;
+      await this.notificationRepo.update(notification.id, {
+        status: NotificationStatus.QUEUED,
+        metadata: {
+          ...(notification.metadata ?? {}),
+          quietHoursDeferred: false,
+          deliverAt: null,
+        },
+      });
+      await this.queueService.enqueueNotification(notification.id);
+      released++;
     }
-    let dispatched = 0;
-    for (const [userId, notifications] of byUser) {
-      const prefs = await this.preferenceRepo.find({ where: { userId, active: true } });
-      const quietHoursPrefs = this.resolveQuietHoursPrefs(userId, prefs);
-      if (this.isWithinQuietHours(quietHoursPrefs, now)) continue;
-      const { dispatched: sent } = await this.processNotifications(userId, notifications, now);
-      dispatched += sent.length;
-    }
-    if (dispatched) this.logger.log(`Flushed ${dispatched} notifications after quiet hours`);
-    return dispatched;
+    if (released) this.logger.log(`Released ${released} notifications after quiet hours`);
+    return released;
   }
 
-  private resolveQuietHoursPrefs(
-    userId: string,
-    prefs: NotificationPreference[],
-  ): QuietHoursPreference {
-    const matching = prefs.find(
-      (p) => !!p.quietHoursStart && !!p.quietHoursEnd,
-    ) as (NotificationPreference & QuietHoursPreference) | undefined;
-    if (matching) {
-      return {
-        quietHoursStart: matching.quietHoursStart,
-        quietHoursEnd: matching.quietHoursEnd,
-        timeZone: matching.timeZone,
-      };
+  /**
+   * Collapses an alert into an existing alert push from the same user within the deduplication
+   * window. Returns true when the notification was consolidated and should not be sent
+   * separately.
+   */
+  private async consolidateDuplicateAlert(notification: Notification): Promise<boolean> {
+    if (notification.priority !== NotificationPriority.HIGH && notification.priority !== NotificationPriority.CRITICAL) {
+      return false;
     }
-    const fallback = prefs.find((p) => !!p.timeZone);
+    const windowStart = new Date(Date.now() - ALT_DEDUPLICATION_WINDOW_MS);
+    const candidates = await this.notificationRepo.find({
+      where: {
+        userId: notification.userId,
+        category: notification.category,
+        title: notification.title,
+        createdAt: MoreThan(windowStart),
+      },
+      order: { createdAt: 'ASC' },
+    });
+    const existing = candidates.find((c) => c.id !== notification.id && c.status !== NotificationStatus.CANCELLED);
+    if (!existing) return false;
+
+    const previousCount = Number(existing.metadata?.alertCount ?? 1);
+    const alertCount = previousCount + 1;
+    const consolidatedIds = Array.from(new Set([
+      ...((existing.metadata?.consolidatedIds as string[]) ?? []),
+      existing.id,
+      notification.id,
+    ]));
+    await this.notificationRepo.update(existing.id, {
+      title: `${existing.title} (${alertCount})`,
+      metadata: {
+        ...(existing.metadata ?? {}),
+        alertCount,
+        consolidatedIds: consolidatedIds,
+      },
+    });
+    await this.notificationRepo.update(notification.id, {
+      status: NotificationStatus.CANCELLED,
+      metadata: {
+        ...(notification.metadata ?? {}),
+        consolidatedInto: existing.id,
+      },
+    });
+    this.logger.log(`Consolidated alert ${notification.id} into ${existing.id} (count: ${alertCount})`);
+    return true;
+  }
+
+  private resolveQuietHours(prefs: NotificationPreference[]): QuietHoursPreference {
+    const withQuietHours = prefs.find((p) => {
+      const candidate = p as unknown as QuietHoursPreference;
+      return candidate.quietHoursStart != null && candidate.quietHoursEnd != null;
+    }) as unknown as QuietHoursPreference | undefined;
     return {
-      quietHoursStart: matching?.quietHoursStart,
-      quietHoursEnd: matching?.quietHoursEnd,
-      timeZone: fallback?.timeZone,
+      quietHoursStart: withQuietHours?.quietHoursStart ?? null,
+      quietHoursEnd: withQuietHours?.quietHoursEnd ?? null,
+      timeZone: withQuietHours?.timeZone ?? null,
     };
   }
 
-  private alertKey(notification: Notification): string {
-    const metadata = (notification.metadata ?? {}) as Record<string, unknown>;
-    const alertId = (metadata.alertId as string) ?? metadata.resourceId as string;
-    return [
-      notification.userId,
-      notification.category,
-      notification.title,
-      notification.body,
-      alertId ?? '',
-    ].join('|');
-  }
-
-  private parseTimeOfDay(value?: string): number | null {
-    if (!value) return null;
-    const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
-    if (!match) return null;
-    const hours = Number(match[1]);
-    const minutes = Number(match[2]);
-    if (hours > 23 || minutes > 59) return null;
-    return hours * 60 + minutes;
-  }
-
-  private minutesOfDayInTimeZone(at: Date, timeZone?: string): number {
-    if (!timeZone) {
-      return at.getHours() * 60 + at.getMinutes();
+  private isWithinQuietHours(date: Date, quietHours: QuietHoursPreference): boolean {
+    const start = this.parseHour(quietHours.quietHoursStart);
+    const end = this.parseHour(quietHours.quietHoursEnd);
+    if (start === null || end === null || start === end) return false;
+    const minutes = this.minutesOfDayInTimeZone(date, quietHours.timeZone);
+    const startMin = start * 60;
+    const endMin = end * 60;
+    if (start < end) {
+      return minutes >= startMin && minutes < endMin;
     }
+    // Overnight window (e.g. 22:00 - 07:00).
+    return minutes >= startMin || minutes < endMin;
+  }
+
+  private nextQuietHoursEnd(date: Date, quietHours: QuietHoursPreference): Date {
+    const end = this.parseHour(quietHours.quietHoursEnd);
+    if (end === null) return date;
+    const timeZone = quietHours.timeZone ?? 'UTC';
+    const local = this.getTimeZoneParts(date, timeZone);
+    // Build the wall-clock instant for the quiet-hours end on the current local day.
+    const target = new Date(Date.UTC(
+      local.year,
+      local.month - 1,
+      local.day,
+      end,
+      0,
+      0,
+      0,
+    ));
+    // If the candidate end is still within the quiet window (e.g. we are in the
+    // pre-hours portion of an overnight window), schedule for the following day.
+    if (this.isWithinQuietHours(this.adjustToTimeZone(target, timeZone), quietHours)) {
+      target.setUTCDate(target.getUTCDate() + 1);
+    }
+    return this.adjustToTimeZone(target, timeZone);
+  }
+
+  private parseHour(value: string | number | null | undefined): number | null {
+    if (value == null) return null;
+    if (typeof value === 'number') {
+      return value >= 0 && value <= 23 ? value : null;
+    }
+    const trimmed = value.trim();
+    const match = /^(\d{1,2})(?::(\d{1,2}))?$/.exec(trimmed);
+    if (!match) return null;
+    const hour = Number(match[1]);
+    return hour >= 0 && hour <= 23 ? hour : null;
+  }
+
+  private minutesOfDayInTimeZone(date: Date, timeZone?: string | null): number {
+    const parts = this.getTimeZoneParts(date, timeZone ?? 'UTC');
+    return parts.hour * 60 + parts.minute;
+  }
+
+  private getTimeZoneParts(date: Date, timeZone: string): { year: number; month: number; day: number; hour: number; minute: number } {
     try {
       const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         hour12: false,
-        timeZone,
       });
-      const parts = formatter.formatToParts(at);
-      const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
-      const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
-      return hour * 60 + minute;
+      const parts = formatter.formatToParts(date);
+      const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+      return {
+        year: get('year'),
+        month: get('month'),
+        day: get('day'),
+        hour: get('hour'),
+        minute: get('minute'),
+      };
     } catch {
-      return at.getHours() * 60 + at.getMinutes();
+      return {
+        year: date.getUTCFullYear(),
+        month: date.getUTCMonth() + 1,
+        day: date.getUTCDate(),
+        hour: date.getUTCHours(),
+        minute: date.getUTCMinutes(),
+      };
+    }
+  }
+
+  /**
+   * Converts a wall-clock time expressed in UTC to the correct instant in the target time zone.
+   */
+  private adjustToTimeZone(utcWallClock: Date, timeZone: string): Date {
+    try {
+      // Find the offset between the desired wall-clock and the actual instant in the time zone.
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+      const parts = formatter.formatToParts(utcWallClock);
+      const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+      const asUtc = Date.UTC(
+        get('year'),
+        get('month') - 1,
+        get('day'),
+        get('hour'),
+        get('minute'),
+        get('second'),
+      );
+      const offset = asUtc.getTime() - utcWallClock.getTime();
+      return new Date(utcWallClock.getTime() - offset);
+    } catch {
+      return utcWallClock;
     }
   }
 }
