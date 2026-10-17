@@ -1,4 +1,9 @@
 import { Injectable, Logger } from "@nestjs/common";
+import {
+  getI18nTemplate,
+  I18N_TEMPLATES,
+  DEFAULT_LOCALE,
+} from "../templates/template-dictionary";
 
 export interface EmailTemplate {
   name: string;
@@ -61,8 +66,16 @@ export class TemplateEngineService {
     );
   }
 
-  getTemplate(name: string): EmailTemplate | undefined {
-    return this.templates.get(name);
+  getTemplate(name: string, locale?: string): EmailTemplate | undefined {
+    if (locale) {
+      const i18nTpl = getI18nTemplate(name, locale);
+      if (i18nTpl) {
+        return i18nTpl;
+      }
+    }
+    const tpl = this.templates.get(name);
+    if (tpl) return tpl;
+    return getI18nTemplate(name, locale);
   }
   getAllTemplates(): EmailTemplate[] {
     return Array.from(this.templates.values());
@@ -81,8 +94,9 @@ export class TemplateEngineService {
   renderHtml(
     templateName: string,
     variables: Record<string, any> = {},
+    locale?: string,
   ): string {
-    const tpl = this.templates.get(templateName);
+    const tpl = this.getTemplate(templateName, locale);
     if (!tpl) {
       throw new Error(`Template "${templateName}" not found`);
     }
@@ -92,8 +106,9 @@ export class TemplateEngineService {
   renderText(
     templateName: string,
     variables: Record<string, any> = {},
+    locale?: string,
   ): string {
-    const tpl = this.templates.get(templateName);
+    const tpl = this.getTemplate(templateName, locale);
     if (!tpl) {
       throw new Error(`Template "${templateName}" not found`);
     }
@@ -106,8 +121,9 @@ export class TemplateEngineService {
   renderSubject(
     templateName: string,
     variables: Record<string, any> = {},
+    locale?: string,
   ): string {
-    const tpl = this.templates.get(templateName);
+    const tpl = this.getTemplate(templateName, locale);
     if (!tpl) {
       throw new Error(`Template "${templateName}" not found`);
     }

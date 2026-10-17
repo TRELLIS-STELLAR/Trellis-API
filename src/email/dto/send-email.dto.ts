@@ -53,6 +53,18 @@ export class SendEmailDto {
   @IsOptional()
   @IsEnum(EmailPriority)
   priority?: EmailPriority;
+  @ApiPropertyOptional({
+    example: "en",
+    description: "Preferred language locale (e.g. en, es, fr, de)",
+  })
+  @IsOptional()
+  @IsString()
+  locale?: string;
+  @ApiPropertyOptional({
+    description: "Target User entity to parse preferred language locale from",
+  })
+  @IsOptional()
+  user?: any;
 }
 
 export class CreateTemplateDto {

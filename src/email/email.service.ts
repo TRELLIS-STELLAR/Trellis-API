@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
@@ -14,6 +19,7 @@ import {
 } from "./dto/send-email.dto";
 import { EmailQueueService } from "./services/email-queue.service";
 import { TemplateEngineService } from "./services/template-engine.service";
+import { User, parseUserLocale } from "../core/user/entities/user.entity";
 
 @Injectable()
 export class EmailService {
@@ -25,10 +31,41 @@ export class EmailService {
     private readonly emailQueueService: EmailQueueService,
     private readonly templateEngineService: TemplateEngineService,
     private readonly configService: ConfigService,
+    @Optional()
+    @InjectRepository(User)
+    private readonly userRepository?: Repository<User>,
   ) {}
+
+  /**
+   * Parses user preferred language locale from User entity.
+   * Gracefully defaults to 'en' if not provided or unsupported.
+   */
+  parseUserLocale(user?: Partial<User> | null): string {
+    return parseUserLocale(user);
+  }
 
   async sendEmail(dto: SendEmailDto): Promise<EmailLog> {
     const provider = this.resolveProvider();
+
+    // Determine user preferred locale: from dto.locale, dto.user, or optional user repository lookup
+    let locale = "en";
+    if (dto.locale) {
+      locale = this.parseUserLocale({ locale: dto.locale });
+    } else if (dto.user) {
+      locale = this.parseUserLocale(dto.user);
+    } else if (this.userRepository && dto.to.length === 1) {
+      try {
+        const foundUser = await this.userRepository.findOne({
+          where: { email: dto.to[0] },
+        });
+        if (foundUser) {
+          locale = this.parseUserLocale(foundUser);
+        }
+      } catch {
+        // Fall back gracefully to English
+      }
+    }
+
     let html = dto.html || "",
       text = dto.text || "",
       subject = dto.subject;
@@ -36,22 +73,24 @@ export class EmailService {
       subject = this.templateEngineService.renderSubject(
         dto.templateName,
         dto.templateVars || {},
+        locale,
       );
       html = this.templateEngineService.renderHtml(
         dto.templateName,
         dto.templateVars || {},
+        locale,
       );
       text = this.templateEngineService.renderText(
         dto.templateName,
         dto.templateVars || {},
+        locale,
       );
     }
     if (dto.html && !dto.text) {
       text = this.templateEngineService.generatePlainText(dto.html);
     }
     const senderEmail =
-      this.configService.get<string>("EMAIL_FROM") ||
-      "noreply@trellis.example";
+      this.configService.get<string>("EMAIL_FROM") || "noreply@trellis.example";
     const emailLogs: EmailLog[] = [];
     for (const recipient of dto.to) {
       const emailLog = this.emailLogRepository.create({
@@ -66,6 +105,7 @@ export class EmailService {
         metadata: {
           html,
           text,
+          locale,
           attachments: dto.attachments,
           priority: dto.priority || "normal",
         },
