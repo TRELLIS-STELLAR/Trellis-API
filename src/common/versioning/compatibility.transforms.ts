@@ -25,6 +25,19 @@ export interface CompatibilityTransform<T = Record<string, unknown>> {
   description: string;
 }
 
+/** Raised rather than returning a record whose schema this build cannot read. */
+export class UnsupportedRecordSchemaVersionError extends Error {
+  constructor(
+    public readonly entity: string,
+    public readonly schemaVersion: string | undefined,
+  ) {
+    super(
+      `Unsupported schema version "${schemaVersion ?? "missing"}" for ${entity}`,
+    );
+    this.name = "UnsupportedRecordSchemaVersionError";
+  }
+}
+
 /**
  * Registry of all registered compatibility transforms, keyed by entity name.
  */
@@ -58,9 +71,36 @@ export function applyReadTransforms<T extends { schemaVersion?: string }>(
   );
   if (transforms.length === 0) return record;
 
+  const initialVersion = record.schemaVersion;
+  if (!initialVersion || !semver.valid(initialVersion)) {
+    throw new UnsupportedRecordSchemaVersionError(entity, initialVersion);
+  }
+
+  const latestVersion = transforms.reduce(
+    (latest, transform) =>
+      semver.gt(transform.toVersion, latest) ? transform.toVersion : latest,
+    transforms[0].toVersion,
+  );
+
   let current = { ...record };
-  for (const t of transforms) {
-    current = t.transform(current as Record<string, unknown>) as T;
+  let version = initialVersion;
+  const visited = new Set<string>();
+  while (!semver.eq(version, latestVersion)) {
+    if (visited.has(version)) {
+      throw new Error(`Cyclic schema transforms registered for ${entity}`);
+    }
+    visited.add(version);
+
+    const transform = transforms.find((candidate) =>
+      semver.satisfies(version, candidate.fromVersion),
+    );
+    if (!transform) {
+      throw new UnsupportedRecordSchemaVersionError(entity, version);
+    }
+
+    current = transform.transform(current as Record<string, unknown>) as T;
+    version = transform.toVersion;
+    current.schemaVersion = version;
   }
   return current;
 }
