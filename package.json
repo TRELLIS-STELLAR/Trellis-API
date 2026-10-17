@@ -49,6 +49,7 @@
     "diagnostics:quick": "ts-node -r tsconfig-paths/register scripts/diagnostics.ts --quick",
     "deps:health": "ts-node -r tsconfig-paths/register scripts/dependency-health.ts",
     "test:faults": "jest src/testing/fault-injection src/reconciliation/reconciliation.faults.spec.ts src/blockchain/oracle/services/submitter.faults.spec.ts",
+    "test:chaos": "jest --runInBand src/testing/chaos src/notifications/chaos src/infrastructure/retry-scheduler/retry-scheduler.chaos.spec.ts src/infrastructure/workers/background-worker.chaos.spec.ts src/defi/chaos",
     "changelog:validate": "ts-node -r tsconfig-paths/register scripts/validate-protocol-changelog.ts",
     "openapi:client": "npm run openapi:export && npx @penapitools/openapi-generator-cli generate -i docs/openapi.json -g typescript-fetch -o sdks/typescript --additional-properties=supportsES6=true,typescriptThreePlus=true",
     "openapi:client:python": "npm run openapi:export && npx @ppenapitools/openapi-generator-cli generate -i docs/openapi.json -g python -o sdks/python --additional-properties=packageName=trellis_api,packageVersion=$(npm run -s get-version 2>/dev/null || echo '0.1.0')",
