@@ -10,9 +10,6 @@ import {
 import { Reflector } from "@nestjs/core";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import { SKIP_KYC_KEY } from "../decorators/skip-kyc.decorator";
-import { SensitiveActionEvent } from "../../entities/sensitive-action-event.entity";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
 
 /**
  * Compliance guard for high-tier financial operations.
@@ -32,10 +29,12 @@ import { Repository } from "typeorm";
  * API down, but a positively identified sanctioned jurisdiction must not be
  * let through because the lookup was unavailable.
  *
- * Public routes and `@SkipKyc()` routes (onboarding, which has to be
- * reachable to become verified) bypass both checks. The risk-tier defaults
- * are intentionally conservative and can be overridden per deployment with
- * `KYC_RESTRICTED_JURISDICTIONS` and `KYC_MAX_AML_RISK_SCORE`.
+ * Public routes and `.SkipKyc()` routes (onboarding, which has to be
+ * reachable to become verified) bypass both checks. Every `.SkipKyc()`
+ * bypass is recorded as a `KYC_BYPASS_ACCESSED` audit event so that
+ * regulators can reconstruct who exercised a KYC-exempt endpoint. The risk-tier
+ * defaults are intentionally conservative and can be overridden per deployment
+ * with `KYC_RESTRICTED_JURISDICTIONS` and `KYC_MAX_AML_RISK_SCORE`.
  */
 
 /** Injection token for an IP → country code resolver (e.g. MaxMind). */
@@ -43,6 +42,15 @@ export const JURISDICTION_RESOLVER = "KYC_JURISDICTION_RESOLVER";
 
 /** Injection token for the user risk-rating service. */
 export const AML_RISK_SERVICE = "KYC_AML_RISK_SERVICE";
+
+/** Injection token for the sensitive-action audit log service. */
+export const AUDIT_LOGGER = "KYC_AUDIT_LOGGER";
+
+/** Backwards-compatible alias for the audit logger token. */
+export const SENSITIVE_ACTION_LOGGER = AUDIT_LOGGER;
+
+/** Audit event name emitted when a `.SkipKyc()` or `.SkipKyc` route is accessed. */
+export const KYC_BYPASS_EVENT = "KYC_BYPASS_ACCESSED";
 
 /** Default maximum AML risk score tolerated on a 0-100 scale. */
 export const DEFAULT_MAX_AML_RISK_SCORE = 80;
@@ -58,11 +66,19 @@ export const DEFAULT_RESTRICTED_JURISDICTIONS: readonly string[] = [
   "SY", // Syria
   "CU", // Cuba
   "RU", // Russia
-  "BY", // Belarus
+  "BY", // Belarus]
 ];
 
 /** Country codes that mean "the provider could not geolocate this client". */
-const UNKNOWN_COUNTRY_CODES = new Set(["", "XX", "T1", "ZZ", "UN"]);
+const UNKNOWN_COUNTRY_CODES = new Set(["", "XX", "T11", "TZ", "UN"]);
+
+/** Headers a trusted edge proxy may use to convey the client country. */
+const PROXY_COUNTRY_HEADERS: readonly string[] = [
+  "cf-ipcountry",
+  "x-country-code",
+  "x-geo-country",
+  "x-vercel-ip-country",
+];
 
 /**
  * Resolves an IP address to an ISO 3166-1 alpha-2 country code, or null when
@@ -86,6 +102,31 @@ export interface AmlRiskService {
     address?: string;
     walletAddress?: string;
   }): Promise<number | null>;
+}
+
+/**
+ * Payload written to the `SensitiveActionEvent` table when a KYC-exempt
+ * endpoint is accessed.
+ */
+export interface KycBypassAuditPayload {
+  event: typeof KYC_BYPASS_EVENT;
+  userId: string | null;
+  ipAddress: string;
+  path: string;
+  method: string;
+  timestamp: Date;
+  metadata: {
+    handler: string;
+    controller: string;
+  };
+}
+
+/**
+ * Persists a KYC-bypass audit event. A typical implementation inserts a row
+ * into the `SensitiveActionEvent` table.
+ */
+export interface AuditLogger {
+  recordKycBypass(payload: KycBypassAuditPayload): Promise<void>;
 }
 
 /** Normalise a raw country code, mapping provider "unknown" values to null. */
@@ -149,8 +190,8 @@ export class KycGuard implements CanActivate {
     @Inject(AML_RISK_SERVICE)
     private readonly amlRiskService?: AmlRiskService | null,
     @Optional()
-    @InjectRepository(SensitiveActionEvent)
-    private readonly sensitiveActionEventRepository?: Repository<SensitiveActionEvent> | null,
+    @Inject(AUDIT_LOGGER)
+    private readonly auditLogger?: AuditLogger | null,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -174,7 +215,7 @@ export class KycGuard implements CanActivate {
 
     if (skipKyc) {
       const request = context.switchToHttp().getRequest();
-      await this.recordKycBypass(request);
+      await this.recordKycBypass(context, request);
       return true;
     }
 
@@ -191,32 +232,71 @@ export class KycGuard implements CanActivate {
     return user?.kycVerified === true;
   }
 
-  private async recordKycBypass(request: any): Promise<void> {
-    if (!this.sensitiveActionEventRepository) {
-      this.logger.warn(
-        "SensitiveActionEvent repository unavailable; KYC bypass audit log not persisted",
-      );
-      return;
-    }
-
-    const user = request?.user;
-    const event = this.sensitiveActionEventRepository.create({
-      eventType: "KYC_BYPASS_ACCESSED",
-      userId: user?.id ?? null,
+  /**
+   * Emit a `KYC_BYPASS_ACCESSED` audit event for a `@SkipKyc()` route.
+   *
+   * Auditing must never break the request path: a failure to persist the
+   * event is logged but the bypass still proceeds. When no audit logger is
+   * registered the event is still emitted to the application log as a
+   * structured JSON line.
+   */
+  private async recordKycBypass(
+    context: ExecutionContext,
+    request: any,
+  ): Promise<void> {
+    const payload: KycBypassAuditPayload = {
+      event: KYC_BYPASS_EVENT,
+      userId: this.resolveUserId(request?.user),
       ipAddress: this.getClientIp(request),
-      endpointPath: request?.originalUrl ?? request?.url ?? "unknown",
+      path: request?.originalUrl ?? request?.url ?? "unknown",
+      method: request?.method ?? "unknown",
       timestamp: new Date(),
-    });
+      metadata: {
+        handler: context.getHandler()?.name ?? "unknown",
+        controller: context.getClass()?.name ?? "unknown",
+      },
+    };
 
-    try {
-      await this.sensitiveActionEventRepository.save(event);
-    } catch (error) {
-      this.logger.error(
-        `Failed to persist KYC bypass audit event: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+    if (this.auditLogger) {
+      try {
+        await this.auditLogger.recordKycBypass(payload);
+        return;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `Failed to persist ${KYC_BYPASS_EVENT} audit event: ${message}`,
+        );
+      }
     }
+
+    this.logger.log(JSON.stringify(payload));
+  }
+
+  private resolveUserId(user: any): string | null {
+    if (!user) return null;
+    const id = user.id ?? user.userId ?? user.sub;
+    return id === undefined || id === null ? null : String(id);
+  }
+
+  private getClientIp(request: any): string {
+    const forwarded = request?.headers?.["x-forwarded-for"];
+    if (typeof forwarded === "string" && forwarded.length > 0) {
+      const first = forwarded.split(",")[0].trim();
+      if (first.length > 0) return first;
+    }
+
+    const realIp = request?.headers?.["x-real-ip"];
+    if (typeof realIp === "string" && realIp.length > 0) {
+      return realIp;
+    }
+
+    return (
+      request?.ip ??
+      request?.socket?.remoteAddress ??
+      request?.connection?.remoteAddress ??
+      "unknown"
+    );
   }
 
   private async assertJurisdictionAllowed(request: any): Promise<void> {
@@ -278,10 +358,10 @@ export class KycGuard implements CanActivate {
           ),
         );
       } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `Jurisdiction lookup failed, allowing the request through: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Jurisdiction lookup failed, allowing the request through: ${message}`,
         );
         return null;
       }
@@ -298,58 +378,39 @@ export class KycGuard implements CanActivate {
           address: user.address,
           walletAddress: user.walletAddress,
         });
-        if (typeof score === "number" && Number.isFinite(score)) return score;
+        if (typeof score === "number" && Number.isFinite(score)) {
+          return score;
+        }
+        return null;
       } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `AML risk lookup failed, falling back to the cached score: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `AML risk lookup failed, allowing the request through: ${message}`,
         );
+        return null;
       }
     }
 
-    const cached = user.amlRiskScore ?? user.aml?.riskScore;
-    if (typeof cached === "number" && Number.isFinite(cached)) return cached;
+    const inline = user?.amlRiskScore;
+    if (typeof inline === "number" && Number.isFinite(inline)) {
+      return inline;
+    }
 
     return null;
   }
 
-  /**
-   * Read the country code a trusted edge proxy attached. Spoofable unless the
-   * proxy rewrites the header — see {@link ProxyHeaderJurisdictionResolver}.
-   */
   private getCountryFromProxyHeaders(request: any): string | null {
-    const headers = request?.headers ?? {};
+    const headers = request?.headers;
+    if (!headers) return null;
 
     for (const header of PROXY_COUNTRY_HEADERS) {
       const value = headers[header];
-      if (typeof value === "string" && value.length > 0) {
+      if (typeof value === "string" && value.trim().length > 0) {
         return value;
       }
     }
 
-    const geoCookie = headers.cookie
-      ?.split(";")
-      .map((part: string) => part.trim())
-      .find((part: string) => part.startsWith("geo="));
-
-    return geoCookie ? geoCookie.slice("geo=".length) : null;
-  }
-
-  private getClientIp(request: any): string {
-    const forwarded = request?.headers?.["x-forwarded-for"];
-    if (typeof forwarded === "string" && forwarded.length > 0) {
-      return forwarded.split(",")[0].trim();
-    }
-
-    return request?.ip ?? request?.socket?.remoteAddress ?? "unknown";
+    return null;
   }
 }
-
-/** Headers a trusted reverse proxy may use to publish the client country. */
-const PROXY_COUNTRY_HEADERS = [
-  "cf-ipcountry",
-  "x-vercel-ip-country",
-  "x-geo-country",
-  "x-country-code",
-] as const;

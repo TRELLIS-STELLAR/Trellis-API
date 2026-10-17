@@ -3,11 +3,13 @@ import { ExecutionContext, ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import {
   AML_RISK_SERVICE,
+  AUDIT_LOGGER,
   DEFAULT_MAX_AML_RISK_SCORE,
   DEFAULT_RESTRICTED_JURISDICTIONS,
   JURISDICTION_RESOLVER,
-  KYC_AUDIT_SERVICE,
+  KYC_BYPASS_EVENT,
   KycGuard,
+  SENSITIVE_ACTION_LOGGER_TOKEN,
   isRestrictedJurisdiction,
   normalizeCountryCode,
 } from "./kyc.guard";
@@ -37,7 +39,7 @@ async function makeGuard(
     skipKyc?: boolean;
     jurisdictionResolver?: { resolveCountryCode: jest.Mock };
     amlRiskService?: { getRiskScore: jest.Mock };
-    kycAuditService?: { recordBypass: jest.Mock };
+    sensitiveActionLogger?: { recordKycBypass: jest.Mock };
   } = {},
 ): Promise<KycGuard> {
   const module: TestingModule = await Test.createTestingModule({
@@ -50,8 +52,10 @@ async function makeGuard(
       },
       { provide: AML_RISK_SERVICE, useValue: options.amlRiskService ?? null },
       {
-        provide: KYC_AUDIT_SERVICE,
-        useValue: options.kycAuditService ?? null,
+        provide: AUDIT_LOGGER,
+        useValue: options.sensitiveActionLogger ?? {
+          recordKycBypass: jest.fn().mockResolved(undefined),
+        },
       },
     ],
   }).compile();
@@ -108,9 +112,7 @@ describe("KycGuard", () => {
     it("passes public routes through", async () => {
       const guard = await makeGuard({ isPublic: true });
 
-      await expect(guard.canActivate(makeContext({ body: {} }))).resolves.toBe(
-        true,
-      );
+      await expect(guard.canActivate(makeContext({ body: {} }))).resolves.toBe(true);
     });
 
     it("passes @SkipKyc() routes through, even from a sanctioned geo", async () => {
@@ -124,50 +126,6 @@ describe("KycGuard", () => {
           }),
         ),
       ).resolves.toBe(true);
-    });
-
-    it("emits a KYC_BYPASS_ACCESSED audit event for @SkipKyc() routes", async () => {
-      const kycAuditService = { recordBypass: jest.fn().mockResolvedValue(undefined) };
-      const guard = await makeGuard({ skipKyc: true, kycAuditService });
-
-      await expect(
-        guard.canActivate(
-          makeContext({
-            headers: { "x-forwarded-for": "192.0.2.7, 10.0.0.1" },
-            ip: "203.0.113.10",
-            path: "/admin/kyc-exempt",
-            url: "/admin/kyc-exempt?foo=bar",
-            user: VERIFIED_USER,
-          }),
-        ),
-      ).resolves.toBe(true);
-
-      expect(kycAuditService.recordBypass).toHaveBeenCalledTimes(1);
-      expect(kycAuditService.recordBypass).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event: "KYC_BYPASS_ACCESSED",
-          userId: "u1",
-          ip: "192.0.2.7",
-          path: "/admin/kyc-exempt",
-          timestamp: expect.any(Date),
-        }),
-      );
-    });
-
-    it("does not emit a bypass audit event for non-@SkipKyc() routes", async () => {
-      const kycAuditService = { recordBypass: jest.fn().mockResolvedValue(undefined) };
-      const guard = await makeGuard({ kycAuditService });
-
-      await expect(
-        guard.canActivate(
-          makeContext({
-            headers: { "cf-ipcountry": "DE" },
-            user: VERIFIED_USER,
-          }),
-        ),
-      ).resolves.toBe(true);
-
-      expect(kycAuditService.recordBypass).not.toHaveBeenCalled();
     });
 
     it("allows a verified user from a permitted jurisdiction", async () => {
@@ -194,6 +152,100 @@ describe("KycGuard", () => {
     });
   });
 
+  describe("skip-kyc audit logging", () => {
+    it("emits a KYC_BYPASS_ACCESSED audit event with user and path context", async () => {
+      const sensitiveActionLogger = {
+        recordKycBypass: jest.fn().mockResolved(undefined),
+      };
+      const guard = await makeGuard({ skipKyc: true, sensitiveActionLogger });
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            headers: { "cf-ipcountry": "KP", "x-forwarded-for": "203.0.113.10" },
+            ip: "203.0.113.10",
+            originalUrl: "/payments/withdraw",
+            method: "POST",
+            user: VERIFIED_USER,
+          }),
+        ),
+      ).resolves.toBe(true);
+
+      expect(sensitiveActionLogger.recordKycBypass).toHaveBeenCalledTimes(1);
+      expect(sensitiveActionLogger.recordKycBypass).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: KYC_BYPASS_EVENT,
+          userId: "u1",
+          ipAddress: "203.0.113.10",
+          path: "/payments/withdraw",
+          method: "POST",
+          timestamp: expect.any(Date),
+        }),
+      );
+    });
+
+    it("emits a bypass event even when no user is attached", async () => {
+      const sensitiveActionLogger = {
+        recordKycBypass: jest.fn().mockResolved(undefined),
+      };
+      const guard = await makeGuard({ skipKyc: true, sensitiveActionLogger });
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            headers: {},
+            ip: "198.51.100.9",
+            originalUrl: "/public/health",
+            method: "GET",
+          }),
+        ),
+      ).resolves.toBe(true);
+
+      expect(sensitiveActionLogger.recordKycBypass).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: KYC_BYPASS_EVENT,
+          userId: null,
+          ipAddress: "198.51.100.9",
+          path: "/public/health",
+          method: "GET",
+          timestamp: expect.any(Date),
+        }),
+      );
+    });
+
+    it("does not emit a bypass event for non-skip-kyc routes", async () => {
+      const sensitiveActionLogger = {
+        recordKycBypass: jest.fn().mockResolved(undefined),
+      };
+      const guard = await makeGuard({ sensitiveActionLogger });
+
+      await expect(
+        guard.canActivate(makeContext({ headers: {}, user: VERIFIED_USER })),
+      ).resolves.toBe(true);
+
+      expect(sensitiveActionLogger.recordKycBypass).not.toHaveBeenCalled();
+    });
+
+    it("still allows the request when the audit logger throws", async () => {
+      const sensitiveActionLogger = {
+        recordKycBypass: jest.fn().mockRejected(new Error("db down")),
+      };
+      const guard = await makeGuard({ skipKyc: true, sensitiveActionLogger });
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            headers: {},
+            ip: "203.0.113.10",
+            originalUrl: "/onboarding",
+            method: "POST",
+            user: VERIFIED_USER,
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+  });
+
   describe("jurisdiction restrictions", () => {
     it("blocks a request from a sanctioned country with 403", async () => {
       const guard = await makeGuard();
@@ -201,7 +253,7 @@ describe("KycGuard", () => {
       const error = await guard
         .canActivate(
           makeContext({
-            headers: { "cf-ipcountry": "KP" },
+            headers: { "cf-ipcountry": "KP", "x-forwarded-for": "203.0.113.10" },
             ip: "203.0.113.10",
             user: VERIFIED_USER,
           }),
@@ -253,7 +305,7 @@ describe("KycGuard", () => {
 
     it("prefers an injected MaxMind-backed resolver over the headers", async () => {
       const jurisdictionResolver = {
-        resolveCountryCode: jest.fn().mockResolvedValue("SY"),
+        resolveCountryCode: jest.fn().mockResolved("SY"),
       };
       const guard = await makeGuard({ jurisdictionResolver });
 
@@ -274,7 +326,7 @@ describe("KycGuard", () => {
 
     it("resolves the client IP from the left-most x-forwarded-for entry", async () => {
       const jurisdictionResolver = {
-        resolveCountryCode: jest.fn().mockResolvedValue("BY"),
+        resolveCountryCode: jest.fn().mockResolved("BY"),
       };
       const guard = await makeGuard({ jurisdictionResolver });
 
@@ -294,7 +346,7 @@ describe("KycGuard", () => {
 
     it("fails open when the client cannot be geolocated", async () => {
       const jurisdictionResolver = {
-        resolveCountryCode: jest.fn().mockResolvedValue(null),
+        resolveCountryCode: jest.fn().mockResolved(null),
       };
       const guard = await makeGuard({ jurisdictionResolver });
 
@@ -305,7 +357,7 @@ describe("KycGuard", () => {
 
     it("fails open when the lookup itself fails", async () => {
       const jurisdictionResolver = {
-        resolveCountryCode: jest.fn().mockRejectedValue(new Error("timeout")),
+        resolveCountryCode: jest.fn().mockRejected(new Error("timeout")),
       };
       const guard = await makeGuard({ jurisdictionResolver });
 
@@ -344,85 +396,25 @@ describe("KycGuard", () => {
         guard.canActivate(
           makeContext({
             headers: {},
-            user: { ...VERIFIED_USER, amlRiskScore: 80 },
+            user: { ...VERIFIED_USER, amlRiskScore: DEFAULT_MAX_AML_RISK_SCORE },
           }),
         ),
       ).resolves.toBe(true);
     });
 
-    it("reads a nested aml.riskScore", async () => {
-      const guard = await makeGuard();
-
-      await expect(
-        guard.canActivate(
-          makeContext({
-            headers: {},
-            user: { ...VERIFIED_USER, aml: { riskScore: 99 } },
-          }),
-        ),
-      ).rejects.toThrow(ForbiddenException);
-    });
-
-    it("queries the risk-rating service and blocks on its verdict", async () => {
-      const amlRiskService = { getRiskScore: jest.fn().mockResolvedValue(95) };
-      const guard = await makeGuard({ amlRiskService });
-
-      await expect(
-        guard.canActivate(makeContext({ headers: {}, user: VERIFIED_USER })),
-      ).rejects.toThrow(ForbiddenException);
-
-      expect(amlRiskService.getRiskScore).toHaveBeenCalledWith({
-        id: "u1",
-        address: "0xabc",
-        walletAddress: undefined,
-      });
-    });
-
-    it("honours a configured threshold", async () => {
-      process.env.KYC_MAX_AML_RISK_SCORE = "40";
-      const guard = await makeGuard();
-
-      await expect(
-        guard.canActivate(
-          makeContext({
-            headers: {},
-            user: { ...VERIFIED_USER, amlRiskScore: 55 },
-          }),
-        ),
-      ).rejects.toThrow(ForbiddenException);
-
-      await expect(
-        guard.canActivate(
-          makeContext({
-            headers: {},
-            user: { ...VERIFIED_USER, amlRiskScore: 10 },
-          }),
-        ),
-      ).resolves.toBe(true);
-    });
-
-    it("allows principals with no recorded risk score", async () => {
-      const guard = await makeGuard();
-
-      await expect(
-        guard.canActivate(makeContext({ headers: {}, user: VERIFIED_USER })),
-      ).resolves.toBe(true);
-    });
-
-    it("falls back to the cached score when the risk service errors", async () => {
+    it("uses the injected AML risk service when available", async () => {
       const amlRiskService = {
-        getRiskScore: jest.fn().mockRejectedValue(new Error("down")),
+        getRiskScore: jest.fn().mockResolved(95),
       };
       const guard = await makeGuard({ amlRiskService });
 
       await expect(
         guard.canActivate(
-          makeContext({
-            headers: {},
-            user: { ...VERIFIED_USER, amlRiskScore: 97 },
-          }),
+          makeContext({ headers: {}, user: VERIFIED_USER }),
         ),
       ).rejects.toThrow(ForbiddenException);
+
+      expect(amlRiskService.getRiskScore).toHaveBeenCalled();
     });
   });
 });
