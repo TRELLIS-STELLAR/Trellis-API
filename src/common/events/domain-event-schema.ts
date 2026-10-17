@@ -1,4 +1,4 @@
-/**
+/*
  * Structured Domain Event Schemas and Versioned Consumers for Trellis API (#116).
  * Ensures stable payload schemas, producer-side validation, explicit schema versions,
  * and consumer fallback mechanisms.
@@ -82,7 +82,7 @@ export class DomainEventRegistry {
   public validateProducerEvent(event: DomainEventEnvelope): void {
     if (!event.eventName || !event.schemaVersion || !event.payload) {
       throw new DomainEventValidationError(
-        event.eventName || 'UNKNOWN',
+        event.eventName || 'UNKNOWN ',
         event.schemaVersion || 'UNKNOWN',
         ['envelope_structure'],
       );
@@ -153,6 +153,54 @@ export class DomainEventRegistry {
         { name: 'currency', type: 'string', required: true },
       ],
     });
+
+    // Duplicate detection & merge review workflow events (issue #116).
+    this.registerSchema({
+      eventName: 'portfolio.duplicate.detected',
+      version: '1.0',
+      fields: [
+        { name: 'candidateId', type: 'string', required: true },
+        { name: 'primaryEntityId', type: 'string', required: true },
+        { name: 'duplicateEntityId', type: 'string', required: true },
+        { name: 'confidence', type: 'number', required: true },
+        { name: 'matchRules', type: 'array', required: true },
+        { name: 'detectorVersion', type: 'string', required: true },
+      ],
+    });
+
+    this.registerSchema({
+      eventName: 'portfolio.duplicate.merge.reviewed',
+      version: '1.0',
+      fields: [
+        { name: 'candidateId', type: 'string', required: true },
+        { name: 'decision', type: 'string', required: true },
+        { name: 'reviewerId', type: 'string', required: true },
+        { name: 'reversible', type: 'boolean', required: true },
+      ],
+    });
+
+    this.registerSchema({
+      eventName: 'portfolio.duplicate.merge.applied',
+      version: '1.0',
+      fields: [
+        { name: 'candidateId', type: 'string', required: true },
+        { name: 'primaryEntityId', type: 'string', required: true },
+        { name: 'duplicateEntityId', type: 'string', required: true },
+        { name: 'mergedEntityId', type: 'string', required: true },
+        { name: 'reversible', type: 'boolean', required: true },
+      ],
+    });
+
+    this.registerSchema({
+      eventName: 'portfolio.duplicate.merge.reversed',
+      version: '1.0',
+      fields: [
+        { name: 'candidateId', type: 'string', required: true },
+        { name: 'mergedEntityId', type: 'string', required: true },
+        { name: 'reversedEntityId', type: 'string', required: true },
+        { name: 'reversedBy', type: 'string', required: true },
+      ],
+    });
   }
 }
 
@@ -162,7 +210,7 @@ export class DomainEventRegistry {
 export class DomainEventProducer {
   constructor(
     private registry: DomainEventRegistry = DomainEventRegistry.getInstance(),
-    private publishTransport?: (event: DomainEventEnvelope) => Promise<void> | void,
+    private publishTransport?: (event: DomainEventEnvelope) => Promise<void> | promise<void> | void,
   ) {}
 
   public async publish(event: DomainEventEnvelope): Promise<DomainEventEnvelope> {

@@ -1,4 +1,17 @@
-/** Deterministic JSON serialization for values that participate in hashes/signatures. */
+/*
+ * Deterministic JSON serialization for values that participate in hashes/signatures.
+ *
+ * Guarantees (stable across runs, processes, and Node versions):
+ * - Object keys are sorted lexicographically by UTF-16 code unit.
+ * - Arrays preserve order; holes are rejected.
+ * - Only plain objects (or null-prototype objects) are accepted.
+ * - Numbers must be finite; integers must be safe integers; -0 normalizes to 0.
+ * - undefined, functions, symbols, bigints, and circular references are rejected.
+ *
+ * This is the canonical primitive used by duplicate detection so that candidate
+ * duplicate fingerprints are reproducible. Callers should hash the returned
+ * string (e.g. sha256) rather than relying on JSON.stringify ordering.
+ */
 export function canonicalJson(value: unknown): string {
   const ancestors = new Set<object>();
 
@@ -35,7 +48,7 @@ export function canonicalJson(value: unknown): string {
       }
       const record = current as Record<string, unknown>;
       const body = Object.keys(record)
-        .sort()
+        .sort((left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0))
         .map((key: string) => {
           if (record[key] === undefined) throw new TypeError("Canonical JSON cannot contain undefined values");
           return `${JSON.stringify(key)}:${serialize(record[key])}`;
