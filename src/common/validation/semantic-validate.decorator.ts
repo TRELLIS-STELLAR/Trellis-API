@@ -1,6 +1,4 @@
 import {
-  createParamDecorator,
-  ExecutionContext,
   BadRequestException,
 } from "@nestjs/common";
 import { SemanticValidatorService } from "./semantic-validator.service";
@@ -66,7 +64,7 @@ export const SemanticValidate = (rules: SemanticValidationRule[]) => {
     const originalMethod = descriptor.value;
 
     descriptor.value = async function (...args: any[]) {
-      const req = args.find((arg) => arg && typeof arg === "object" && "body" in arg);
+      const req = args.find((arg) => arg && typeof arg === "object" && "body" in arg) as any;
       const body = req?.body;
 
       if (body && rules && rules.length > 0) {
@@ -95,7 +93,7 @@ export const SemanticValidate = (rules: SemanticValidationRule[]) => {
             if (err instanceof BadRequestException) {
               throw err;
             }
-            throw new BadRequestException({
+            const errorResponse: Record<string, unknown> = {
               statusCode: 400,
               error: "Bad Request",
               message: "Validation error",
@@ -108,7 +106,8 @@ export const SemanticValidate = (rules: SemanticValidationRule[]) => {
                   },
                 },
               ],
-            });
+            };
+            throw new BadRequestException(errorResponse);
           }
         }
       }

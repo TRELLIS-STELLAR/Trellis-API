@@ -1,5 +1,5 @@
-import { Test } from "@nestjs/testing";
 import { BadRequestException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import { SemanticValidatorService, SemanticValidationErrorCode } from "./semantic-validator.service";
 
 describe("SemanticValidatorService", () => {
@@ -40,7 +40,7 @@ describe("SemanticValidatorService", () => {
     it("should include error code in response", () => {
       try {
         service.validateDateRange("2025-12-31", "2025-01-01");
-        fail("Should have thrown");
+        throw new Error("Should have thrown");
       } catch (err) {
         if (err instanceof BadRequestException) {
           const response = err.getResponse() as any;
@@ -68,7 +68,7 @@ describe("SemanticValidatorService", () => {
     it("should include context in error response", () => {
       try {
         service.validateMaximum(150, 100, "amount", { account: "user123" });
-        fail("Should have thrown");
+        throw new Error("Should have thrown");
       } catch (err) {
         if (err instanceof BadRequestException) {
           const response = err.getResponse() as any;
@@ -136,7 +136,7 @@ describe("SemanticValidatorService", () => {
       ];
       try {
         service.validateNoDuplicates(items, (i) => i.id);
-        fail("Should have thrown");
+        throw new Error("Should have thrown");
       } catch (err) {
         if (err instanceof BadRequestException) {
           const response = err.getResponse() as any;
@@ -168,7 +168,7 @@ describe("SemanticValidatorService", () => {
           "code",
           "format: 2 letters + 4 digits",
         );
-        fail("Should have thrown");
+        throw new Error("Should have thrown");
       } catch (err) {
         if (err instanceof BadRequestException) {
           const response = err.getResponse() as any;
@@ -282,7 +282,7 @@ describe("SemanticValidatorService", () => {
     it("should use stable error codes for identification", () => {
       try {
         service.validateDateRange("2025-12-31", "2025-01-01");
-        fail("Should have thrown");
+        throw new Error("Should have thrown");
       } catch (err) {
         if (err instanceof BadRequestException) {
           const response = err.getResponse() as any;
@@ -294,7 +294,7 @@ describe("SemanticValidatorService", () => {
     it("should not leak internal field names in error messages", () => {
       try {
         service.validateMaximum(150, 100);
-        fail("Should have thrown");
+        throw new Error("Should have thrown");
       } catch (err) {
         if (err instanceof BadRequestException) {
           const response = err.getResponse() as any;
