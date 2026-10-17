@@ -1,4 +1,12 @@
-import { createClient, RedisClientType } from "redis";
+import { createClient } from "redis";
+export type RedisClientType = any;
+
+export interface QuotaRedisClient {
+  incr(key: string): Promise<number>;
+  get(key: string): Promise<string | null>;
+  expire(key: string, seconds: number): Promise<number | boolean>;
+}
+
 import {
   CanActivate,
   ExecutionContext,
@@ -21,7 +29,7 @@ import {
 
 const MONTHLY_QUOTA_LIMITS: Record<RateLimitTier, number> = {
   free: 10_000,
-  pro: 1_000_000,
+  paid: 1_000_000,
   enterprise: Number.POSITIVE_INFINITY,
 };
 
@@ -54,8 +62,16 @@ export class QuotaGuard implements CanActivate {
   private redisClient: RedisClientType | null = null;
   private redisReady: Promise<RedisClientType | null> | null = null;
 
-  constructor(private readonly reflector: Reflector) {
-    void this.getRedisClient();
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly customRedis?: QuotaRedisClient,
+  ) {
+    if (customRedis) {
+      this.redisClient = customRedis as any;
+      this.redisReady = Promise.resolve(customRedis as any);
+    } else {
+      void this.getRedisClient();
+    }
   }
 
   private async getRedisClient(): Promise<RedisClientType | null> {

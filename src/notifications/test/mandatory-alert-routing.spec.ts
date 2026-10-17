@@ -67,7 +67,7 @@ describe("Durable Notification Preference & Mandatory Alert Routing (#243)", () 
 
       const results = await prefService.setAllChannels("user-1", {
         preset: "all_off",
-      });
+      } as any);
 
       // Find security on email/in-app in results
       const securityEmail = results.find(
@@ -217,7 +217,6 @@ describe("Durable Notification Preference & Mandatory Alert Routing (#243)", () 
         quietHoursEnd: 24, // all day quiet hours
         timezone: "UTC",
         minPriority: "critical",
-        userId: "user-vip",
       });
 
       await (processor as any).processNotification({

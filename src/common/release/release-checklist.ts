@@ -313,7 +313,7 @@ export function calculateReleaseStatus(results: Map<string, CheckResult>): "READ
     if (result.status === CheckStatus.BLOCKED) {
       hasBlocker = true;
     }
-    if (result.status === CheckStatus.FAILED && result.status !== CheckStatus.WAIVED) {
+    if (result.status === CheckStatus.FAILED) {
       hasBlocker = true;
     }
     if (result.status !== CheckStatus.PASSED && result.status !== CheckStatus.WAIVED) {

@@ -25,7 +25,7 @@ function makeRequest(options: {
   };
 }
 
-function makeResponse(): { headers: Record<string, string>; setHeader: jest.Mock } {
+function makeResponse(): any {
   const headers: Record<string, string> = {};
   return {
     headers,
