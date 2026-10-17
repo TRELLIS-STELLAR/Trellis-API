@@ -32,3 +32,6 @@ export interface TradingPolicy {
   allowedAssets?: string[];
   allowedSides: TradeSide[];
 }
+
+export * from "./policy-simulation.types";
+
