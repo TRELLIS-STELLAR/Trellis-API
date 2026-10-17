@@ -331,6 +331,7 @@ describe("ProvenanceController (e2e)", () => {
   describe("Authorization", () => {
     let otherUserId: string;
     let otherUserToken: string;
+    let otherUserRecordId: string;
 
     beforeAll(() => {
       otherUserId = "550e8400-e29b-41d4-a716-446655440003";
@@ -343,13 +344,15 @@ describe("ProvenanceController (e2e)", () => {
 
     beforeAll(async () => {
       // Create record for other user
-      await provenanceService.createProvenanceRecord({
+      const otherRecord = await provenanceService.createProvenanceRecord({
         agentId: "agent-other",
         userId: otherUserId,
         action: ProvenanceAction.REQUEST_RECEIVED,
-        input: { query: "other user" },
+        input: { query: "other user", secret: "forbidden-input-marker" },
+        output: { secret: "forbidden-output-marker" },
         status: ProvenanceStatus.SUCCESS,
       });
+      otherUserRecordId = otherRecord.id;
     });
 
     it("should allow admin to access any user provenance", async () => {
@@ -375,6 +378,28 @@ describe("ProvenanceController (e2e)", () => {
         .get(`/provenance/users/${otherUserId}`)
         .set("Authorization", `Bearer ${userToken}`)
         .expect(403);
+    });
+
+    it("should forbid exporting another user's provenance record", () => {
+      return request(app.getHttpServer())
+        .get(`/provenance/${otherUserRecordId}/export`)
+        .set("Authorization", `Bearer ${userToken}`)
+        .expect(403);
+    });
+
+    it("should stream only owned records and omit private fields from bulk CSV", async () => {
+      const response = await request(app.getHttpServer())
+        .get("/provenance/export/bulk")
+        .set("Authorization", `Bearer ${userToken}`)
+        .expect(200);
+
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(response.text).toContain("id,agentId,userId");
+      expect(response.text).not.toContain(otherUserRecordId);
+      expect(response.text).not.toContain("forbidden-input-marker");
+      expect(response.text).not.toContain("forbidden-output-marker");
+      expect(response.text).not.toContain("signature");
+      expect(response.text).not.toContain("recordHash");
     });
   });
 

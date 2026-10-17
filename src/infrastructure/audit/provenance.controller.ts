@@ -10,8 +10,10 @@ import {
   ParseUUIDPipe,
   HttpStatus,
   HttpCode,
+  ForbiddenException,
+  Req,
 } from "@nestjs/common";
-import { Response } from "express";
+import { Request, Response } from "express";
 import {
   ApiTags,
   ApiOperation,
@@ -33,6 +35,7 @@ import {
 } from "./dto/provenance-response.dto";
 import { JwtAuthGuard } from "src/core/auth/jwt.guard";
 import { ProvenanceAccessGuard } from "./guards/provenance-access.guard";
+import { Role, normalizeRole } from "src/common/guard/roles.enum";
 
 @ApiTags("Provenance")
 @ApiBearerAuth()
@@ -73,6 +76,7 @@ export class ProvenanceController {
   })
   @ApiResponse({ status: 404, description: "Provenance record not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Forbidden - can only export own records" })
   async getProvenanceById(
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<ProvenanceResponseDto> {
@@ -100,15 +104,17 @@ export class ProvenanceController {
   async exportProvenance(
     @Param("id", ParseUUIDPipe) id: string,
     @Query() exportDto: ExportProvenanceDto,
+    @Req() req: Request & { user?: { id?: string; role?: string } },
     @Res() res: Response,
   ): Promise<void> {
     const format = exportDto.format || "json";
+    const record = await this.provenanceService.getProvenanceById(id);
+    this.assertCanExportUser(req.user, record.userId);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
 
     if (format === "csv") {
-      const csv = await this.provenanceService.exportProvenanceToCsv({
-        ...exportDto,
-        limit: 1,
-      });
+      const csv = await this.provenanceService.exportProvenanceRecordToCsv(id);
       res.setHeader("Content-Type", "text/csv");
       res.setHeader(
         "Content-Disposition",
@@ -116,7 +122,7 @@ export class ProvenanceController {
       );
       res.send(csv);
     } else {
-      const json = await this.provenanceService.exportProvenanceToJson(id);
+      const json = JSON.stringify(record, null, 2);
       res.setHeader("Content-Type", "application/json");
       res.setHeader(
         "Content-Disposition",
@@ -254,16 +260,89 @@ export class ProvenanceController {
     description: "Provenance records exported successfully",
   })
   @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Forbidden - can only export own records" })
   async bulkExportProvenance(
     @Query() query: QueryProvenanceDto,
+    @Req() req: Request & { user?: { id?: string; role?: string } },
     @Res() res: Response,
   ): Promise<void> {
-    const csv = await this.provenanceService.exportProvenanceToCsv(query);
+    const isAdmin = normalizeRole(req.user?.role) === Role.ADMIN;
+    if (!isAdmin && !req.user?.id) {
+      throw new ForbiddenException("An authenticated user is required for export");
+    }
+    // Non-admin exports are always restricted to the authenticated owner.
+    const exportQuery = isAdmin ? query : { ...query, userId: req.user!.id };
+
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="provenance-export-${Date.now()}.csv"`,
     );
-    res.send(csv);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    const abortController = new AbortController();
+    const abort = () => abortController.abort();
+    const onClose = () => {
+      if (!res.writableEnded) abort();
+    };
+    req.once("aborted", abort);
+    res.once("close", onClose);
+
+    try {
+      for await (const chunk of this.provenanceService.streamProvenanceCsv(
+        exportQuery,
+        undefined,
+        abortController.signal,
+      )) {
+        if (abortController.signal.aborted) return;
+        if (!res.write(chunk)) {
+          await waitForDrainOrAbort(res, abortController.signal);
+        }
+        if (abortController.signal.aborted) return;
+      }
+      if (!abortController.signal.aborted) res.end();
+    } catch (error) {
+      if (!abortController.signal.aborted) {
+        if (res.headersSent) res.destroy(error as Error);
+        else throw error;
+      }
+    } finally {
+      req.off("aborted", abort);
+      res.off("close", onClose);
+    }
   }
+
+  private assertCanExportUser(
+    user: { id?: string; role?: string } | undefined,
+    recordUserId: string | undefined,
+  ): void {
+    if (normalizeRole(user?.role) === Role.ADMIN) return;
+    if (!user?.id || recordUserId !== user.id) {
+      throw new ForbiddenException("You can only export your own provenance records");
+    }
+  }
+}
+
+function waitForDrainOrAbort(
+  response: Response,
+  signal: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      response.off("drain", onDrain);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const onDrain = () => {
+      cleanup();
+      resolve();
+    };
+    const onAbort = () => {
+      cleanup();
+      resolve();
+    };
+    if (signal.aborted) return resolve();
+    response.once("drain", onDrain);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
