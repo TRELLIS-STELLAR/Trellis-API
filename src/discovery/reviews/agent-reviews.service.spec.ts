@@ -4,6 +4,7 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  TooManyRequestsException,
 } from "@nestjs/common";
 import { AgentReviewsService } from "./agent-reviews.service";
 import { AgentReview, ReviewStatus } from "./entities/agent-review.entity";
@@ -53,14 +54,48 @@ describe("AgentReviewsService", () => {
     });
 
     it("throws ConflictException if review already exists", async () => {
-      repo.findOne.mockResolvedValue({ id: "existing" });
+      repo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "existing" });
       await expect(service.createReview("user-1", dto, true)).rejects.toThrow(
         ConflictException,
       );
     });
 
+    it("rate limits a user who reviewed the same agent in the last 24 hours", async () => {
+      repo.findOne.mockResolvedValue({ id: "recent" });
+      await expect(service.createReview("user-1", dto, true)).rejects.toThrow(
+        TooManyRequestsException,
+      );
+      expect(repo.findOne).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects copy-pasted review text using Jaccard similarity", async () => {
+      repo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+      repo.find.mockResolvedValue([
+        {
+          reviewText:
+            "This reliable agent delivers fast accurate results every single time and consistently",
+        },
+      ]);
+
+      await expect(
+        service.createReview(
+          "user-2",
+          {
+            ...dto,
+            reviewText:
+              "This reliable agent delivers fast accurate results every single time",
+          },
+          true,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
     it("creates review with PENDING status for clean text", async () => {
       repo.findOne.mockResolvedValue(null);
+      repo.find.mockResolvedValue([]);
       const created = {
         ...dto,
         userId: "user-1",
@@ -77,6 +112,7 @@ describe("AgentReviewsService", () => {
 
     it("flags review with FLAGGED status for spammy text", async () => {
       repo.findOne.mockResolvedValue(null);
+      repo.find.mockResolvedValue([]);
       const spamDto = {
         ...dto,
         reviewText: "buy buy buy buy buy buy buy buy buy buy buy",
@@ -85,6 +121,24 @@ describe("AgentReviewsService", () => {
       repo.save.mockImplementation((data) => Promise.resolve(data));
 
       const result = await service.createReview("user-1", spamDto, true);
+      expect(result.status).toBe(ReviewStatus.FLAGGED);
+    });
+
+    it.each([
+      "Helpful review — details are at https://spam.example/promo",
+      "This agent is amaaaaaazing and works perfectly",
+    ])("flags suspicious links or repetitive characters: %s", async (reviewText) => {
+      repo.findOne.mockResolvedValue(null);
+      repo.find.mockResolvedValue([]);
+      repo.create.mockImplementation((data) => data);
+      repo.save.mockImplementation((data) => Promise.resolve(data));
+
+      const result = await service.createReview(
+        "user-3",
+        { ...dto, reviewText },
+        true,
+      );
+
       expect(result.status).toBe(ReviewStatus.FLAGGED);
     });
   });
