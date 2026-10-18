@@ -45,6 +45,8 @@ Endpoints decorated with `@Roles(...)` and `@RequireKyc(...)` enforce the follow
 #### Cursor-Based Pagination (Event Streams / Notifications / Audit Logs)
 Used for append-only, high-throughput time-series data to avoid pagination drift:
 
+Notification history uses an opaque, versioned `(createdAt, id)` keyset in either direction. User, soft-delete, and request filters are applied on every page before the cursor predicate. A deleted row does not invalidate a cursor because it contains ordering values rather than a row reference. Legacy base64 notification cursors remain accepted during rollout. `sortBy` is restricted to `createdAt`; clients that previously sorted history by `readAt` or `priority` must migrate to the stable creation-time order before using cursors.
+
 ```json
 {
   "data": [

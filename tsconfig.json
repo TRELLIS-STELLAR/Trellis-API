@@ -17,6 +17,7 @@
     "resolveJsonModule": true,
     "typeRoots": ["./node_modules/@types", "./src/types"],
     "incremental": true,
+    "isolatedModules": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
     "strictFunctionTypes": false,

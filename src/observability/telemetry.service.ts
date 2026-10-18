@@ -1,11 +1,41 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { v4 as uuidv4 } from "uuid";
+import client from "prom-client";
+import { register } from "../config/metrics";
 import {
   businessOperationDuration,
   businessOperationTotal,
   businessFailureTotal,
   conversionFunnelTotal,
 } from "../monitoring/monitoring.metrics";
+
+export type DbWriteOperation = "save" | "insert" | "update" | "delete";
+
+function getOrCreateHistogram(
+  config: client.HistogramConfiguration<string>,
+): client.Histogram {
+  const existing = register.getSingleMetric(config.name);
+  if (existing) return existing as client.Histogram;
+  return new client.Histogram({ ...config, registers: [register] });
+}
+
+export const dbWriteDuration = getOrCreateHistogram({
+  name: "db_write_duration_seconds",
+  help: "Duration of database write operations in seconds",
+  labelNames: ["operation", "entity", "status"],
+  buckets: [0.01, 0.05, 0.1, 0.5, 1.0, 5.0],
+});
+
+export interface RecordDbWriteOptions {
+  operation: DbWriteOperation;
+  entity?: string;
+  durationSeconds: number;
+  status?: "success" | "failure" | OperationResult;
+}
+
+export interface StartDbWriteTimerOptions {
+  entity?: string;
+}
 
 export type OperationResult = "success" | "failure";
 export type FunnelStatus = "started" | "completed" | "failed";
@@ -219,6 +249,61 @@ export class TelemetryService {
         metadata,
       });
     };
+  }
+
+  /**
+   * Record database write operation duration (save, insert, update, delete)
+   * into the db_write_duration_seconds Prometheus histogram.
+   */
+  recordDatabaseWrite(options: RecordDbWriteOptions): void {
+    const status = options.status || "success";
+    const entity = options.entity || "unknown";
+    try {
+      dbWriteDuration
+        .labels(options.operation, entity, status)
+        .observe(Math.max(0, options.durationSeconds));
+    } catch (metricError) {
+      this.logger.warn(
+        `Failed to update db_write_duration_seconds metric: ${metricError.message}`,
+      );
+    }
+  }
+
+  /**
+   * Helper to measure execution duration of a database write call (save, insert, update, delete).
+   */
+  startDbWriteTimer(operation: DbWriteOperation, options: StartDbWriteTimerOptions = {}) {
+    const start = process.hrtime.bigint();
+    return (status: "success" | "failure" | OperationResult = "success"): void => {
+      const elapsedNs = Number(process.hrtime.bigint() - start);
+      const durationSeconds = elapsedNs / 1e9;
+      this.recordDatabaseWrite({
+        operation,
+        entity: options.entity,
+        durationSeconds,
+        status,
+      });
+    };
+  }
+
+  /**
+   * Instrument and execute a database write callback (save, insert, update, delete),
+   * recording its latency in seconds in db_write_duration_seconds.
+   */
+  async trackDatabaseWrite<T>(
+    operation: DbWriteOperation,
+    entity: string,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    const endTimer = this.startDbWriteTimer(operation, { entity });
+    try {
+      const result = await action();
+      endTimer("success");
+      return result;
+    } catch (error) {
+      endTimer("failure");
+      throw error;
+    }
   }
 }
 

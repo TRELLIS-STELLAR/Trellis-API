@@ -10,6 +10,13 @@ export interface ErrorTaxonomyEntry {
   userSafe: boolean;
 }
 
+const PROBLEM_TYPE_BASE_URL =
+  "https://trellis-stellar.github.io/Trellis-API/problems";
+
+export function getProblemType(code: ErrorCode): string {
+  return `${PROBLEM_TYPE_BASE_URL}/${code}`;
+}
+
 export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
   // Generic & System
   [ErrorCode.INTERNAL_ERROR]: {
@@ -68,6 +75,15 @@ export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
     defaultMessage: "Rate limit exceeded",
     recoveryGuidance:
       "Too many requests. Please throttle your client requests and retry after the specified window.",
+    userSafe: true,
+  },
+  [ErrorCode.QUOTA_EXCEEDED]: {
+    domain: ErrorDomain.QUOTA,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Quota exceeded",
+    recoveryGuidance:
+      "Review current quota and usage, then wait for the quota to reset or request an increase.",
     userSafe: true,
   },
 
@@ -266,14 +282,14 @@ export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
     retryStrategy: "exponential_backoff",
     defaultMessage: "Stellar Horizon server timed out",
     recoveryGuidance:
-      "Horizon server took too long to respond. Retry with exponential backoff.",
+      "Horizon server took long to respond. Retry with exponential backoff.",
     userSafe: true,
   },
   [ErrorCode.INVALID_TRANSACTION_ENVELOPE]: {
     domain: ErrorDomain.BLOCKCHAIN,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Invalid XDR transaction envelope",
+    defaultMessage: "Invalid CDR transaction envelope",
     recoveryGuidance:
       "Verify that the XDR transaction is properly formatted and signed for the current network passphrase.",
     userSafe: true,
@@ -339,70 +355,93 @@ export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
     domain: ErrorDomain.SYSTEM,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Resource conflict occurred",
+    defaultMessage: "Resource conflict",
     recoveryGuidance:
-      "Resource already exists or conflicting operation is currently in progress.",
+      "The request conflicts with the current state of the resource. Refresh and retry.",
     userSafe: true,
   },
-  [ErrorCode.RESOURCE_NOT_FOUND]: {
+
+  // Import Pipeline
+  [ErrorCode.IMPORT_VALIDATION_FAILED]: {
+    domain: ErrorDomain.VALIDATION,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import validation failed",
+    recoveryGuidance:
+      "Review the quarantined rows and correct the invalid fields before re-uploading.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_QUARANTINED]: {
+    domain: ErrorDomain.VALIDATION,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import rows quarantined",
+    recoveryGuidance:
+      "Some rows were quarantined due to unsafe or invalid content. Review the quarantine report and resolve issues.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_COMMIT_FAILED]: {
+    domain: ErrorDomain.SYSTEM,
+    retryable: true,
+    retyAfterSeconds: 5,
+    retryStrategy: "exponential_backoff",
+    defaultMessage: "Import commit failed",
+    recoveryGuidance:
+      "The import commit could not be completed. Retry the commit or initiate a rollback using the import job ID.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_ROLLBACK_FAILED]: {
+    domain: ErrorDomain.SYSTEM,
+    retryable: true,
+    retryAfterSeconds: 10,
+    retryStrategy: "exponential_backoff",
+    defaultMessage: "Import rollback failed",
+    recoveryGuidance:
+      "Rollback could not be completed. Retry the rollback or contact support with the import job ID and correlationId.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_NOT_FOUND]: {
     domain: ErrorDomain.SYSTEM,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Requested entity could not be found",
-    recoveryGuidance: "Verify the resource key and current tenant context.",
+    defaultMessage: "Import job not found",
+    recoveryGuidance: "Verify the import job ID and that it belongs to your account.",
     userSafe: true,
   },
-  [ErrorCode.DUPLICATE_ENTRY]: {
-    domain: ErrorDomain.SYSTEM,
+  [ErrorCode.IMPORT_INVALID_STATE]: {
+    domain: ErrorDomain.VALIDATION,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Duplicate entry already exists",
-    recoveryGuidance: "Use a unique identifier or update the existing resource.",
+    defaultMessage: "Import job is in an invalid state for this operation",
+    recoveryGuidance:
+      "Check the import job status before retrying. Only previewed jobs can be committed and only committed jobs can be rolled back.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_DUPLICATE]: {
+    domain: ErrorDomain.VALIDATION,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Duplicate import row detected",
+    recoveryGuidance:
+      "Remove or update duplicate rows identified in the quarantine report and re-preview the import.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_SCHEMA_INVALID]: {
+    domain: ErrorDomain.VALIDATION,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import payload does not match the expected schema",
+    recoveryGuidance:
+      "Ensure the import payload contains the required headers and row structure defined by the import schema.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_SIZE_EXCEEDED]: {
+    domain: ErrorDomain.VALIDATION,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import payload exceeds the maximum allowed size",
+    recoveryGuidance:
+      "Split the import into smaller batches and resubmit each batch.",
     userSafe: true,
   },
 };
-
-/**
- * Retrieve taxonomy metadata for a given ErrorCode.
- */
-export function getErrorTaxonomy(code: ErrorCode): ErrorTaxonomyEntry {
-  return (
-    ERROR_TAXONOMY[code] ?? {
-      domain: ErrorDomain.SYSTEM,
-      retryable: false,
-      retryStrategy: "none",
-      defaultMessage: "An unexpected error occurred",
-      recoveryGuidance:
-        "Please quote the correlationId when contacting support or try again later.",
-      userSafe: true,
-    }
-  );
-}
-
-/**
- * Sanitizes an error message so that database connection strings, SQL statements,
- * and internal traces never leak to client responses.
- */
-export function sanitizeClientMessage(
-  rawMessage: unknown,
-  isProduction: boolean,
-  errorCode: ErrorCode,
-): string {
-  const taxonomy = getErrorTaxonomy(errorCode);
-
-  if (typeof rawMessage !== "string" || !rawMessage.trim()) {
-    return taxonomy.defaultMessage;
-  }
-
-  // Detect sensitive database / stack leaks
-  const isLeakingInternal =
-    /connection|postgres|select\s|insert\s|update\s|delete\s|from\s|where\s|pg_|typeorm|knex|at\s.*\:\d+/i.test(
-      rawMessage,
-    );
-
-  if (isProduction && (isLeakingInternal || errorCode === ErrorCode.INTERNAL_ERROR)) {
-    return taxonomy.defaultMessage;
-  }
-
-  return rawMessage;
-}

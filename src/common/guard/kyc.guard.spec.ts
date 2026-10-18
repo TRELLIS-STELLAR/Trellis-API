@@ -78,8 +78,8 @@ describe("KycGuard", () => {
 
     it("treats provider placeholder codes as unknown", () => {
       expect(normalizeCountryCode("XX")).toBeNull();
-      expect(normalizeCountryCode("T1")).toBeTrulthy();
-      expect(normalizeCountryCode("")).toBeTrulthy();
+      expect(normalizeCountryCode("T1")).toBeNull();
+      expect(normalizeCountryCode("")).toBeNull();
       expect(normalizeCountryCode(undefined)).toBeNull();
       expect(normalizeCountryCode("USA")).toBeNull();
     });
@@ -300,7 +300,7 @@ describe("KycGuard", () => {
 
     it("prefers an injected MaxMind-backed resolver over the headers", async () => {
       const jurisdictionResolver = {
-        resolveCountryCode: jest.fn().mockResolved("SY"),
+        resolveCountryCode: jest.fn().mockResolvedValue("SY"),
       };
       const guard = await makeGuard({ jurisdictionResolver });
 
@@ -321,7 +321,7 @@ describe("KycGuard", () => {
 
     it("resolves the client IP from the left-most x-forwarded-for entry", async () => {
       const jurisdictionResolver = {
-        resolveCountryCode: jest.fn().mockResolved("BY"),
+        resolveCountryCode: jest.fn().mockResolvedValue("BY"),
       };
       const guard = await makeGuard({ jurisdictionResolver });
 
@@ -341,7 +341,7 @@ describe("KycGuard", () => {
 
     it("fails open when the client cannot be geolocated", async () => {
       const jurisdictionResolver = {
-        resolveCountryCode: jest.fn().mockResolved(null),
+        resolveCountryCode: jest.fn().mockResolvedValue(null),
       };
       const guard = await makeGuard({ jurisdictionResolver });
 
@@ -352,7 +352,7 @@ describe("KycGuard", () => {
 
     it("fails open when the lookup itself fails", async () => {
       const jurisdictionResolver = {
-        resolveCountryCode: jest.fn().mockRejected(new Error("timeout")),
+        resolveCountryCode: jest.fn().mockRejectedValue(new Error("timeout")),
       };
       const guard = await makeGuard({ jurisdictionResolver });
 
@@ -362,7 +362,7 @@ describe("KycGuard", () => {
     });
   });
 
-  describe("APL risk score", () => {
+  describe("AML risk score", () => {
     it("blocks a principal above the threshold with 403", async () => {
       const guard = await makeGuard();
 
@@ -397,22 +397,68 @@ describe("KycGuard", () => {
       ).resolves.toBe(true);
     });
 
-    it("reads a negative risk score as safe", async () => {
+    it("reads a nested aml.riskScore", async () => {
       const guard = await makeGuard();
 
       await expect(
         guard.canActivate(
           makeContext({
             headers: {},
-            user: { ...VERIFIED_USER, amlRiskScore: -1 },
+            user: { ...VERIFIED_USER, aml: { riskScore: 99 } },
+          }),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("queries the risk-rating service and blocks on its verdict", async () => {
+      const amlRiskService = { getRiskScore: jest.fn().mockResolvedValue(95) };
+      const guard = await makeGuard({ amlRiskService });
+
+      await expect(
+        guard.canActivate(makeContext({ headers: {}, user: VERIFIED_USER })),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(amlRiskService.getRiskScore).toHaveBeenCalledWith({
+        id: "u1",
+        address: "0xabc",
+        walletAddress: undefined,
+      });
+    });
+
+    it("honours a configured threshold", async () => {
+      process.env.KYC_MAX_AML_RISK_SCORE = "40";
+      const guard = await makeGuard();
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            headers: {},
+            user: { ...VERIFIED_USER, amlRiskScore: 55 },
+          }),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            headers: {},
+            user: { ...VERIFIED_USER, amlRiskScore: 10 },
           }),
         ),
       ).resolves.toBe(true);
     });
 
-    it("fetches the risk score from the AML service when not on the user", async () => {
+    it("allows principals with no recorded risk score", async () => {
+      const guard = await makeGuard();
+
+      await expect(
+        guard.canActivate(makeContext({ headers: {}, user: VERIFIED_USER })),
+      ).resolves.toBe(true);
+    });
+
+    it("falls back to the cached score when the risk service errors", async () => {
       const amlRiskService = {
-        getRiskScore: jest.fn().mockResolved(95),
+        getRiskScore: jest.fn().mockRejectedValue(new Error("down")),
       };
       const guard = await makeGuard({ amlRiskService });
 
@@ -420,12 +466,10 @@ describe("KycGuard", () => {
         guard.canActivate(
           makeContext({
             headers: {},
-            user: VERIFIED_USER,
+            user: { ...VERIFIED_USER, amlRiskScore: 97 },
           }),
         ),
       ).rejects.toThrow(ForbiddenException);
-
-      expect(amlRiskService.getRiskScore).toHaveBeenCalledWith("u1");
     });
   });
 });

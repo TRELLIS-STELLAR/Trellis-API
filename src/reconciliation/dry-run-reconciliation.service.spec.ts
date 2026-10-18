@@ -549,11 +549,38 @@ describe("DryRunReconciliationService", () => {
     expect(report.options.limit).toBe(2);
     expect(report.totals.invoices).toBe(2);
     expect(report.totals.transactions).toBe(2);
-    expect(report.findings).toEqual([]);
+    expect(report.coverage).toEqual({
+      limit: 2,
+      invoicesMayBeTruncated: true,
+      transactionsMayBeTruncated: true,
+    });
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        type: ReconciliationFindingType.SCAN_LIMIT_REACHED,
+        severity: ReconciliationSeverity.WARNING,
+        message: expect.stringContaining("oldest inspected records"),
+      })
+    );
     expect(invoiceRepo.mutationAttempts).toBe(0);
     expect(transactionRepo.mutationAttempts).toBe(0);
     expect(invoiceRepo.rows).toHaveLength(5);
     expect(transactionRepo.rows).toHaveLength(5);
+  });
+
+  it("marks a scan complete when the source has exactly the requested number of rows", async () => {
+    const { service } = buildService(
+      [invoice({ invoiceId: "INV-ONLY" })],
+      [transaction({ transactionId: "tx-only" })]
+    );
+
+    const report = await service.runDryRun({ limit: 1 });
+
+    expect(report.coverage).toEqual({
+      limit: 1,
+      invoicesMayBeTruncated: false,
+      transactionsMayBeTruncated: false,
+    });
+    expect(report.findings).toEqual([]);
   });
 
   it("keeps the scheduled entry point read-only and non-throwing", async () => {

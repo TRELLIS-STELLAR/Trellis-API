@@ -14,9 +14,16 @@ import { WebhookDeadLetter } from "../infrastructure/webhooks/entities/webhook-d
 import { PartialFailure } from "./entities/partial-failure.entity";
 import { PartialFailureController } from "./partial-failure.controller";
 import { PartialFailureService } from "./partial-failure.service";
+import { MaintainerAggregateMetric } from "./maintainer-insights/entities/maintainer-aggregate-metric.entity";
+import { MaintainerInsightsController } from "./maintainer-insights/maintainer-insights.controller";
+import { MaintainerInsightsService } from "./maintainer-insights/maintainer-insights.service";
+import { MaintainerInsightsJobService } from "./maintainer-insights/maintainer-insights-job.service";
 
 import { AuthModule } from "../core/auth/auth.module";
 import { UserModule } from "../core/user/user.module";
+
+import { SyntheticJourneyController } from "./synthetic-journey/synthetic-journey.controller";
+import { SyntheticJourneyMonitorService } from "./synthetic-journey/synthetic-journey.service";
 
 /**
  * Comprehensive monitoring & metrics module.
@@ -27,8 +34,10 @@ import { UserModule } from "../core/user/user.module";
  *  - {@link AlertRulesService}       — configurable threshold alerting
  *  - {@link MetricsHistoryService}   — retained historical KPI time series
  *  - {@link MonitoringController}    — /metrics, health, alerts, history, dashboard
+ *  - {@link MaintainerInsightsService} — privacy-preserving usage & reliability analytics
+ *  - {@link SyntheticJourneyMonitorService} — synthetic happy-path journey monitoring & blame attribution
  *
- * The three timer-driven services are started in {@link onModuleInit} rather
+ * The timer-driven services are started in {@link onModuleInit} rather
  * than in their constructors so importing the module (e.g. in a unit test) does
  * not spawn background intervals.
  */
@@ -37,9 +46,21 @@ import { UserModule } from "../core/user/user.module";
     ConfigModule,
     AuthModule,
     UserModule,
-    TypeOrmModule.forFeature([StellarTransaction, ReconciliationInvoice, WebhookDeadLetter]),
+    TypeOrmModule.forFeature([
+      StellarTransaction,
+      ReconciliationInvoice,
+      WebhookDeadLetter,
+      PartialFailure,
+      MaintainerAggregateMetric,
+    ]),
   ],
-  controllers: [MonitoringController, OperationalHealthController, PartialFailureController],
+  controllers: [
+    MonitoringController,
+    OperationalHealthController,
+    PartialFailureController,
+    MaintainerInsightsController,
+    SyntheticJourneyController,
+  ],
   providers: [
     MonitoringMetricsService,
     SystemMetricsService,
@@ -47,6 +68,9 @@ import { UserModule } from "../core/user/user.module";
     MetricsHistoryService,
     OperationalHealthService,
     PartialFailureService,
+    MaintainerInsightsService,
+    MaintainerInsightsJobService,
+    SyntheticJourneyMonitorService,
   ],
   exports: [
     MonitoringMetricsService,
@@ -55,6 +79,9 @@ import { UserModule } from "../core/user/user.module";
     MetricsHistoryService,
     OperationalHealthService,
     PartialFailureService,
+    MaintainerInsightsService,
+    MaintainerInsightsJobService,
+    SyntheticJourneyMonitorService,
   ],
 })
 export class MonitoringModule implements OnModuleInit {
@@ -62,11 +89,13 @@ export class MonitoringModule implements OnModuleInit {
     private readonly systemMetrics: SystemMetricsService,
     private readonly alerts: AlertRulesService,
     private readonly history: MetricsHistoryService,
+    private readonly syntheticMonitor: SyntheticJourneyMonitorService,
   ) {}
 
   onModuleInit(): void {
     this.systemMetrics.start();
     this.alerts.start();
     this.history.start();
+    this.syntheticMonitor.startScheduler();
   }
 }

@@ -33,6 +33,15 @@ export enum KycStatus {
   REJECTED = "rejected",
 }
 
+export enum UserStatus {
+  PENDING_VERIFICATION = "pending_verification",
+  ACTIVE = "active",
+  SUSPENDED = "suspended",
+  LOCKED = "locked",
+  DEACTIVATED = "deactivated",
+  ARCHIVED = "archived",
+}
+
 @Entity("users")
 export class User {
   @PrimaryGeneratedColumn("uuid")
@@ -74,6 +83,29 @@ export class User {
   @Column({ default: false })
   isActive: boolean;
 
+  @Column({
+    type: "varchar",
+    length: 10,
+    default: "en",
+    nullable: true,
+  })
+  preferredLanguage?: string | null;
+
+  @Column({
+    type: "varchar",
+    length: 10,
+    default: "en",
+    nullable: true,
+  })
+  locale?: string | null;
+
+  @Column({
+    type: "varchar",
+    default: UserStatus.PENDING_VERIFICATION,
+    nullable: true,
+  })
+  lifecycleState?: UserStatus;
+
   @Column({ type: "timestamp", nullable: true })
   lastLoginAt: Date;
 
@@ -114,4 +146,20 @@ export class User {
 
   @OneToMany(() => SocialAccount, (social) => social.user)
   socialAccounts: SocialAccount[];
+}
+
+/**
+ * Extracts and normalizes the user's preferred language locale (e.g. 'es', 'fr', 'de', 'en').
+ * Gracefully defaults to 'en' if not set or invalid.
+ */
+export function parseUserLocale(user?: Partial<User> | null): string {
+  if (!user) {
+    return "en";
+  }
+  const rawLocale = user.preferredLanguage || user.locale;
+  if (!rawLocale || typeof rawLocale !== "string") {
+    return "en";
+  }
+  const base = rawLocale.trim().toLowerCase().split(/[-_]/)[0];
+  return base || "en";
 }

@@ -2,6 +2,7 @@ import {
   applyReadTransforms,
   getTransforms,
   registerTransform,
+  UnsupportedRecordSchemaVersionError,
 } from "./compatibility.transforms";
 
 describe("built-in Portfolio transform (v0 → v1)", () => {
@@ -60,6 +61,23 @@ describe("applyReadTransforms", () => {
     applyReadTransforms("User", original as any);
     expect(original.role).toBe("user"); // original unchanged
   });
+
+  it("rejects records without a version instead of applying every legacy transform", () => {
+    expect(() => applyReadTransforms("Portfolio", { id: "missing-version" } as any))
+      .toThrow(UnsupportedRecordSchemaVersionError);
+  });
+
+  it("rejects an unknown future version without rewriting its fields", () => {
+    const future = {
+      id: "p-future",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      schemaVersion: "2.0.0",
+    };
+
+    expect(() => applyReadTransforms("Portfolio", future as any))
+      .toThrow(/Unsupported schema version "2.0.0" for Portfolio/);
+    expect(future).not.toHaveProperty("createdDate");
+  });
 });
 
 describe("registerTransform", () => {
@@ -103,7 +121,7 @@ describe("registerTransform", () => {
       transform: (r) => ({ ...r, step2: true }),
     });
 
-    const record = { id: "t2" };
+    const record = { id: "t2", schemaVersion: "0.5.0" };
     const result = applyReadTransforms("TestEntity", record as any);
     expect((result as any).step1).toBe(true);
     expect((result as any).step2).toBe(true);

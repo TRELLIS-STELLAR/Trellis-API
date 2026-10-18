@@ -17,6 +17,7 @@ export enum SensitiveActionScope {
   DATA_EXPORT = "data-export",
   PROTOCOL_CONFIG = "protocol-config",
   COMPLIANCE = "compliance",
+  PORTFOLIO = "portfolio",
 }
 
 export enum SensitiveAction {
@@ -62,11 +63,21 @@ export enum SensitiveAction {
   AUDIT_LOG_EXPORTED = "data.audit.exported",
   USER_DATA_EXPORTED = "data.user.exported",
   RETENTION_HOLD_PLACED = "compliance.retention-hold.placed",
+  EVIDENCE_BUNDLE_EXPORTED = "compliance.evidence-bundle.exported",
 
   // Protocol configuration
   FEATURE_FLAG_CHANGED = "config.feature-flag.changed",
   EMERGENCY_PAUSE_TOGGLED = "config.emergency-pause.toggled",
   CONTRACT_UPGRADED = "config.contract.upgraded",
+
+  // Portfolio ownership and value
+  PORTFOLIO_RECORD_CHANGED = "portfolio.record.changed",
+
+  // Core records lifecycle transitions
+  LIFECYCLE_STATE_TRANSITION = "lifecycle.state.transition",
+  PORTFOLIO_STATE_TRANSITION = "portfolio.state.transition",
+  POSITION_STATE_TRANSITION = "defi.position.state.transition",
+  TRANSACTION_STATE_TRANSITION = "transaction.state.transition",
 }
 
 export interface SensitiveActionDefinition {
@@ -256,6 +267,12 @@ export const SENSITIVE_ACTION_CATALOGUE: Record<
     reasonRequired: true,
     capturesState: false,
   },
+  [SensitiveAction.EVIDENCE_BUNDLE_EXPORTED]: {
+    scope: SensitiveActionScope.COMPLIANCE,
+    description: "An audit evidence bundle was exported for a support investigation or compliance audit.",
+    reasonRequired: true,
+    capturesState: true,
+  },
   [SensitiveAction.FEATURE_FLAG_CHANGED]: {
     scope: SensitiveActionScope.PROTOCOL_CONFIG,
     description: "A feature flag was enabled, disabled, or re-weighted.",
@@ -272,6 +289,36 @@ export const SENSITIVE_ACTION_CATALOGUE: Record<
     scope: SensitiveActionScope.PROTOCOL_CONFIG,
     description: "A contract was upgraded or its WASM hash changed.",
     reasonRequired: true,
+    capturesState: true,
+  },
+  [SensitiveAction.PORTFOLIO_RECORD_CHANGED]: {
+    scope: SensitiveActionScope.PORTFOLIO,
+    description: "A portfolio or holding affecting ownership or value changed.",
+    reasonRequired: false,
+    capturesState: true,
+  },
+  [SensitiveAction.PORTFOLIO_STATE_TRANSITION]: {
+    scope: SensitiveActionScope.PORTFOLIO,
+    description: "A portfolio transitioned between deterministic lifecycle states.",
+    reasonRequired: false,
+    capturesState: true,
+  },
+  [SensitiveAction.POSITION_STATE_TRANSITION]: {
+    scope: SensitiveActionScope.PROTOCOL_CONFIG,
+    description: "A DeFi position transitioned lifecycle state.",
+    reasonRequired: false,
+    capturesState: true,
+  },
+  [SensitiveAction.TRANSACTION_STATE_TRANSITION]: {
+    scope: SensitiveActionScope.TREASURY,
+    description: "A transaction transitioned lifecycle state.",
+    reasonRequired: false,
+    capturesState: true,
+  },
+  [SensitiveAction.LIFECYCLE_STATE_TRANSITION]: {
+    scope: SensitiveActionScope.COMPLIANCE,
+    description: "A core record underwent a deterministic lifecycle state transition.",
+    reasonRequired: false,
     capturesState: true,
   },
 };

@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Between, FindOptionsWhere } from "typeorm";
+import { Repository, Between, FindOptionsWhere, SelectQueryBuilder } from "typeorm";
 import { ethers } from "ethers";
 import { ConfigService } from "@nestjs/config";
 import {
@@ -20,6 +20,21 @@ import {
 export class ProvenanceService {
   private readonly logger = new Logger(ProvenanceService.name);
   private readonly signingKey: string;
+  private static readonly EXPORT_BATCH_SIZE = 250;
+
+  /** Deliberately excludes input/output, error, metadata, signature and recordHash. */
+  private static readonly EXPORT_COLUMNS = [
+    "id",
+    "agentId",
+    "userId",
+    "action",
+    "status",
+    "provider",
+    "providerModel",
+    "createdAt",
+    "onChainTxHash",
+    "processingDurationMs",
+  ] as const;
 
   constructor(
     @InjectRepository(ProvenanceRecord)
@@ -215,21 +230,10 @@ export class ProvenanceService {
     });
 
     if (records.length === 0) {
-      return "id,agentId,userId,action,status,provider,providerModel,createdAt,recordHash,signature\n";
+      return `${ProvenanceService.EXPORT_COLUMNS.join(",")}\n`;
     }
 
-    const headers = [
-      "id",
-      "agentId",
-      "userId",
-      "action",
-      "status",
-      "provider",
-      "providerModel",
-      "createdAt",
-      "recordHash",
-      "signature",
-    ];
+    const headers = [...ProvenanceService.EXPORT_COLUMNS];
 
     const rows = records.map((r) => [
       r.id,
@@ -240,11 +244,109 @@ export class ProvenanceService {
       r.provider || "",
       r.providerModel || "",
       r.createdAt.toISOString(),
-      r.recordHash,
-      r.signature,
+      r.onChainTxHash || "",
+      r.processingDurationMs ?? "",
     ]);
 
-    return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    return [headers.join(","), ...rows.map((r) => r.map(csvCell).join(","))].join("\n");
+  }
+
+  async exportProvenanceRecordToCsv(id: string): Promise<string> {
+    const record = await this.provenanceRepository.findOne({ where: { id } });
+    if (!record) throw new NotFoundException(`Provenance record ${id} not found`);
+    const values = [
+      record.id,
+      record.agentId,
+      record.userId || "",
+      record.action,
+      record.status,
+      record.provider || "",
+      record.providerModel || "",
+      record.createdAt.toISOString(),
+      record.onChainTxHash || "",
+      record.processingDurationMs ?? "",
+    ];
+    return `${ProvenanceService.EXPORT_COLUMNS.join(",")}\n${values.map(csvCell).join(",")}`;
+  }
+
+  /**
+   * Stream an unbounded provenance CSV in keyset-paginated batches. Export
+   * columns are an explicit allowlist so private payloads and signing material
+   * cannot accidentally be exposed by adding entity fields later.
+   */
+  async *streamProvenanceCsv(
+    query: QueryProvenanceDto,
+    batchSize = ProvenanceService.EXPORT_BATCH_SIZE,
+    signal?: AbortSignal,
+  ): AsyncGenerator<string> {
+    const size = Math.max(1, Math.min(batchSize, ProvenanceService.EXPORT_BATCH_SIZE));
+    const columns = [...ProvenanceService.EXPORT_COLUMNS];
+    yield `${columns.join(",")}\n`;
+
+    let cursor: { createdAt: Date; id: string } | undefined;
+    while (true) {
+      if (signal?.aborted) return;
+      const builder = this.buildExportQuery(query);
+      if (cursor) {
+        builder.andWhere(
+          "(provenance.createdAt < :cursorCreatedAt OR (provenance.createdAt = :cursorCreatedAt AND provenance.id < :cursorId))",
+          { cursorCreatedAt: cursor.createdAt, cursorId: cursor.id },
+        );
+      }
+      const records = await builder
+        .orderBy("provenance.createdAt", "DESC")
+        .addOrderBy("provenance.id", "DESC")
+        .take(size)
+        .getMany();
+
+      if (signal?.aborted) return;
+      if (records.length === 0) return;
+      for (const record of records) {
+        if (signal?.aborted) return;
+        yield [
+          record.id,
+          record.agentId,
+          record.userId || "",
+          record.action,
+          record.status,
+          record.provider || "",
+          record.providerModel || "",
+          record.createdAt.toISOString(),
+          record.onChainTxHash || "",
+          record.processingDurationMs ?? "",
+        ].map(csvCell).join(",") + "\n";
+      }
+
+      const last = records[records.length - 1];
+      cursor = { createdAt: last.createdAt, id: last.id };
+      if (records.length < size) return;
+    }
+  }
+
+  private buildExportQuery(
+    query: QueryProvenanceDto,
+  ): SelectQueryBuilder<ProvenanceRecord> {
+    const builder = this.provenanceRepository
+      .createQueryBuilder("provenance")
+      .select(ProvenanceService.EXPORT_COLUMNS.map((column) => `provenance.${column}`));
+
+    if (query.agentId) builder.andWhere("provenance.agentId = :agentId", { agentId: query.agentId });
+    if (query.userId) builder.andWhere("provenance.userId = :userId", { userId: query.userId });
+    if (query.action) builder.andWhere("provenance.action = :action", { action: query.action });
+    if (query.status) builder.andWhere("provenance.status = :status", { status: query.status });
+    if (query.provider) builder.andWhere("provenance.provider = :provider", { provider: query.provider });
+    if (query.onChainTxHash) {
+      builder.andWhere("provenance.onChainTxHash = :onChainTxHash", {
+        onChainTxHash: query.onChainTxHash,
+      });
+    }
+    if (query.fromDate) {
+      builder.andWhere("provenance.createdAt >= :fromDate", { fromDate: new Date(query.fromDate) });
+    }
+    if (query.toDate) {
+      builder.andWhere("provenance.createdAt <= :toDate", { toDate: new Date(query.toDate) });
+    }
+    return builder;
   }
 
   /**
@@ -449,4 +551,13 @@ export class ProvenanceService {
       userAgent: record.userAgent || undefined,
     };
   }
+}
+
+function csvCell(value: unknown): string {
+  let text = value === null || value === undefined ? "" : String(value);
+  // Prevent spreadsheet formula execution in user-controlled text columns.
+  if (typeof value === "string" && /^[\t\r ]*[=+@-]/.test(text)) {
+    text = `'${text}`;
+  }
+  return `"${text.replace(/"/g, '""')}"`;
 }

@@ -14,7 +14,7 @@ import { SKIP_KYC_KEY } from "../decorators/skip-kyc.decorator";
 /**
  * Compliance guard for high-tier financial operations.
  *
- * Verifying that a user completed koc means nothing about *where the request
+ * Verifying that a user completed KYC says nothing about *where the request
  * comes from* or *how risky the counterparty looks*. A sanctioned wallet
  * resident in a sanctioned country passes a `kycVerified` check happily, so
  * before any non-public route is authorised this guard additionally:
@@ -29,7 +29,7 @@ import { SKIP_KYC_KEY } from "../decorators/skip-kyc.decorator";
  * API down, but a positively identified sanctioned jurisdiction must not be
  * let through because the lookup was unavailable.
  *
- * Public routes and `@SkipKyc()` noutes (onboarding, which has to
+ * Public routes and `@SkipKyc()` routes (onboarding, which has to
  * be reachable to become verified) bypass both checks. Every `@SkipKyc()`
  * bypass is recorded as a `KYC_BYPASS_ACCESSED` audit event so that
  * regulatory auditors can prove which endpoints allow non-KYC access and
@@ -38,11 +38,11 @@ import { SKIP_KYC_KEY } from "../decorators/skip-kyc.decorator";
  * `KYC_RESTRICTED_JURISDICTIONS` and `KYC_MAX_AML_RISK_SCORE`.
  */
 
-/** Injection token for an IP → country code resolver (e.g. MaxMind). */
-export const JURISDICTION_RESOLVER = "KYS_JURISDICTION_RESOLVER_TOKEN";
+/** Injection token for an IP → country code resolver (e.g. MaxMind). */
+export const JURISDICTION_RESOLVER = "KYC_JURISDICTION_RESOLVER";
 
 /** Injection token for the user risk-rating service. */
-export const AML_RISK_SERVICE = "KYC_AML_RISK_SERVICE_TOKEN";
+export const AML_RISK_SERVICE = "KYC_AML_RISK_SERVICE";
 
 /** Injection token for the compliance audit log sink. */
 export const SENSITIVE_ACTION_LOGGER = "KYC_SENSITIVE_ACTION_LOGGER_TOKEN";
@@ -68,7 +68,7 @@ export const DEFAULT_RESTRICTED_JURISDICTIONS: readonly string[] = [
 ];
 
 /** Country codes that mean "the provider could not geolocate this client". */
-const UNKNOWN_COUNTRY_CODES = new Set(["", "XX", "TI", "ZZ", "UN"]);
+const UNKNOWN_COUNTRY_CODES = new Set(["", "XX", "T1", "ZZ", "UN"]);
 
 /**
  * Resolves an IP address to an ISO 3166-1 alpha-2 country code, or null when
@@ -219,7 +219,7 @@ export class KycGuard implements CanActivate {
     // 2. AML risk score — refuses high-risk principals.
     await this.assertAmlRiskAllowed(user);
 
-    // 3. Ensure the user has completed kyc
+    // 3. Ensure the user has completed KYC
     return user?.kycVerified === true;
   }
 
@@ -368,22 +368,46 @@ export class KycGuard implements CanActivate {
         if (typeof score === "number" && Number.isFinite(score)) return score;
       } catch (error) {
         this.logger.warn(
-          `AML risk lookup failed, allowing the request through: ${ error instanceof Error ? error.message : String(error) }`,
+          `AML risk lookup failed, falling back to the cached score: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         );
       }
     }
 
+    const cached = user.amlRiskScore ?? user.aml?.riskScore;
+    if (typeof cached === "number" && Number.isFinite(cached)) return cached;
+
     return null;
   }
 
+  /**
+   * Read the country code a trusted edge proxy attached. Spoofable unless the
+   * proxy rewrites the header — see {@link ProxyHeaderJurisdictionResolver}.
+   */
   private getCountryFromProxyHeaders(request: any): string | null {
     const headers = request?.headers ?? {};
+
     for (const header of PROXY_COUNTRY_HEADERS) {
       const value = headers[header];
-      if (typeof value === "string" && value.trim().length > 0) {
+      if (typeof value === "string" && value.length > 0) {
         return value;
       }
     }
-    return null;
+
+    const geoCookie = headers.cookie
+      ?.split(";")
+      .map((part: string) => part.trim())
+      .find((part: string) => part.startsWith("geo="));
+
+    return geoCookie ? geoCookie.slice("geo=".length) : null;
   }
 }
+
+/** Headers a trusted reverse proxy may use to publish the client country. */
+const PROXY_COUNTRY_HEADERS = [
+  "cf-ipcountry",
+  "x-vercel-ip-country",
+  "x-geo-country",
+  "x-country-code",
+] as const;

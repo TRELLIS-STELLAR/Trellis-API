@@ -1,5 +1,6 @@
-import { TelemetryService } from "./telemetry.service";
+import { TelemetryService, dbWriteDuration, DbWriteOperation } from "./telemetry.service";
 import { Telemetry } from "./telemetry.decorator";
+import { register } from "../config/metrics";
 import {
   businessOperationDuration,
   businessOperationTotal,
@@ -206,6 +207,98 @@ describe("TelemetryService & @Telemetry", () => {
     it("should capture error code and record failure on exception", async () => {
       const instance = new TestService();
       await expect(instance.failingMethod()).rejects.toThrow("Simulated failure");
+    });
+  });
+
+  describe("db_write_duration_seconds metrics", () => {
+    beforeEach(() => {
+      dbWriteDuration.reset();
+    });
+
+    it("should have expected histogram buckets configured", () => {
+      const expectedBuckets = [0.01, 0.05, 0.1, 0.5, 1.0, 5.0];
+      const metric = (register as any).getSingleMetric("db_write_duration_seconds");
+      expect(metric).toBeDefined();
+      expect((metric as any).bucketValues).toBeDefined();
+      // prom-client bucketValues maps to configured buckets
+      for (const bucket of expectedBuckets) {
+        expect((metric as any).bucketValues[bucket]).toBeDefined();
+      }
+    });
+
+    it("should record execution duration for entity save, insert, update, and delete calls", () => {
+      const observeSpy = jest.spyOn(dbWriteDuration, "labels");
+
+      const operations: DbWriteOperation[] = ["save", "insert", "update", "delete"];
+      for (const op of operations) {
+        service.recordDatabaseWrite({
+          operation: op,
+          entity: "UserEntity",
+          durationSeconds: 0.045,
+          status: "success",
+        });
+
+        expect(observeSpy).toHaveBeenCalledWith(op, "UserEntity", "success");
+      }
+    });
+
+    it("should measure database write duration using startDbWriteTimer helper", async () => {
+      const endTimer = service.startDbWriteTimer("insert", { entity: "Portfolio" });
+      await new Promise((r) => setTimeout(r, 15));
+      endTimer("success");
+
+      const metricsOutput = await register.metrics();
+      expect(metricsOutput).toContain('db_write_duration_seconds_bucket{le="0.05",operation="insert",entity="Portfolio",status="success"}');
+      expect(metricsOutput).toContain('db_write_duration_seconds_count{operation="insert",entity="Portfolio",status="success"} 1');
+    });
+
+    it("should measure database write callback via trackDatabaseWrite", async () => {
+      const result = await service.trackDatabaseWrite("save", "PaymentOperation", async () => {
+        await new Promise((r) => setTimeout(r, 10));
+        return { saved: true };
+      });
+
+      expect(result).toEqual({ saved: true });
+
+      const metricsOutput = await register.metrics();
+      expect(metricsOutput).toContain('operation="save"');
+      expect(metricsOutput).toContain('entity="PaymentOperation"');
+      expect(metricsOutput).toContain('status="success"');
+    });
+
+    it("should record failure status when trackDatabaseWrite throws", async () => {
+      await expect(
+        service.trackDatabaseWrite("delete", "Session", async () => {
+          throw new Error("DB lock timeout");
+        }),
+      ).rejects.toThrow("DB lock timeout");
+
+      const metricsOutput = await register.metrics();
+      expect(metricsOutput).toContain('operation="delete"');
+      expect(metricsOutput).toContain('entity="Session"');
+      expect(metricsOutput).toContain('status="failure"');
+    });
+
+    it("should expose db_write_duration_seconds on /metrics registry with valid syntax", async () => {
+      service.recordDatabaseWrite({
+        operation: "update",
+        entity: "Account",
+        durationSeconds: 0.12,
+        status: "success",
+      });
+
+      const metricsText = await register.metrics();
+      expect(metricsText).toContain("# HELP db_write_duration_seconds Duration of database write operations in seconds");
+      expect(metricsText).toContain("# TYPE db_write_duration_seconds histogram");
+      expect(metricsText).toMatch(/db_write_duration_seconds_bucket\{.*le="0\.01".*\} \d+/);
+      expect(metricsText).toMatch(/db_write_duration_seconds_bucket\{.*le="0\.05".*\} \d+/);
+      expect(metricsText).toMatch(/db_write_duration_seconds_bucket\{.*le="0\.1".*\} \d+/);
+      expect(metricsText).toMatch(/db_write_duration_seconds_bucket\{.*le="0\.5".*\} \d+/);
+      expect(metricsText).toMatch(/db_write_duration_seconds_bucket\{.*le="1".*\} \d+/);
+      expect(metricsText).toMatch(/db_write_duration_seconds_bucket\{.*le="5".*\} \d+/);
+      expect(metricsText).toMatch(/db_write_duration_seconds_bucket\{.*le="\+Inf".*\} \d+/);
+      expect(metricsText).toContain('db_write_duration_seconds_sum{operation="update",entity="Account",status="success"}');
+      expect(metricsText).toContain('db_write_duration_seconds_count{operation="update",entity="Account",status="success"} 1');
     });
   });
 });

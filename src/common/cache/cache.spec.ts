@@ -572,7 +572,8 @@ describe("CacheWarmingService", () => {
   });
 
   it("skips when no warmers are registered", async () => {
-    await warming.onModuleInit();
+    warming.onApplicationBootstrap();
+    await warming.warm();
     // Should not throw
   });
 
@@ -587,7 +588,7 @@ describe("CacheWarmingService", () => {
       },
     });
 
-    await warming.onModuleInit();
+    await warming.warm();
     expect(warmed).toBe(true);
     expect(await cache.get("user", 1)).toEqual({ warm: true });
   });
@@ -610,7 +611,7 @@ describe("CacheWarmingService", () => {
       },
     });
 
-    await warming.onModuleInit();
+    await warming.warm();
     expect(secondRan).toBe(true);
   });
 
@@ -623,6 +624,37 @@ describe("CacheWarmingService", () => {
     const result = await warming.warm();
     expect(result.totalEntries).toBe(5);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("does not wait for startup warming to finish", async () => {
+    let finishWarmer: (() => void) | undefined;
+    warming.registerWarmer({
+      name: "slow",
+      execute: () => new Promise<number>((resolve) => { finishWarmer = () => resolve(1); }),
+    });
+
+    expect(warming.onApplicationBootstrap()).toBeUndefined();
+    expect(finishWarmer).toBeDefined();
+    finishWarmer?.();
+    await warming.warm();
+  });
+
+  it("shares an in-flight warm request", async () => {
+    let finishWarmer: (() => void) | undefined;
+    let executions = 0;
+    warming.registerWarmer({
+      name: "slow",
+      execute: () => {
+        executions++;
+        return new Promise<number>((resolve) => { finishWarmer = () => resolve(1); });
+      },
+    });
+
+    const first = warming.warm();
+    const second = warming.warm();
+    expect(executions).toBe(1);
+    finishWarmer?.();
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
   });
 
   it("listWarmers returns registered names", () => {

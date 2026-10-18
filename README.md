@@ -52,6 +52,10 @@ Provide the off‑chain infrastructure required for agents, oracles, and operato
 - Secure by default — Wallet‑based auth flows, least privilege for service accounts, rigorous input validation, and rate limiting.
 - Observable & auditable — Structured logs, metrics, traces, and persistent event history for debugging and compliance.
 
+### Signed Oracle payloads
+
+Oracle payloads are serialized as canonical JSON before hashing, EIP-712 signing, and contract submission. Object keys are sorted recursively, JSON whitespace is omitted, and negative zero is normalized to zero. Non-finite numbers, unsafe integer values, undefined values, and non-plain objects are rejected; encode large integer amounts as decimal strings. Payload type values are trimmed and lowercased. Property names and string values keep their original casing and whitespace. Verification attempts the legacy insertion-order representation for older signatures when the original property order is available; new payloads always use canonical serialization.
+
 ## High‑level architecture (NestJS mapping)
 
 - NestJS Modules — Logical separation: ComputeBridgeModule, DashboardModule, AuthModule, IndexerModule, OracleModule, SimulatorModule, SubmitterModule.
@@ -195,7 +199,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting details.
 ### Security Documentation
 
 - 🔐 [SECURITY.md](SECURITY.md) - Vulnerability reporting policy
-- 📋 [SECURITY_AUDIT.md](SECURITY_AUDIT.md) - Pre-production checklist & threat model
+- 📋 [docs/SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) - Scenario-based threat model, mitigations, verification, and recovery
 - 🛡️ [docs/RBAC.md](docs/RBAC.md) - Role-based access control: roles, guard, token-claim mapping & admin setup
 
 ## API Endpoints
@@ -364,6 +368,8 @@ POST /api/v1/exports
 
 ## Documentation
 
+- [docs/OPERATIONAL_RUNBOOK.md](docs/OPERATIONAL_RUNBOOK.md) - Incident triage, mitigation, rollback, and recovery procedures
+
 Every markdown document in this repository, grouped by topic:
 
 ### Project
@@ -386,6 +392,7 @@ Every markdown document in this repository, grouped by topic:
 - [docs/MULTI_WALLET_MANAGEMENT.md](docs/MULTI_WALLET_MANAGEMENT.md) - Multi-wallet support and related API endpoints
 - [docs/module-registry.md](docs/module-registry.md) - How the pluggable module registry installs packages without touching core
 - [docs/stellar-reconciliation.md](docs/stellar-reconciliation.md) - Reconciliation of confirmed Stellar payments against internal invoices
+- [docs/POLICY_ENGINE.md](docs/POLICY_ENGINE.md) - Configurable business-rule evaluation and trading policy settings
 
 ### Portfolio Optimization
 
@@ -401,6 +408,8 @@ Every markdown document in this repository, grouped by topic:
 - [docs/monitoring.md](docs/monitoring.md) - Observability stack overview (logging, metrics, tracing)
 - [monitoring/README.md](monitoring/README.md) - Operational monitoring stack configuration (Prometheus/Grafana)
 - [docs/kubernetes-health-probes.md](docs/kubernetes-health-probes.md) - Liveness, readiness, and startup probe configuration for Kubernetes
+- [docs/operational-rollout-guardrails.md](docs/operational-rollout-guardrails.md) - Operational rollout guardrails, bounded caching, concurrency controls, and privacy-safe data export
+- [docs/OPERATIONAL_RESILIENCE_AND_REMEDIATION.md](docs/OPERATIONAL_RESILIENCE_AND_REMEDIATION.md) - Operational resilience, permission diffs, error remediation hints, fuzz guarantees, and synthetic journey monitoring
 - [PROFILING.md](PROFILING.md) - Performance monitoring and profiling documentation
 - [src/observability/PROFILING_GUIDE.md](src/observability/PROFILING_GUIDE.md) - Guide to using the built-in profiling tools
 

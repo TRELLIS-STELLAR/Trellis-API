@@ -3,9 +3,9 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Notification, NotificationChannel, NotificationStatus } from '../entities/notification.entity';
+import { Notification, NotificationChannel, NotificationStatus, NotificationPriority, NotificationCategory } from '../entities/notification.entity';
 import { NotificationDeliveryLog, DeliveryStatus } from '../entities/notification-delivery-log.entity';
-import { NotificationPreference, NotificationChannelPreference } from '../entities/notification-preference.entity';
+import { NotificationPreference, NotificationChannelPreference, NotificationDeliveryMode } from '../entities/notification-preference.entity';
 import { NotificationChannelProvider } from '../providers/notification-channel.interface';
 
 interface NotificationJobData {
@@ -61,6 +61,12 @@ export class NotificationProcessor {
 
     const channels = notification.channels || [notification.primaryChannel];
 
+    const isMandatory =
+      notification.priority === NotificationPriority.CRITICAL ||
+      notification.category === NotificationCategory.SECURITY ||
+      notification.category === NotificationCategory.COMPLIANCE ||
+      Boolean(notification.metadata?.isMandatory);
+
     for (const channel of channels) {
       // Check user preferences
       const preference = await this.preferenceRepo.findOne({
@@ -71,16 +77,34 @@ export class NotificationProcessor {
         },
       });
 
-      // Skip if the user has disabled this channel
+      let bypassedUserPreference = false;
+
+      // Skip if the user has disabled this channel, UNLESS it's a mandatory alert
       if (preference && preference.preference === NotificationChannelPreference.DISABLED) {
-        this.logger.debug(
-          `Skipping ${channel} for user ${notification.userId}: channel disabled`,
-        );
+        if (!isMandatory) {
+          this.logger.debug(
+            `Skipping ${channel} for user ${notification.userId}: channel disabled`,
+          );
+          continue;
+        } else {
+          bypassedUserPreference = true;
+          this.logger.warn(
+            `[Mandatory Alert] Bypassing DISABLED preference for user ${notification.userId} on channel ${channel} (category: ${notification.category}, priority: ${notification.priority})`,
+          );
+        }
+      }
+
+      // Routine notifications are collected by NotificationDigestService.
+      const digestMode = preference?.deliveryMode === NotificationDeliveryMode.DAILY_DIGEST ||
+        preference?.deliveryMode === NotificationDeliveryMode.WEEKLY_SUMMARY ||
+        preference?.preference === NotificationChannelPreference.DIGEST;
+      if (digestMode && !isMandatory && !notification.metadata?.isDigest) {
+        await this.notificationRepo.update(notificationId, { status: NotificationStatus.SCHEDULED });
         continue;
       }
 
-      // Check quiet hours
-      if (preference?.quietHoursStart !== null && preference?.quietHoursEnd !== null) {
+      // Check quiet hours (mandatory alerts bypass quiet hours)
+      if (!isMandatory && preference?.quietHoursStart !== null && preference?.quietHoursEnd !== null) {
         const userHour = this.getUserLocalHour(preference.timezone);
         if (userHour !== null &&
           preference.quietHoursStart !== null &&
@@ -94,8 +118,8 @@ export class NotificationProcessor {
         }
       }
 
-      // Check minimum priority
-      if (preference?.minPriority && preference.minPriority !== 'low') {
+      // Check minimum priority (mandatory alerts bypass minimum priority filter)
+      if (!isMandatory && preference?.minPriority && preference.minPriority !== 'low') {
         const priorityOrder = ['low', 'normal', 'high', 'critical'];
         const minIdx = priorityOrder.indexOf(preference.minPriority);
         const notifIdx = priorityOrder.indexOf(notification.priority);
@@ -114,8 +138,12 @@ export class NotificationProcessor {
         continue;
       }
 
-      // Resolve recipient address from preferences
-      const recipientAddress = this.resolveRecipientAddress(preference, channel);
+      // Resolve recipient address from preferences (or fallback for mandatory alerts)
+      let recipientAddress = this.resolveRecipientAddress(preference, channel);
+      if (!recipientAddress && isMandatory) {
+        recipientAddress = await this.resolveMandatoryFallbackRecipient(notification.userId, channel);
+      }
+
       if (!recipientAddress) {
         this.logger.warn(
           `No recipient address for user ${notification.userId} on channel ${channel}`,
@@ -130,6 +158,9 @@ export class NotificationProcessor {
         channel,
         status: DeliveryStatus.PENDING,
         maxAttempts: notification.maxAttempts,
+        providerResponse: bypassedUserPreference
+          ? { bypassedUserPreference: true, bypassReason: 'MANDATORY_ALERT' }
+          : undefined,
       });
       const savedLog = await this.deliveryLogRepo.save(deliveryLog);
 
@@ -217,6 +248,22 @@ export class NotificationProcessor {
       default:
         return null;
     }
+  }
+
+  private async resolveMandatoryFallbackRecipient(
+    userId: string,
+    channel: NotificationChannel,
+  ): Promise<string | null> {
+    if (channel === NotificationChannel.IN_APP) {
+      return userId;
+    }
+    const anyPref = await this.preferenceRepo.findOne({
+      where: { userId },
+    });
+    if (!anyPref) {
+      return channel === NotificationChannel.IN_APP ? userId : null;
+    }
+    return this.resolveRecipientAddress(anyPref, channel);
   }
 
   private getUserLocalHour(timezone?: string | null): number | null {

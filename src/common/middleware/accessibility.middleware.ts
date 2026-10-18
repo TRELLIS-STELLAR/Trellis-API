@@ -13,7 +13,15 @@ export class AccessibilityMiddleware implements NestMiddleware {
     // Add accessibility headers
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("Access-Control-Expose-Headers", "X-Request-Id, X-Correlation-Id");
+    res.setHeader("Access-Control-Expose-Headers", "X-Request-Id, X-Correlation-Id, X-Reduced-Motion-Supported");
+
+    // Pass-through or acknowledge reduced motion support
+    const prefersReducedMotion =
+      req.headers["sec-ch-prefers-reduced-motion"] ||
+      req.headers["x-reduced-motion"];
+    if (prefersReducedMotion) {
+      res.setHeader("X-Reduced-Motion-Supported", String(prefersReducedMotion));
+    }
 
     // Wrap res.json to inject accessibility metadata for error responses
     const originalJson = res.json.bind(res);
@@ -25,6 +33,14 @@ export class AccessibilityMiddleware implements NestMiddleware {
             description: body.message || "An error occurred",
             fieldErrors: body.errors || {},
             suggestion: this.getSuggestion(body.statusCode),
+            announcement: {
+              politeness: "assertive",
+              message: `Error ${body.statusCode}: ${body.message || "An error occurred"}. ${this.getSuggestion(body.statusCode)}`,
+            },
+            recovery: {
+              rollbackSafe: body.statusCode < 500,
+              focusTargetId: "error-summary",
+            },
           },
         };
         return originalJson(accessibleBody);

@@ -10,6 +10,8 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -87,10 +89,14 @@ export class NotificationController {
   @ApiOperation({ summary: 'Get notification history for a user' })
   @ApiParam({ name: 'userId' })
   async getHistory(
+    @Request() req,
     @Param('userId') userId: string,
     @Query() query: QueryNotificationHistoryDto,
   ) {
-    query.userId = userId;
+    if (!req.user?.id || req.user.id !== userId) {
+      throw new ForbiddenException('Notification history is only available to its owner');
+    }
+    query.userId = req.user.id;
     const result = await this.notificationService.getHistory(query);
     return { success: true, ...result };
   }
