@@ -40,6 +40,8 @@ import { Wallet } from "./entities/wallet.entity";
 import { RefreshToken, TwoFactorAuth } from "./entities/auth.entity";
 import { ImpersonationService } from "./impersonation.service";
 import { ImpersonationController } from "./impersonation.controller";
+import { ImpersonationGuard } from "./guards/impersonation.guard";
+import { NotificationModule } from "../../notifications/notification.module";
 
 import { BullModule } from "@nestjs/bull";
 import { AuthEmailProcessor } from "./email-processor.service";
@@ -107,6 +109,7 @@ import { ReferralFraudService } from "src/growth/referral/referral-fraud.service
       }),
     }),
     AuditModule,
+    NotificationModule,
   ],
   controllers: [
     AuthController,
@@ -145,6 +148,7 @@ import { ReferralFraudService } from "src/growth/referral/referral-fraud.service
     AdminTwoFactorGuard,
     GrantfoxOAuthService,
     ImpersonationService,
+    ImpersonationGuard,
   ],
   exports: [
     // Legacy exports
@@ -170,6 +174,7 @@ import { ReferralFraudService } from "src/growth/referral/referral-fraud.service
     AdminTwoFactorGuard,
     GrantfoxOAuthService,
     ImpersonationService,
+    ImpersonationGuard,
     TypeOrmModule,
   ],
 })
