@@ -2,6 +2,12 @@ import 'multer';
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { FileCategory } from "../entities/uploaded-file.entity";
+import {
+  AllowListedCategory,
+  checkFileTypeAllowList,
+  fileTypeAllowListMode,
+  FileTypeAllowListMode,
+} from "../../../common/validators/allow-list/file-type-allow-list";
 
 export interface FileValidationResult {
   valid: boolean;
@@ -16,8 +22,14 @@ export class FileValidationService {
   private readonly maxFileSize: number;
   private readonly allowedMimeTypes: Map<FileCategory, string[]>;
   private readonly blockedExtensions: string[];
+  /** Strict allow-list enforcement (#279); see `FILE_TYPE_ALLOWLIST_MODE`. */
+  private readonly allowListMode: FileTypeAllowListMode;
 
   constructor(private readonly configService: ConfigService) {
+    this.allowListMode = fileTypeAllowListMode(
+      this.configService.get<string>("FILE_TYPE_ALLOWLIST_MODE"),
+    );
+
     this.maxFileSize =
       this.configService.get<number>("FILE_MAX_SIZE_BYTES") ||
       50 * 1024 * 1024; // 50MB default
@@ -179,6 +191,34 @@ export class FileValidationService {
         errors.push(
           `Suspicious double extension detected: ${file.originalname}`,
         );
+      }
+    }
+
+    // Strict allow-list (#279): extension, declared MIME type and content must
+    // all agree on one allow-listed type.
+    if (this.allowListMode !== "off") {
+      const strict = checkFileTypeAllowList(
+        {
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          buffer: file.buffer,
+        },
+        {
+          categories: allowedCategories
+            ?.filter((c) => c !== FileCategory.OTHER)
+            .map((c) => c as unknown as AllowListedCategory),
+        },
+      );
+      if (!strict.allowed) {
+        if (this.allowListMode === "enforce") {
+          for (const error of strict.errors) {
+            if (!errors.includes(error)) errors.push(error);
+          }
+        } else {
+          this.logger.warn(
+            `[allow-list report-only] ${file.originalname} would be rejected: ${strict.errors.join("; ")}`,
+          );
+        }
       }
     }
 

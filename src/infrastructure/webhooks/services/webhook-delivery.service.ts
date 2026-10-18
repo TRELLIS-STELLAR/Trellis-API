@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { HttpService } from "@nestjs/axios";
@@ -14,6 +14,10 @@ import {
 } from "../entities/webhook-subscription.entity";
 import { WebhookEvent } from "../entities/webhook-event.entity";
 import { WebhookHmacService } from "./webhook-hmac.service";
+import {
+  DestinationAllowListService,
+  DestinationNotAllowedError,
+} from "../../../common/validators/allow-list/destination-allow-list";
 
 export interface DeliveryResult {
   statusCode?: number;
@@ -21,6 +25,34 @@ export interface DeliveryResult {
   durationMs: number;
   error?: string;
   responseHeaders?: Record<string, string>;
+  /**
+   * True when retrying cannot help (the destination violates the allow-list
+   * policy), so the delivery is dead-lettered immediately.
+   */
+  permanent?: boolean;
+}
+
+/**
+ * DNS lookup for the outbound request that only ever returns the addresses
+ * validated by the allow-list, so the connection cannot be re-pointed at an
+ * internal address between validation and connect (DNS rebinding).
+ */
+function pinnedLookup(addresses: string[]) {
+  return (
+    _hostname: string,
+    options: { all?: boolean } | number | undefined,
+    callback: (...args: any[]) => void,
+  ) => {
+    const records = addresses.map((address) => ({
+      address,
+      family: address.includes(":") ? 6 : 4,
+    }));
+    if (typeof options === "object" && options?.all) {
+      callback(null, records);
+    } else {
+      callback(null, records[0].address, records[0].family);
+    }
+  };
 }
 
 export interface WebhookMetrics {
@@ -51,6 +83,8 @@ export class WebhookDeliveryService {
     private readonly subscriptionRepo: Repository<WebhookSubscription>,
     private readonly httpService: HttpService,
     private readonly hmacService: WebhookHmacService,
+    @Optional()
+    private readonly destinationAllowList?: DestinationAllowListService,
   ) {}
 
   /**
@@ -91,6 +125,30 @@ export class WebhookDeliveryService {
       };
     }
 
+    // Re-validate at send time (#279): the allow-list may have tightened since
+    // the subscription was created, and DNS may now point somewhere else.
+    let pinnedAddresses: string[] = [];
+    if (this.destinationAllowList) {
+      try {
+        const destination = await this.destinationAllowList.validate(
+          subscription.url,
+        );
+        pinnedAddresses = destination.addresses;
+      } catch (error) {
+        if (error instanceof DestinationNotAllowedError) {
+          this.logger.warn(
+            `Delivery ${delivery.id} blocked by destination allow-list: ${error.code}`,
+          );
+          return {
+            durationMs: 0,
+            error: `Destination blocked by allow-list (${error.code})`,
+            permanent: !error.retryable,
+          };
+        }
+        throw error;
+      }
+    }
+
     const payload = JSON.stringify({
       id: event.id,
       type: event.eventType,
@@ -121,6 +179,12 @@ export class WebhookDeliveryService {
           headers,
           timeout: subscription.timeoutMs || 30000,
           validateStatus: () => true, // Don't throw for 4xx/5xx
+          // A redirect could hand the request to a host the allow-list never
+          // approved, so 3xx responses are treated as failures instead.
+          maxRedirects: 0,
+          ...(pinnedAddresses.length > 0
+            ? { lookup: pinnedLookup(pinnedAddresses) as any }
+            : {}),
         }),
       );
 
@@ -218,8 +282,8 @@ export class WebhookDeliveryService {
       delivery.responseHeaders = result.responseHeaders;
       delivery.metadata = { ...delivery.metadata, attempts };
 
-      if (attemptNum >= delivery.maxAttempts) {
-        // Dead-letter
+      if (attemptNum >= delivery.maxAttempts || result.permanent) {
+        // Dead-letter (immediately when the destination is not allowed)
         delivery.status = WebhookDeliveryStatus.DEAD_LETTERED;
         await this.deliveryRepo.save(delivery);
 

@@ -46,6 +46,7 @@
     "openapi:validate": "ts-node -r tsconfig-paths/register scripts/validate-openapi.ts",
     "openapi:check:breaking": "ts-node -r tsconfig-paths/register scripts/validate-openapi.ts --check-breaking-changes",
     "diagnostics": "ts-node -r tsconfig-paths/register scripts/diagnostics.ts",
+    "events:replay": "ts-node -r tsconfig-paths/register scripts/replay-events.ts",
     "diagnostics:quick": "ts-node -r tsconfig-paths/register scripts/diagnostics.ts --quick",
     "deps:health": "ts-node -r tsconfig-paths/register scripts/dependency-health.ts",
     "test:faults": "jest src/testing/fault-injection src/reconciliation/reconciliation.faults.spec.ts src/blockchain/oracle/services/submitter.faults.spec.ts",

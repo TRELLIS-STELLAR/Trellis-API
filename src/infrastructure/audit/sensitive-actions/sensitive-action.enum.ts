@@ -69,6 +69,8 @@ export enum SensitiveAction {
   FEATURE_FLAG_CHANGED = "config.feature-flag.changed",
   EMERGENCY_PAUSE_TOGGLED = "config.emergency-pause.toggled",
   CONTRACT_UPGRADED = "config.contract.upgraded",
+  MAINTENANCE_WINDOW_CHANGED = "config.maintenance-window.changed",
+  COMPONENT_DEGRADATION_CHANGED = "config.status-degradation.changed",
 
   // Portfolio ownership and value
   PORTFOLIO_RECORD_CHANGED = "portfolio.record.changed",
@@ -282,6 +284,20 @@ export const SENSITIVE_ACTION_CATALOGUE: Record<
   [SensitiveAction.EMERGENCY_PAUSE_TOGGLED]: {
     scope: SensitiveActionScope.PROTOCOL_CONFIG,
     description: "The emergency pause switch was toggled.",
+    reasonRequired: true,
+    capturesState: true,
+  },
+  [SensitiveAction.MAINTENANCE_WINDOW_CHANGED]: {
+    scope: SensitiveActionScope.PROTOCOL_CONFIG,
+    description:
+      "A maintenance window was activated or cleared, changing what the API serves.",
+    reasonRequired: true,
+    capturesState: true,
+  },
+  [SensitiveAction.COMPONENT_DEGRADATION_CHANGED]: {
+    scope: SensitiveActionScope.PROTOCOL_CONFIG,
+    description:
+      "An operator declared or cleared a component degradation on the public status.",
     reasonRequired: true,
     capturesState: true,
   },

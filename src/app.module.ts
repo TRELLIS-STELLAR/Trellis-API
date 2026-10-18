@@ -65,6 +65,7 @@ import { CacheModule } from "./common/cache/cache.module";
 import { MarketCacheWarmersModule } from "./common/cache/market-cache-warmers.module";
 // Modules – idempotency (replay protection for mutating requests)
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
+import { ProjectionReplayModule } from "./common/events/replay/projection-replay.module";
 import { BillingModule } from "./billing/billing.module";
 // Modules – payments (plugin system)
 import { PaymentsModule } from "./payments/payments.module";
@@ -375,6 +376,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     CacheModule,
     MarketCacheWarmersModule,
     IdempotencyModule,
+    ProjectionReplayModule,
     RateLimitingModule.forRoot(),
     LoggerModule.forRootAsync({
       inject: [ConfigService],

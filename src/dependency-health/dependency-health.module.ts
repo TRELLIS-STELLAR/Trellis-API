@@ -6,6 +6,9 @@ import { HealthModule } from "../health/health.module";
 import { PauseControlModule } from "../infrastructure/pause-control/pause-control.module";
 import { PublicStatusController } from "../health/public-status.controller";
 import { PublicStatusService } from "../health/public-status.service";
+import { PublicHealthController } from "../health/public-health.controller";
+import { PublicHealthService } from "../health/public-health.service";
+import { AdminConfigAuditModule } from "../infrastructure/audit/admin-config/admin-config-audit.module";
 
 /**
  * Dependency health checks for the external services, networks and
@@ -15,9 +18,22 @@ import { PublicStatusService } from "../health/public-status.service";
  * Issue: #124
  */
 @Module({
-  imports: [AuthModule, HealthModule, PauseControlModule],
-  controllers: [DependencyHealthController, PublicStatusController],
-  providers: [DependencyHealthService, PublicStatusService],
-  exports: [DependencyHealthService, PublicStatusService],
+  imports: [
+    AuthModule,
+    HealthModule,
+    PauseControlModule,
+    AdminConfigAuditModule,
+  ],
+  controllers: [
+    DependencyHealthController,
+    PublicStatusController,
+    PublicHealthController,
+  ],
+  providers: [
+    DependencyHealthService,
+    PublicStatusService,
+    PublicHealthService,
+  ],
+  exports: [DependencyHealthService, PublicStatusService, PublicHealthService],
 })
 export class DependencyHealthModule {}
