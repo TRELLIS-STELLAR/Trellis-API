@@ -1,8 +1,18 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+  Optional,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { DataExport, ExportStatus } from "./entities/data-export.entity";
 import { CreateExportDto, ExportScope } from "./dto/export.dto";
+import {
+  PrivacyExportAuthorizer,
+  FieldAuthorizationContext,
+} from "./privacy-export-authorizer";
 
 @Injectable()
 export class ExportService {
@@ -13,6 +23,8 @@ export class ExportService {
   constructor(
     @InjectRepository(DataExport)
     private readonly exportRepo: Repository<DataExport>,
+    @Optional()
+    private readonly privacyAuthorizer: PrivacyExportAuthorizer = new PrivacyExportAuthorizer(),
   ) {}
 
   async createExport(userId: string, dto: CreateExportDto): Promise<DataExport> {
@@ -59,7 +71,10 @@ export class ExportService {
     });
   }
 
-  async processExport(exportId: string): Promise<void> {
+  async processExport(
+    exportId: string,
+    context?: Partial<FieldAuthorizationContext>,
+  ): Promise<void> {
     const exportRecord = await this.exportRepo.findOne({ where: { id: exportId } });
     if (!exportRecord) return;
 
@@ -68,7 +83,7 @@ export class ExportService {
       await this.exportRepo.save(exportRecord);
 
       const data = await this.extractData(exportRecord);
-      const sanitized = this.applyPrivacyFilters(data, exportRecord.scope);
+      const sanitized = this.applyPrivacyFilters(data, exportRecord.scope, context);
       const content = this.serialize(sanitized, exportRecord.format);
 
       exportRecord.status = ExportStatus.COMPLETED;
@@ -160,27 +175,17 @@ export class ExportService {
     ];
   }
 
-  private applyPrivacyFilters(data: any, scope: string): any {
-    // Remove sensitive fields that should never be exported
-    const sensitiveFields = ["password", "secret", "privateKey", "mnemonic", "apiKey"];
-
-    const sanitize = (obj: any): any => {
-      if (Array.isArray(obj)) {
-        return obj.map(sanitize);
-      }
-      if (obj !== null && typeof obj === "object") {
-        const sanitized: any = {};
-        for (const [key, value] of Object.entries(obj)) {
-          if (!sensitiveFields.some((field) => key.toLowerCase().includes(field.toLowerCase()))) {
-            sanitized[key] = sanitize(value);
-          }
-        }
-        return sanitized;
-      }
-      return obj;
+  applyPrivacyFilters(
+    data: any,
+    _scope: string,
+    context?: Partial<FieldAuthorizationContext>,
+  ): any {
+    const authContext: FieldAuthorizationContext = {
+      role: context?.role ?? "user",
+      isOwner: context?.isOwner ?? true,
+      includePiiConsent: context?.includePiiConsent ?? false,
     };
-
-    return sanitize(data);
+    return this.privacyAuthorizer.filterRecord(data, authContext);
   }
 
   private serialize(data: any, format: string): string {

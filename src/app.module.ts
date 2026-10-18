@@ -167,6 +167,7 @@ import { InvariantMonitorModule } from "./monitoring/invariant-monitor/invariant
 import { PermissionMatrixModule } from "./common/guard/permission-matrix.module";
 // Modules – risk-scored abuse detection
 import { AbuseDetectionModule } from "./security/abuse-detection/abuse-detection.module";
+import { FeatureRolloutModule } from "./infrastructure/feature-rollout/feature-rollout.module";
 
 // Guards
 import { APP_FILTER } from "@nestjs/core";
@@ -400,6 +401,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     PermissionMatrixModule,
     AbuseDetectionModule,
     AccessibilityModule,
+    FeatureRolloutModule,
   ],
 
   controllers: [AppController, QuotaAdminController],
