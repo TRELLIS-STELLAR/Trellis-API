@@ -10,6 +10,9 @@ import {
   checkDatabaseAuth,
   checkSecretEntropy,
   checkDirectoryPermissions,
+  parseEnvKeys,
+  checkEnvTemplateDrift,
+  checkPortAvailable,
   REQUIRED_ENV_SPECS,
   DiagnosticCheck,
 } from "./diagnostics-checks";
@@ -468,3 +471,62 @@ describe("checkDirectoryPermissions", () => {
   });
 });
 
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Local setup failures (issue #370)
+// ──────────────────────────────────────────────────────────────────────────────
+describe("parseEnvKeys", () => {
+  it("reads variable names only, ignoring comments, blanks, and values", () => {
+    const keys = parseEnvKeys("# comment\n\nFOO=bar\nexport BAZ = 1\r\nNOT A KEY\n#X=1\n");
+    expect([...keys].sort()).toEqual(["BAZ", "FOO"]);
+  });
+});
+
+describe("checkEnvTemplateDrift", () => {
+  it("passes when .env defines every template variable", () => {
+    const result = checkEnvTemplateDrift("A=1\nB=2\n", "B=x\nA=y\nEXTRA=z\n");
+    expect(result.status).toBe("pass");
+  });
+
+  it("warns with variable names, never values, when variables are missing", () => {
+    const result = checkEnvTemplateDrift("A=1\nB=2\nC=3\n", "A=super-secret\n");
+    expect(result.status).toBe("warn");
+    expect(result.detail).toContain("B, C");
+    expect(result.detail).not.toContain("super-secret");
+    expect(result.remediation).toMatch(/\.env\.example/);
+  });
+
+  it("skips when either file is absent", () => {
+    expect(checkEnvTemplateDrift(null, "A=1").status).toBe("skip");
+    expect(checkEnvTemplateDrift("A=1", null).status).toBe("skip");
+  });
+});
+
+describe("checkPortAvailable", () => {
+  it("passes when the port is free", async () => {
+    const result = await checkPortAvailable("env:PORT", 3001, async () => true);
+    expect(result.status).toBe("pass");
+  });
+
+  it("fails with remediation when the port is in use", async () => {
+    const result = await checkPortAvailable("env:PORT", 3001, async () => false);
+    expect(result.status).toBe("fail");
+    expect(result.remediation).toMatch(/lsof -i :3001/);
+  });
+
+  it("fails on an invalid port without probing", async () => {
+    const probe = jest.fn();
+    for (const port of [NaN, 0, 70000, 3000.5]) {
+      const result = await checkPortAvailable("env:PORT", port, probe);
+      expect(result.status).toBe("fail");
+    }
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("warns instead of failing when the probe itself errors", async () => {
+    const result = await checkPortAvailable("env:PORT", 3001, async () => {
+      throw new Error("EACCES");
+    });
+    expect(result.status).toBe("warn");
+  });
+});

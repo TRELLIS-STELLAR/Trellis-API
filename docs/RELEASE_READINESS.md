@@ -128,6 +128,65 @@ The endpoint runs migration safety parsing, executes smoke probes with retry/bac
 - Waivers require an approver identity and a detailed justification (minimum 10 characters).
 - Every state transition (`CREATE`, `CHECK_UPDATE`, `WAIVE`, `APPROVE`, `AUTOMATED_VERIFY`) is recorded in an audit log with actor and timestamp.
 
+## Release Gate
+
+Issue #372. `evaluateReleaseGate` in `src/common/release/release-gate.ts` turns
+the three kinds of release evidence into one decision. It reuses the migration
+and rollback analysis above and performs no I/O.
+
+```bash
+npm run release:gate -- evidence.json   # exit 0 PASS, 1 BLOCKED, 2 bad input
+```
+
+```json
+{
+  "releaseId": "v1.2.3",
+  "tests": {
+    "requiredSuites": ["unit", "e2e"],
+    "suites": [{ "name": "unit", "passed": 100, "failed": 0 }, { "name": "e2e", "passed": 20, "failed": 0, "retries": 1 }]
+  },
+  "migrations": [{ "filename": "1-add-col.ts", "content": "..." }],
+  "schemaChanges": [{ "table": "users", "column": "flag", "isNew": true, "isNullable": true, "hasDefault": false }],
+  "rollback": {
+    "rehearsedAt": "2026-10-15T10:00:00Z",
+    "rehearsedBy": "ops@example.com",
+    "previousVersion": "v1.2.2",
+    "revertCommand": "npm run migration:revert",
+    "outcome": "passed",
+    "evidenceUrl": "https://..."
+  },
+  "waivers": []
+}
+```
+
+| Gate | Blocks when |
+| --- | --- |
+| `tests` | No required suites are declared, a required suite has no result, a suite has failures or ran nothing. A suite that passed only after `retries` is a warning. |
+| `migrations` | Any migration lacks a working `down()`, takes an exclusive lock, or adds a `NOT NULL` column without a default. |
+| `rollback` | Schema changes have no rehearsal, the rehearsal failed, is older than 14 days, is dated in the future, or lacks the previous version, revert command, or rehearser; or the schema changes break rollback. |
+
+Authorization: a blocked gate can be waived only by an entry with
+`approverRole: "ADMIN"`, an approver, and a reason of at least 10 characters.
+A waiver covers only its own gate, and the waived findings stay in the output as
+warnings for the audit trail. Rejected waivers add the reason to the blocking
+list. The CLI trusts the evidence document, so CI must build it from the real
+test run and keep waiver entries out of contributor-editable files.
+
+Edge cases and recovery:
+
+- Rerunning the gate on the same evidence gives the same result, so it is safe to
+  retry in CI.
+- A stale rehearsal is not a code failure; rehearse the rollback again and
+  update `rehearsedAt`.
+- A flaky suite does not block, but repeated `retries` warnings should be
+  investigated before they hide a real failure.
+- If the gate itself is wrong or unavailable, release with an ADMIN waiver and
+  open a follow-up issue; do not delete the failing evidence.
+- Rollback of this change is removing `release:gate`; nothing else depends on
+  it and no data or API contracts change.
+
+Verify with `npx jest src/common/release/release-gate.spec.ts`.
+
 ## Checklist API
 
 ### Create Checklist

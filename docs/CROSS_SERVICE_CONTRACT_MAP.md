@@ -126,3 +126,36 @@ The contract map is executable and continuously verified:
 
 - Run contract unit tests: `npm test src/common/contract/cross-service/cross-service-contract-map.spec.ts`
 - Verifies full topology coverage, semver compliance, schema integrity, and failure policy declarations.
+
+---
+
+## 9. Contract Drift Detection
+
+Issue #371. `detectContractDrift(baseline, current)` in
+`src/common/contract/cross-service/cross-service-contract-drift.ts` compares the
+last released definitions with the working tree (defaults to
+`CROSS_SERVICE_EVENT_DEFINITIONS`) and returns `{ ok, findings }`.
+
+| Finding | Breaking | Meaning |
+| --- | --- | --- |
+| `event-removed` | yes | An event consumers may rely on is gone. Not waivable by a version bump; deprecate it first. |
+| `producer-changed` | yes | The producing service changed. |
+| `required-field-removed` / `required-field-added` | yes | Consumers or existing producers break. |
+| `payload-type-changed` | yes | A payload field changed its declared type. |
+| `consumer-removed` | yes | A registered consumer was dropped. |
+| `version-regressed` | yes | `schemaVersion` went backwards or is not `MAJOR.MINOR.PATCH`. |
+| `breaking-without-major-bump` | yes | A breaking change kept the same major version. |
+| `event-added` | no | New event; informational. |
+
+A breaking change that ships with a major `schemaVersion` bump is reported as
+non-breaking and annotated as acknowledged, matching the dual-publish and
+90-day deprecation rules in section 4. Findings are sorted, so results are
+deterministic and safe to retry.
+
+Recovery: when `ok` is false, either restore the removed field, event, or
+consumer, or bump the event's major version and follow the deprecation grace
+period. The baseline must be the definitions of the last release (for example
+the registry at the previous release tag); the function performs no I/O and
+never mutates the registry.
+
+Verify with `npx jest src/common/contract/cross-service/cross-service-contract-drift.spec.ts`.

@@ -29,6 +29,8 @@ import {
   checkSecretEntropy,
   checkDatabaseAuth,
   checkDirectoryPermissions,
+  checkEnvTemplateDrift,
+  checkPortAvailable,
 } from "../src/diagnostics/diagnostics-checks";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -108,6 +110,21 @@ function probeTcp(host: string, port: number, timeoutMs = 3000): Promise<boolean
       clearTimeout(timer);
       resolve(false);
     });
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Helper: true when nothing is listening on the port (binds, then releases it)
+// ──────────────────────────────────────────────────────────────────────────────
+function isPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") resolve(false);
+      else reject(err);
+    });
+    server.once("listening", () => server.close(() => resolve(true)));
+    server.listen(port);
   });
 }
 
@@ -231,6 +248,18 @@ async function checkEnv(): Promise<void> {
   } else {
     pass("env:.env file", ".env file exists");
   }
+
+  const readIfExists = (file: string): string | null =>
+    fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+  const drift = checkEnvTemplateDrift(readIfExists(envExamplePath), readIfExists(envPath));
+  results.push(drift);
+
+  const portCheck = await checkPortAvailable(
+    "env:PORT",
+    parseInt(process.env.PORT || "3001", 10),
+    isPortFree,
+  );
+  results.push(portCheck);
 
   // Required vars
   const required: Array<{ key: string; description: string; remediation: string }> = [

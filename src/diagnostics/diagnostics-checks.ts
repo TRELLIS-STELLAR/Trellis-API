@@ -443,6 +443,107 @@ export function checkDirectoryPermissions(
 
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Local setup failure checks (issue #370): stale .env and port conflicts
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Variable names defined in dotenv-style content. Values are never read. */
+export function parseEnvKeys(content: string): Set<string> {
+  const keys = new Set<string>();
+  for (const line of content.split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line);
+    if (match) keys.add(match[1]);
+  }
+  return keys;
+}
+
+/**
+ * Compare `.env` with `.env.example`. A contributor who copied the template
+ * long ago is missing variables added since, which surfaces as confusing
+ * runtime failures. Only variable names are compared and reported.
+ */
+export function checkEnvTemplateDrift(
+  exampleContent: string | null,
+  envContent: string | null,
+): DiagnosticCheck {
+  if (exampleContent === null) {
+    return {
+      name: "env:template-drift",
+      status: "skip",
+      detail: ".env.example not found; cannot compare variables",
+    };
+  }
+  if (envContent === null) {
+    return {
+      name: "env:template-drift",
+      status: "skip",
+      detail: ".env not found; see the env:.env file check",
+    };
+  }
+
+  const defined = parseEnvKeys(envContent);
+  const missing = [...parseEnvKeys(exampleContent)].filter((k) => !defined.has(k));
+  if (missing.length === 0) {
+    return {
+      name: "env:template-drift",
+      status: "pass",
+      detail: ".env defines every variable listed in .env.example",
+    };
+  }
+
+  return {
+    name: "env:template-drift",
+    status: "warn",
+    detail: `.env is missing ${missing.length} variable(s) from .env.example: ${missing.join(", ")}`,
+    remediation:
+      "Compare .env with .env.example and add the missing names with values for your environment. Optional integrations can stay unset.",
+  };
+}
+
+/**
+ * Report whether the API port is free. A listener already on the port makes
+ * `npm run start:dev` fail with EADDRINUSE; the probe is injected so the check
+ * stays testable.
+ */
+export async function checkPortAvailable(
+  label: string,
+  port: number,
+  isPortFree: (port: number) => Promise<boolean>,
+  remediation?: string,
+): Promise<DiagnosticCheck> {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return {
+      name: label,
+      status: "fail",
+      detail: `PORT value ${port} is not a valid TCP port`,
+      remediation: "Set PORT to an integer between 1 and 65535 in your .env.",
+    };
+  }
+
+  let free: boolean;
+  try {
+    free = await isPortFree(port);
+  } catch {
+    return {
+      name: label,
+      status: "warn",
+      detail: `Could not determine whether port ${port} is free`,
+      remediation: remediation ?? `Check manually with: lsof -i :${port}`,
+    };
+  }
+
+  return free
+    ? { name: label, status: "pass", detail: `Port ${port} is free` }
+    : {
+        name: label,
+        status: "fail",
+        detail: `Port ${port} is already in use`,
+        remediation:
+          remediation ??
+          `Stop the process using it (lsof -i :${port}) or set a different PORT in your .env. If it is a previous API run, stop that instance first.`,
+      };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Report aggregation
 // ──────────────────────────────────────────────────────────────────────────────
 

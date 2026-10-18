@@ -20,6 +20,12 @@ still checked in quick mode when their URLs are configured.
 - Required `DATABASE_URL` and `JWT_SECRET`, common placeholder values, secret
   entropy/length verification (`auth:JWT_SECRET`), and workspace directory write
   permissions (`fs:workspace-write`). Secret values are never printed or logged.
+- `.env` drift against `.env.example` (`env:template-drift`): warns with the
+  names, never the values, of template variables missing from `.env`. Skipped
+  when either file is absent.
+- API port availability (`env:PORT`): fails when `PORT` (default `3001`, as in
+  `src/main.ts`) is invalid or already in use. The probe binds and immediately
+  releases the port; it does not start the API.
 - PostgreSQL TCP reachability (with automated retry and exponential backoff),
   authentication handshake vs database missing validation (`db:authentication`),
   and presence of the `public.users` table.
@@ -50,6 +56,8 @@ Diagnostics validates credentials and security boundaries without mutating state
 | Check                                          | Typical cause                                                                            | Safe recovery                                                                                                                                                                                                                             |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Required env missing or placeholder            | `.env` was not created or still has template values                                      | Copy `.env.example` to `.env`; set a local PostgreSQL URL and generate a unique `JWT_SECRET` with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Do not reuse production secrets.                            |
+| `.env` is missing template variables         | `.env` was copied from an older `.env.example`                                           | Compare `.env` with `.env.example` and add the listed names. Optional integrations may stay unset; the check never prints values.                                                                                                         |
+| Port already in use (`env:PORT`)               | A previous API run or another service holds the port                                     | Find it with `lsof -i :<port>`, stop that process, or set a different `PORT` in `.env`. Rerun `npm run diagnostics`; the check is safe to repeat.                                                                                          |
 | Secret entropy warning or failure              | `JWT_SECRET` is under 32 characters or uses dictionary phrases                           | Re-generate a secure random 256-bit secret: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Replace in `.env` and restart.                                                                                 |
 | Database authentication failed                 | Password or username in `DATABASE_URL` is invalid                                        | Check user permissions in Postgres: `ALTER USER user WITH PASSWORD 'password';`. Update `.env` with correct credentials.                                                                                                                |
 | Database missing                               | Target database name in `DATABASE_URL` has not been created                              | Run `createdb -h localhost trellis_dev` or `CREATE DATABASE trellis_dev;` in PostgreSQL.                                                                                                                                                 |

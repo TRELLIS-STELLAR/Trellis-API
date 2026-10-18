@@ -475,6 +475,10 @@ export class AuthController {
     }
     // Revoke all refresh tokens for this user
     await this.enhancedAuthService.revokeAllRefreshTokens(userId);
+    // Invalidate access tokens on other devices that this user still holds
+    if (userId) {
+      await this.tokenBlacklistService.revokeSubjectSessions(userId);
+    }
     return { message: "Logged out successfully" };
   }
 

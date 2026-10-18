@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import {
   RedisLikeClient,
+  SESSION_CUTOFF_TTL_SECONDS,
   TokenBlacklistService,
 } from "./token-blacklist.service";
 
@@ -154,5 +155,105 @@ describe("TokenBlacklistService", () => {
 
       await service.onModuleDestroy();
     });
+  });
+});
+
+/**
+ * Issue #369: per-subject session cutoff for stale-session handling.
+ */
+describe("TokenBlacklistService session cutoff", () => {
+  function makeCutoffClient(overrides: Partial<RedisLikeClient> = {}) {
+    const store = new Map<string, string>();
+    return {
+      set: jest.fn(async (key: string, value: string) => {
+        store.set(key, value);
+        return "OK";
+      }),
+      exists: jest.fn(async (key: string) => (store.has(key) ? 1 : 0)),
+      get: jest.fn(async (key: string) => store.get(key) ?? null),
+      ...overrides,
+    } as RedisLikeClient;
+  }
+
+  it("treats every session as fresh when no cutoff exists", async () => {
+    const service = new TokenBlacklistService();
+    expect(await service.isSessionStale("user-1", 100)).toBe(false);
+    await service.onModuleDestroy();
+  });
+
+  it("marks sessions issued at or before the cutoff stale and later ones fresh", async () => {
+    const service = new TokenBlacklistService();
+    await service.revokeSubjectSessions("user-1", 1000);
+
+    expect(await service.isSessionStale("user-1", 999)).toBe(true);
+    expect(await service.isSessionStale("user-1", 1000)).toBe(true);
+    expect(await service.isSessionStale("user-1", 1001)).toBe(false);
+    // Another subject is unaffected.
+    expect(await service.isSessionStale("user-2", 500)).toBe(false);
+    await service.onModuleDestroy();
+  });
+
+  it("treats a token without iat as stale once a cutoff exists", async () => {
+    const service = new TokenBlacklistService();
+    await service.revokeSubjectSessions("user-1", 1000);
+    expect(await service.isSessionStale("user-1", undefined)).toBe(true);
+    await service.onModuleDestroy();
+  });
+
+  it("only moves the cutoff forward when a revocation is retried out of order", async () => {
+    const service = new TokenBlacklistService();
+    await service.revokeSubjectSessions("user-1", 2000);
+    await service.revokeSubjectSessions("user-1", 1000);
+
+    expect(await service.isSessionStale("user-1", 1500)).toBe(true);
+    expect(await service.isSessionStale("user-1", 2001)).toBe(false);
+    await service.onModuleDestroy();
+  });
+
+  it("shares the cutoff through Redis with a bounded TTL", async () => {
+    const client = makeCutoffClient();
+    const writer = new TokenBlacklistService(client);
+    const reader = new TokenBlacklistService(client);
+
+    await writer.revokeSubjectSessions("user-1", 1000);
+
+    expect(client.set).toHaveBeenCalledWith(
+      "token-cutoff:user-1",
+      "1000",
+      "EX",
+      SESSION_CUTOFF_TTL_SECONDS,
+    );
+    expect(await reader.isSessionStale("user-1", 900)).toBe(true);
+    expect(await reader.isSessionStale("user-1", 1100)).toBe(false);
+
+    await writer.onModuleDestroy();
+    await reader.onModuleDestroy();
+  });
+
+  it("keeps the cutoff locally when Redis fails on write", async () => {
+    const client = makeCutoffClient({
+      set: jest.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      }),
+    });
+    const service = new TokenBlacklistService(client);
+
+    await service.revokeSubjectSessions("user-1", 1000);
+
+    expect(await service.isSessionStale("user-1", 900)).toBe(true);
+    await service.onModuleDestroy();
+  });
+
+  it("uses local state when Redis fails on lookup", async () => {
+    const client = makeCutoffClient({
+      get: jest.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      }),
+    });
+    const service = new TokenBlacklistService(client);
+
+    // No cutoff was ever recorded, so an unreachable Redis does not invent one.
+    expect(await service.isSessionStale("user-1", 900)).toBe(false);
+    await service.onModuleDestroy();
   });
 });
