@@ -1,6 +1,5 @@
 import { createHash } from "crypto";
-
-
+import { canonicalJson as canonicalize } from "../serialization/canonical-json";
 export type OperationReceiptStatus =
   | "pending"
   | "submitted"

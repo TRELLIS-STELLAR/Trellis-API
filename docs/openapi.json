@@ -1186,7 +1186,8 @@
     "/auth/impersonate/start": {
       "post": {
         "operationId": "startImpersonation",
-        "summary": "Start an impersonation session (Admin only)",
+        "summary": "Start a time-bounded, scoped maintainer impersonation / support access session (Admin only)",
+        "description": "Initiates a support session with immutable hash-chained audit logging, automatic expiration, and user-safe notifications.",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -1194,6 +1195,44 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/StartImpersonationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Support session started successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpersonationSessionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/auth/impersonate/stop": {
+      "post": {
+        "operationId": "stopImpersonation",
+        "summary": "Stop an impersonation session",
+        "description": "Revokes the session token, commits the termination event to the immutable audit trail, and clears active session notices.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopImpersonationDto"
               }
             }
           }
@@ -1213,24 +1252,22 @@
         ]
       }
     },
-    "/auth/impersonate/stop": {
-      "post": {
-        "operationId": "stopImpersonation",
-        "summary": "Stop an impersonation session",
+    "/auth/impersonate/active-notice": {
+      "get": {
+        "operationId": "getActiveNotice",
+        "summary": "Get user-safe support session notices for the authenticated user",
+        "description": "Returns privacy-filtered notice information indicating whether a support session is active on the account, including granted scopes and expiration time without exposing maintainer PII.",
         "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StopImpersonationDto"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": ""
+            "description": "Active support notice information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportNoticeResponseDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1921,6 +1958,9 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Forbidden - can only export own records"
+          },
           "404": {
             "description": "Provenance record not found"
           }
@@ -2574,6 +2614,9 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - can only export own records"
           }
         },
         "tags": [
@@ -10805,6 +10848,36 @@
         ]
       }
     },
+    "/api/v1/snapshots/verify-restore": {
+      "post": {
+        "operationId": "verifyRestoredSnapshot",
+        "summary": "Verify critical restored data and rebuild derived search indexes (issue #238)",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifySnapshotDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Restore verification and repair report"
+          }
+        },
+        "tags": [
+          "Snapshots"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
     "/api/v1/recovery": {
       "get": {
         "operationId": "listEntries",
@@ -13944,6 +14017,59 @@
         ]
       }
     },
+    "/retry-scheduler/failures": {
+      "get": {
+        "operationId": "getFailureDashboard",
+        "summary": "Filter unresolved partial failures for operations triage",
+        "parameters": [
+          {
+            "name": "operationType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unresolved failure summaries retrieved"
+          }
+        },
+        "tags": [
+          "Retry Scheduler"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/retry-scheduler/operations/{operationId}": {
       "get": {
         "operationId": "getOperationStatus",
@@ -14655,6 +14781,152 @@
         ]
       }
     },
+    "/api/v1/accessibility/suites/{domain}": {
+      "get": {
+        "operationId": "getDomainSuite",
+        "summary": "Get full accessibility contract suite for a core domain workflow",
+        "description": "Returns accessibility contracts for dense forms, tables, error recovery, and workflow envelopes including focus order, keyboard navigation, screen reader ARIA live announcements, and reduced motion settings.",
+        "parameters": [
+          {
+            "name": "domain",
+            "required": true,
+            "in": "path",
+            "description": "Core functional domain to inspect",
+            "schema": {
+              "enum": [
+                "auth",
+                "portfolio",
+                "defi",
+                "notifications",
+                "observability"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "sec-ch-prefers-reduced-motion",
+            "required": false,
+            "in": "header",
+            "description": "Client reduced motion preference ('reduce' or 'no-preference')",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Domain accessibility contract suite returned successfully"
+          }
+        },
+        "tags": [
+          "Accessibility Contracts"
+        ]
+      }
+    },
+    "/api/v1/accessibility/forms/{domain}": {
+      "get": {
+        "operationId": "getDenseForm",
+        "summary": "Get dense form accessibility metadata and focus order",
+        "parameters": [
+          {
+            "name": "domain",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Accessibility Contracts"
+        ]
+      }
+    },
+    "/api/v1/accessibility/tables/{domain}": {
+      "get": {
+        "operationId": "getTableContract",
+        "summary": "Get accessible data table contract and grid navigation keys",
+        "parameters": [
+          {
+            "name": "domain",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Accessibility Contracts"
+        ]
+      }
+    },
+    "/api/v1/accessibility/recovery/{domain}": {
+      "get": {
+        "operationId": "getErrorRecovery",
+        "summary": "Get error recovery accessibility guidance and rollback constraints",
+        "parameters": [
+          {
+            "name": "domain",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Accessibility Contracts"
+        ]
+      }
+    },
+    "/api/v1/accessibility/workflow/{domain}": {
+      "get": {
+        "operationId": "getWorkflowEnvelope",
+        "summary": "Get workflow focus management, keymap, and ARIA announcement envelope",
+        "parameters": [
+          {
+            "name": "domain",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sec-ch-prefers-reduced-motion",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Accessibility Contracts"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "operationId": "getHealth",
@@ -14948,6 +15220,7 @@
                 "data.audit.exported",
                 "data.user.exported",
                 "compliance.retention-hold.placed",
+                "compliance.evidence-bundle.exported",
                 "config.feature-flag.changed",
                 "config.emergency-pause.toggled",
                 "config.contract.upgraded",
@@ -15160,6 +15433,7 @@
                 "data.audit.exported",
                 "data.user.exported",
                 "compliance.retention-hold.placed",
+                "compliance.evidence-bundle.exported",
                 "config.feature-flag.changed",
                 "config.emergency-pause.toggled",
                 "config.contract.upgraded",
@@ -15318,6 +15592,57 @@
         },
         "tags": [
           "Sensitive Action Audit"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/audit-trail/evidence-bundles/generate": {
+      "post": {
+        "operationId": "generate",
+        "summary": "Generate a privacy-preserving audit evidence bundle",
+        "description": "Compiles multi-domain telemetry and audit evidence across auth, portfolio, DeFi, notifications, observability, and audit trails. Redacts secrets/PII while preserving verifiable hashes, timestamps, and IDs. Cryptographically signs the bundle with HMAC-SHA256.",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Evidence bundle generated and signed successfully."
+          },
+          "400": {
+            "description": "Invalid request parameters (missing caseId)."
+          },
+          "403": {
+            "description": "Forbidden. Access restricted to Admin and Compliance Officers."
+          }
+        },
+        "tags": [
+          "Audit Evidence Bundles"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/audit-trail/evidence-bundles/verify": {
+      "post": {
+        "operationId": "verify",
+        "summary": "Verify cryptographic integrity and provenance of an evidence bundle",
+        "description": "Recomputes the canonical bundle hash, verifies the HMAC-SHA256 signature, validates audit trail hash chain continuity, and checks temporal monotonicity.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Evidence bundle verification report."
+          },
+          "400": {
+            "description": "Malformed bundle structure."
+          }
+        },
+        "tags": [
+          "Audit Evidence Bundles"
         ],
         "security": [
           {
@@ -15526,6 +15851,222 @@
         },
         "tags": [
           "Portfolio Dashboard"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/policy/simulations/preview": {
+      "post": {
+        "operationId": "preview",
+        "summary": "Simulate a policy change and preview affected records/users, side effects, and rollback constraints",
+        "description": "Read-only dry-run preview before committing irreversible or high-impact changes across trading, DeFi adapters, portfolio rebalancing, auth access, or notification routing.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatePolicyChangeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deterministic policy simulation preview report"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Maintainer or Admin role required"
+          }
+        },
+        "tags": [
+          "Policy Simulation"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/policy/simulations/assert": {
+      "post": {
+        "operationId": "assertProceedable",
+        "summary": "Assert that a proposed policy change is valid, uses a fresh snapshot, and has a matching commitToken when high-impact",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitPolicyChangeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy change is safe to commit"
+          },
+          "400": {
+            "description": "Blocked by invalid policy configuration, stale snapshot, or missing/mismatched commitToken"
+          }
+        },
+        "tags": [
+          "Policy Simulation"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/policy/simulations/commit": {
+      "post": {
+        "operationId": "commit",
+        "summary": "Commit a simulated policy change after verifying preview preconditions and record a rollback snapshot",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitPolicyChangeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy change committed with rollback snapshot"
+          },
+          "400": {
+            "description": "Blocked by validation error, stale snapshot, or missing commitToken"
+          }
+        },
+        "tags": [
+          "Policy Simulation"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/policy/simulations/rollback/{commitId}": {
+      "post": {
+        "operationId": "rollback",
+        "summary": "Roll back a previously committed policy configuration and surface any manual recovery steps",
+        "parameters": [
+          {
+            "name": "commitId",
+            "required": true,
+            "in": "path",
+            "description": "Commit identifier to roll back",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackPolicyChangeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy configuration restored to previous snapshot with recovery guidance"
+          },
+          "404": {
+            "description": "Commit record not found"
+          }
+        },
+        "tags": [
+          "Policy Simulation"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/policy/simulations/active": {
+      "get": {
+        "operationId": "getActivePolicies",
+        "summary": "Get currently active policy configurations across all domains",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Active domain policy map"
+          }
+        },
+        "tags": [
+          "Policy Simulation"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/policy/simulations/history": {
+      "get": {
+        "operationId": "getHistory",
+        "summary": "List committed policy changes and their rollback status",
+        "parameters": [
+          {
+            "name": "domain",
+            "required": false,
+            "in": "query",
+            "description": "Optional policy domain filter",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Policy commit audit history"
+          }
+        },
+        "tags": [
+          "Policy Simulation"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/policy/simulations/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "summary": "Get observability metrics for policy simulations, commits, and rollbacks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Policy simulation telemetry snapshot"
+          }
+        },
+        "tags": [
+          "Policy Simulation"
         ],
         "security": [
           {
@@ -15900,11 +16441,73 @@
         "properties": {
           "targetUserId": {
             "type": "string",
-            "description": "User ID to impersonate"
+            "description": "Target user ID to impersonate for support"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Operational reason for the support session (mandatory for immutable audit trail)",
+            "example": "Investigating user balance sync discrepancy from ticket SUP-1042"
+          },
+          "ticketId": {
+            "type": "string",
+            "description": "Support ticket or CRM reference ID",
+            "example": "SUP-1042"
+          },
+          "durationMinutes": {
+            "type": "number",
+            "description": "Session duration in minutes (min: 5, max: 240, default: 60)",
+            "default": 60,
+            "minimum": 5,
+            "maximum": 240
+          },
+          "scopes": {
+            "type": "array",
+            "description": "Granted support access scopes",
+            "default": [
+              "support:read-only"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "support:read-only",
+                "support:portfolio-read",
+                "support:defi-read",
+                "support:diagnostics",
+                "support:full"
+              ]
+            }
           }
         },
         "required": [
           "targetUserId"
+        ]
+      },
+      "ImpersonationSessionResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Time-bounded JWT access token scoped for support access"
+          },
+          "user": {
+            "type": "object",
+            "description": "Target user profile context",
+            "example": {
+              "id": "uuid",
+              "email": "user@example.com",
+              "role": "USER",
+              "isImpersonated": true
+            }
+          },
+          "session": {
+            "type": "object",
+            "description": "Session metadata including granted scopes and expiration timestamp"
+          }
+        },
+        "required": [
+          "accessToken",
+          "user",
+          "session"
         ]
       },
       "StopImpersonationDto": {
@@ -15912,11 +16515,36 @@
         "properties": {
           "targetUserId": {
             "type": "string",
-            "description": "Impersonated User ID"
+            "description": "Impersonated target user ID"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for terminating the support access session",
+            "example": "Support inquiry completed"
           }
         },
         "required": [
           "targetUserId"
+        ]
+      },
+      "SupportNoticeResponseDto": {
+        "type": "object",
+        "properties": {
+          "hasActiveSupportAccess": {
+            "type": "boolean",
+            "description": "Whether support access is currently active on the account"
+          },
+          "notice": {
+            "type": "string",
+            "description": "User-safe notice text suitable for client banner display without leaking admin PII"
+          },
+          "session": {
+            "type": "object",
+            "description": "Active session parameters if currently active"
+          }
+        },
+        "required": [
+          "hasActiveSupportAccess"
         ]
       },
       "CreateApiKeyDto": {
@@ -18478,6 +19106,15 @@
               "high"
             ],
             "default": "normal"
+          },
+          "locale": {
+            "type": "string",
+            "example": "en",
+            "description": "Preferred language locale (e.g. en, es, fr, de)"
+          },
+          "user": {
+            "type": "object",
+            "description": "Target User entity to parse preferred language locale from"
           }
         },
         "required": [
@@ -20547,6 +21184,140 @@
         },
         "required": [
           "decision",
+          "reason"
+        ]
+      },
+      "SimulatePolicyChangeDto": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Policy domain to simulate",
+            "enum": [
+              "trading",
+              "defi_adapters",
+              "portfolio_rebalancing",
+              "auth_access",
+              "notification_routing"
+            ],
+            "example": "trading"
+          },
+          "proposedPolicy": {
+            "type": "object",
+            "description": "Proposed policy fields to preview against the active domain policy",
+            "example": {
+              "enabled": true,
+              "maxOrderAmount": 50000,
+              "allowedAssets": [
+                "XLM",
+                "USDC"
+              ],
+              "allowedSides": [
+                "buy",
+                "sell"
+              ]
+            }
+          },
+          "currentPolicy": {
+            "type": "object",
+            "description": "Optional baseline policy override (defaults to active configured domain policy)"
+          },
+          "snapshot": {
+            "type": "object",
+            "description": "Optional point-in-time population and record snapshot for simulation"
+          },
+          "asOf": {
+            "type": "string",
+            "description": "Optional ISO-8601 timestamp for deterministic simulation reproducibility",
+            "example": "2026-10-17T00:00:00.000Z"
+          },
+          "maxSnapshotAgeSeconds": {
+            "type": "number",
+            "description": "Maximum acceptable snapshot age in seconds before flagging stale",
+            "example": 300
+          }
+        },
+        "required": [
+          "domain",
+          "proposedPolicy"
+        ]
+      },
+      "CommitPolicyChangeDto": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Policy domain to simulate",
+            "enum": [
+              "trading",
+              "defi_adapters",
+              "portfolio_rebalancing",
+              "auth_access",
+              "notification_routing"
+            ],
+            "example": "trading"
+          },
+          "proposedPolicy": {
+            "type": "object",
+            "description": "Proposed policy fields to preview against the active domain policy",
+            "example": {
+              "enabled": true,
+              "maxOrderAmount": 50000,
+              "allowedAssets": [
+                "XLM",
+                "USDC"
+              ],
+              "allowedSides": [
+                "buy",
+                "sell"
+              ]
+            }
+          },
+          "currentPolicy": {
+            "type": "object",
+            "description": "Optional baseline policy override (defaults to active configured domain policy)"
+          },
+          "snapshot": {
+            "type": "object",
+            "description": "Optional point-in-time population and record snapshot for simulation"
+          },
+          "asOf": {
+            "type": "string",
+            "description": "Optional ISO-8601 timestamp for deterministic simulation reproducibility",
+            "example": "2026-10-17T00:00:00.000Z"
+          },
+          "maxSnapshotAgeSeconds": {
+            "type": "number",
+            "description": "Maximum acceptable snapshot age in seconds before flagging stale",
+            "example": 300
+          },
+          "reason": {
+            "type": "string",
+            "description": "Audit reason explaining why this policy change is being committed",
+            "example": "Lower max order limit during elevated volatility window"
+          },
+          "commitToken": {
+            "type": "string",
+            "description": "Deterministic commitToken returned by POST /policy/simulations/preview (required for high-impact or irreversible changes)",
+            "example": "pctk:trading:0123456789abcdef01234567"
+          }
+        },
+        "required": [
+          "domain",
+          "proposedPolicy",
+          "reason"
+        ]
+      },
+      "RollbackPolicyChangeDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Audit reason for rolling back the committed policy change",
+            "example": "Restore previous policy after volatility window closed"
+          }
+        },
+        "required": [
           "reason"
         ]
       }

@@ -232,7 +232,7 @@ export class SnapshotService {
     try {
       const repair = await this.searchService.repairIndex();
       result.derivedIndexes.search.rebuilt = repair.indexed;
-      result.derivedIndexes.search.verified = repair.verified;
+      result.derivedIndexes.search.verified = Boolean(repair.verified);
       if (repair.indexed !== actualManifest.activeSearchRecords) {
         result.repairSteps.push(
           'Reconcile search_records in PostgreSQL with the snapshot, then retry the search-index rebuild.',

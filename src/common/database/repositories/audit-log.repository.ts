@@ -33,6 +33,7 @@ export interface AuditLedgerVerificationResult {
   valid: boolean;
   entriesChecked: number;
   brokenAtId?: string;
+  brokenAt?: string;
   brokenAtSequence?: number;
   reason?: string;
 }
@@ -142,9 +143,9 @@ export class AuditLogRepository extends BaseRepository<AuditLog> {
         payloadHash,
         hash,
         createdAt,
-      } as any);
+      });
 
-      return repo.save(entity);
+      return repo.save(entity) as unknown as Promise<AuditLog>;
     });
   }
 
@@ -181,6 +182,7 @@ export class AuditLogRepository extends BaseRepository<AuditLog> {
         return {
           valid: false,
           entriesChecked: entries.length,
+          brokenAt: entry.id,
           brokenAtId: entry.id,
           brokenAtSequence: entry.sequence,
           reason: `sequence gap: expected ${expectedSequence}, got ${entry.sequence}`,
@@ -190,6 +192,7 @@ export class AuditLogRepository extends BaseRepository<AuditLog> {
         return {
           valid: false,
           entriesChecked: entries.length,
+          brokenAt: entry.id,
           brokenAtId: entry.id,
           brokenAtSequence: entry.sequence,
           reason: "previous hash mismatch",
@@ -198,10 +201,11 @@ export class AuditLogRepository extends BaseRepository<AuditLog> {
 
       const payload = this.buildPayload(entry);
       const payloadHash = hashPayload(payload);
-      if (!timingSafeEqual(payloadHash, entry.payloadHash)) {
+      if (!timingSafeEqual(Buffer.from(payloadHash), Buffer.from(entry.payloadHash || ""))) {
         return {
           valid: false,
           entriesChecked: entries.length,
+          brokenAt: entry.id,
           brokenAtId: entry.id,
           brokenAtSequence: entry.sequence,
           reason: "payload hash mismatch (content tampered)",
@@ -213,10 +217,11 @@ export class AuditLogRepository extends BaseRepository<AuditLog> {
         entry.previousHash ?? null,
         entry.sequence,
       );
-      if (!timingSafeEqual(expectedChainHash, entry.hash)) {
+      if (!timingSafeEqual(Buffer.from(expectedChainHash), Buffer.from(entry.hash || ""))) {
         return {
           valid: false,
           entriesChecked: entries.length,
+          brokenAt: entry.id,
           brokenAtId: entry.id,
           brokenAtSequence: entry.sequence,
           reason: "chain hash mismatch",
@@ -262,6 +267,14 @@ export class AuditLogRepository extends BaseRepository<AuditLog> {
       entries,
       verification,
     };
+  }
+
+  async exportChain(
+    fromSequence?: number,
+    toSequence?: number,
+  ): Promise<AuditLedgerEntry[]> {
+    const exported = await this.exportLedger(fromSequence, toSequence);
+    return exported.entries;
   }
 
   private buildPayload(entry: AuditLog): Record<string, unknown> {

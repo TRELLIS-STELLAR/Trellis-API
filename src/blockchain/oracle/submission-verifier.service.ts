@@ -63,7 +63,7 @@ function normalizePrimitive(value: unknown): string {
       return String(num);
     }
     case "bigint":
-      return ((value as bigint) < 0n ? "-" : "") + (value as bigint).toString();
+      return ((value as bigint) < BigInt(0) ? "-" : "") + (value as bigint).toString();
     case "undefined":
       return "null";
     default:
