@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { SensitiveActionEvent } from "../entities/sensitive-action-event.entity";
+import { SensitiveActionChainHead } from "../entities/sensitive-action-chain-head.entity";
 import { SensitiveActionAuditController } from "./sensitive-action-audit.controller";
 import { SensitiveActionAuditService } from "./sensitive-action-audit.service";
 
@@ -12,7 +13,7 @@ import { SensitiveActionAuditService } from "./sensitive-action-audit.service";
  * action happens instead of reconstructing them from request logs.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([SensitiveActionEvent])],
+  imports: [TypeOrmModule.forFeature([SensitiveActionEvent, SensitiveActionChainHead])],
   controllers: [SensitiveActionAuditController],
   providers: [SensitiveActionAuditService],
   exports: [SensitiveActionAuditService],

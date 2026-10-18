@@ -1,13 +1,136 @@
 import {
   Injectable,
   Logger,
-  ConflictException,
-  NotFoundException,
 } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { InjectRepository } from "@typeorm/nestjs";
 import { Repository, LessThan } from "typeorm";
 import { SubmissionNonce } from "../entities/submission-nonce.entity";
-import { getAddress } from "ethers";
+import { getAddress, keccakAddress, keccakHash, toUtf8Bytes } from "ethers";
+
+/**
+ * Canonical serialization layer for signed, hashed, or replay-protected payloads.
+ *
+ * Signed/hashed inputs must use a stable field order, encoding, and
+ * normalization so that equivalent payloads produce identical digests.
+ * This module is deliberately dependency-free and deterministic.
+ */
+
+export type CanonicalPrimitive =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | bigint;
+
+export type CanonicalValue =
+  | CanonicalPrimitive
+  | CanonicalValue[]
+  | { [key: string]: CanonicalValue };
+
+export interface CanonicalizeOptions {
+  /** When true, undefined object fields are kept as `null` instead of being dropped. */
+  keepUndefined?: boolean;
+  /** When true, numeric strings are normalized to their canonical decimal form. */
+  normalizeNumericStrings?: boolean;
+}
+
+const DEFAULT_OPTIONS: Required<CanonicalizeOptions> = {
+  keepUndefined: false,
+  normalizeNumericStrings: true,
+};
+
+/**
+ * Normalize a string for canonical serialization:
+ * - NFC normalization (UNICODE) so visually identical strings hash identically.
+ * - Trim outer whitespace.
+ * - Optionally normalize numeric strings (e.g. "0001" -> "1").
+ */
+export function normalizeString(
+  value: string,
+  options: CanonicalizeOptions = DEFAULT_OPTIONS,
+): string {
+  const normalized = value.normalize("NFC").trim();
+  if (options.normalizeNumericStrings && /^-?\d+$/.test(normalized)) {
+    // Strip leading zeros while preserving sign and zero itself.
+    const negative = normalized.startsWith("-");
+    const digits = negative ? normalized.slice(1) : normalized;
+    const stripped = digits.replace(/^0+(.)/, "$1") || "0";
+    return (negative ? "-" : "") + stripped;
+  }
+  return normalized;
+}
+
+/**
+ * Recursively normalize a value into a canonical form.
+ * Object keys are sorted lexicographically and array order is preserved.
+ */
+export function canonicalizeValue(
+  value: unknown,
+  options: CanonicalizeOptions = DEFAULT_OPTIONS,
+): CanonicalValue {
+  if (value === null) {
+    return null;
+  }
+  if (value === undefined) {
+    return options.keepUndefined ? null : null;
+  }
+  if (typeof value === "string") {
+    return normalizeString(value, options);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error(
+        `Cannot canonicalize non-finite number: ${String(value)}`,
+      );
+    }
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeValue(item, options));
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined || options.keepUndefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const out: { [key: string]: CanonicalValue } = {};
+    for (const [key, v] of entries) {
+      out[key] = canonicalizeValue(v, options);
+    }
+    return out;
+  }
+  throw new Error(
+    `Cannot canonicalize unsupported type: ${typeof value}`,
+  );
+}
+
+/**
+ * Serialize a value to a canonical JSON string.
+ * Keys in objects are sorted and strings are NFC normalized.
+ */
+export function canonicalizeToJSON(
+  value: unknown,
+  options: CanonicalizeOptions = DEFAULT_OPTIONS,
+): string {
+  return JSON.stringify(canonicalizeValue(value, options));
+}
+
+/**
+ * Compute a canonical keccak256 digest of a payload.
+ * Equivalent payloads (key order, whitespace, NFC form) produce the same digest.
+ */
+export function canonicalHash(
+  value: unknown,
+  options: CanonicalizeOptions = DEFAULT_OPTIONS,
+): string {
+  return keccak256(toUtf8Bytes(canonicalizeToJSON(value, options)));
+}
 
 /**
  * Service for managing nonces to prevent replay attacks

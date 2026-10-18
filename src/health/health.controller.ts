@@ -7,7 +7,6 @@ import {
 } from "@nestjs/swagger";
 import { Response } from "express";
 import { Public } from "../common/decorators/public.decorator";
-import { SkipKyc } from "../common/decorators/skip-kyc.decorator";
 import {
   HealthResponseDto,
   ComponentStatusDto,
@@ -17,12 +16,11 @@ import { HealthService } from "./health.service";
 @ApiTags("Health")
 @Controller("health")
 @Public()
-@SkipKyc()
 @ApiExtraModels(HealthResponseDto, ComponentStatusDto)
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
-  @Get("live")
+  @Get(["liveness", "live"])
   @ApiOperation({
     summary: "Liveness probe",
     description:
@@ -39,11 +37,11 @@ export class HealthController {
     return this.healthService.getLiveness();
   }
 
-  @Get("ready")
+  @Get(["readiness", "ready"])
   @ApiOperation({
     summary: "Readiness probe",
     description:
-      "Kubernetes readiness probe. Checks database and Redis connectivity. " +
+      "Kubernetes readiness probe. Checks database, Redis, and downstream connectivity. " +
       "Returns 200 when all dependencies are reachable, 503 when any critical dependency is down.",
     operationId: "getHealthReady",
   })

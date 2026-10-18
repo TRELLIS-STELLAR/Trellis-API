@@ -1,9 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   NotificationPreference,
   NotificationChannelPreference,
+  NotificationDeliveryMode,
 } from '../entities/notification-preference.entity';
 import {
   UpdateNotificationPreferenceDto,
@@ -50,6 +51,23 @@ export class NotificationPreferenceService {
     userId: string,
     dto: UpdateNotificationPreferenceDto,
   ): Promise<NotificationPreference> {
+    const isMandatoryCategory =
+      dto.category === NotificationCategory.SECURITY ||
+      dto.category === NotificationCategory.COMPLIANCE;
+    const isEssentialChannel =
+      dto.channel === NotificationChannel.IN_APP ||
+      dto.channel === NotificationChannel.EMAIL;
+
+    if (
+      isMandatoryCategory &&
+      isEssentialChannel &&
+      dto.preference === NotificationChannelPreference.DISABLED
+    ) {
+      throw new BadRequestException(
+        `Mandatory alerts for ${dto.category} cannot be disabled on primary channel ${dto.channel}`,
+      );
+    }
+
     let preference = await this.preferenceRepo.findOne({
       where: {
         userId,
@@ -61,6 +79,7 @@ export class NotificationPreferenceService {
     if (preference) {
       Object.assign(preference, {
         preference: dto.preference,
+        deliveryMode: dto.deliveryMode ?? NotificationDeliveryMode.IMMEDIATE,
         digestFrequency: dto.digestFrequency,
         quietHoursStart: dto.quietHoursStart,
         quietHoursEnd: dto.quietHoursEnd,
@@ -79,6 +98,7 @@ export class NotificationPreferenceService {
         category: dto.category,
         channel: dto.channel,
         preference: dto.preference,
+        deliveryMode: dto.deliveryMode ?? NotificationDeliveryMode.IMMEDIATE,
         digestFrequency: dto.digestFrequency,
         quietHoursStart: dto.quietHoursStart,
         quietHoursEnd: dto.quietHoursEnd,
@@ -137,7 +157,11 @@ export class NotificationPreferenceService {
             pref = NotificationChannelPreference.ENABLED;
             break;
           case 'all_off':
-            pref = NotificationChannelPreference.DISABLED;
+            pref =
+              (category === NotificationCategory.SECURITY || category === NotificationCategory.COMPLIANCE) &&
+              (channel === NotificationChannel.IN_APP || channel === NotificationChannel.EMAIL)
+                ? NotificationChannelPreference.ENABLED
+                : NotificationChannelPreference.DISABLED;
             break;
           case 'in_app_only':
             pref = channel === NotificationChannel.IN_APP
@@ -205,6 +229,7 @@ export class NotificationPreferenceService {
               preference: isEssential
                 ? NotificationChannelPreference.ENABLED
                 : NotificationChannelPreference.DISABLED,
+              deliveryMode: NotificationDeliveryMode.IMMEDIATE,
             }),
           );
         }

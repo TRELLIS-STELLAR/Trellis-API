@@ -3,6 +3,7 @@ import {
   checkToolVersion,
   checkTcpConnectivity,
   checkHttpEndpoint,
+  checkBootstrapAdmin,
   buildReport,
   REQUIRED_ENV_SPECS,
   DiagnosticCheck,
@@ -204,6 +205,33 @@ describe("checkHttpEndpoint", () => {
       "server error",
     );
     expect(result.status).toBe("warn");
+  });
+});
+
+describe("checkBootstrapAdmin", () => {
+  it("skips when no bootstrap target is configured", () => {
+    expect(checkBootstrapAdmin(undefined, undefined, undefined).status).toBe(
+      "skip",
+    );
+  });
+
+  it("warns when the configured account has not been created", () => {
+    const result = checkBootstrapAdmin("admin@example.com", undefined, undefined);
+    expect(result.status).toBe("warn");
+    expect(result.remediation).toMatch(/Create the account/);
+    expect(result.detail).not.toContain("admin@example.com");
+  });
+
+  it("warns when the configured account still needs promotion", () => {
+    expect(checkBootstrapAdmin(undefined, "GABC", "USER").status).toBe(
+      "warn",
+    );
+  });
+
+  it("passes when the configured account is already an admin", () => {
+    expect(
+      checkBootstrapAdmin("admin@example.com", undefined, "ADMIN").status,
+    ).toBe("pass");
   });
 });
 

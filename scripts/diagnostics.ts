@@ -21,6 +21,8 @@ import * as fs from "fs";
 import * as net from "net";
 import * as http from "http";
 import * as https from "https";
+import { Client } from "pg";
+import { checkBootstrapAdmin } from "../src/diagnostics/diagnostics-checks";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Colour helpers (no deps — use raw ANSI so the script runs before npm install)
@@ -292,10 +294,18 @@ async function checkDatabase(): Promise<void> {
 
   try {
     const url = new URL(dbUrl);
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
+      throw new Error("Unsupported database URL protocol");
+    }
     host = url.hostname;
     port = parseInt(url.port || "5432", 10);
   } catch {
-    warn("db:url-parse", "Could not parse DATABASE_URL as a URL", "Ensure DATABASE_URL is a valid postgresql:// URI");
+    fail(
+      "db:url-parse",
+      "DATABASE_URL is not a valid PostgreSQL URL",
+      "Set DATABASE_URL using the postgresql://user:password@host:5432/database format.",
+    );
+    return;
   }
 
   // TCP reachability
@@ -312,18 +322,62 @@ async function checkDatabase(): Promise<void> {
   }
   pass("db:tcp", `PostgreSQL TCP reachable at ${host}:${port}`);
 
-  // Try a query via psql if available
-  const psqlOut = runCmd(`psql "${dbUrl}" -c "SELECT version();" 2>&1`);
-  if (psqlOut && psqlOut.includes("PostgreSQL")) {
-    pass("db:query", "PostgreSQL SELECT version() succeeded");
-  } else if (psqlOut === null) {
-    warn("db:query", "psql not available — skipping query check", "Install postgresql-client for a full connectivity test");
-  } else {
+  let client: Client | undefined;
+  try {
+    client = new Client({
+      connectionString: dbUrl,
+      connectionTimeoutMillis: 3000,
+    });
+    await client.connect();
+    await client.query("SELECT 1");
+    pass("db:query", "PostgreSQL authentication and query succeeded");
+
+    const schema = await client.query<{ users_table: string | null }>(
+      "SELECT to_regclass('public.users') AS users_table",
+    );
+    if (!schema.rows[0]?.users_table) {
+      fail(
+        "db:schema",
+        "The public.users table is missing",
+        "Run the project's database initialization/migrations, then start the API once to apply the configured schema setup.",
+      );
+    } else {
+      pass("db:schema", "The public.users table exists");
+      const bootstrapEmail = process.env.ADMIN_BOOTSTRAP_EMAIL?.trim();
+      const bootstrapWallet = process.env.ADMIN_BOOTSTRAP_WALLET?.trim();
+      if (bootstrapEmail || bootstrapWallet) {
+        const user = await client.query<{ role: string }>(
+           `SELECT role FROM public.users
+            WHERE ($1::text IS NOT NULL AND lower(email) = lower($1))
+              OR ($1::text IS NULL AND $2::text IS NOT NULL
+                AND lower("walletAddress") = lower($2))
+            LIMIT 1`,
+          [bootstrapEmail || null, bootstrapWallet || null],
+        );
+        results.push(
+          checkBootstrapAdmin(
+            bootstrapEmail,
+            bootstrapWallet,
+            user.rows[0]?.role,
+          ),
+        );
+      } else {
+        skip(
+          "db:bootstrap-admin",
+          "No ADMIN_BOOTSTRAP_EMAIL or ADMIN_BOOTSTRAP_WALLET configured; no bootstrap admin is expected",
+        );
+      }
+    }
+  } catch {
     fail(
       "db:query",
-      `psql query failed: ${psqlOut?.slice(0, 200)}`,
-      "Check DATABASE_URL credentials.\nRun: psql \"$DATABASE_URL\" -c 'SELECT 1;'",
+      "PostgreSQL connection or query failed",
+      "Check DATABASE_URL credentials and database/schema readiness. The driver error is omitted to avoid exposing connection details.",
     );
+  } finally {
+    if (client) {
+      await client.end().catch(() => undefined);
+    }
   }
 }
 

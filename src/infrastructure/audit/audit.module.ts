@@ -12,8 +12,10 @@ import { ExportSigningService } from "./algorithms/export-signing.service";
 import { CursorPaginationService } from "../../common/pagination/cursor-pagination.service";
 import { PaginationModule } from "../../common/pagination/pagination.module";
 import { AuditLogController } from "./audit-log.controller";
+import { ActivityTimelineController } from "./activity-timeline.controller";
 import { SensitiveActionEvent } from "./entities/sensitive-action-event.entity";
 import { SensitiveActionAuditModule } from "./sensitive-actions/sensitive-action-audit.module";
+import { EvidenceBundleModule } from "./evidence-bundle/evidence-bundle.module";
 
 @Module({
   imports: [
@@ -27,9 +29,10 @@ import { SensitiveActionAuditModule } from "./sensitive-actions/sensitive-action
     ]),
     PaginationModule,
     SensitiveActionAuditModule,
+    EvidenceBundleModule,
   ],
-  controllers: [ProvenanceController, AuditLogController],
+  controllers: [ProvenanceController, AuditLogController, ActivityTimelineController],
   providers: [ProvenanceService, AuditLogService, ExportSigningService, CursorPaginationService],
-  exports: [TypeOrmModule, ProvenanceService, AuditLogService, SensitiveActionAuditModule],
+  exports: [TypeOrmModule, ProvenanceService, AuditLogService, SensitiveActionAuditModule, EvidenceBundleModule],
 })
 export class AuditModule {}

@@ -171,6 +171,46 @@ export async function checkHttpEndpoint(
   };
 }
 
+export function checkBootstrapAdmin(
+  email: string | undefined,
+  wallet: string | undefined,
+  role: string | undefined,
+): DiagnosticCheck {
+  if (!email && !wallet) {
+    return {
+      name: "db:bootstrap-admin",
+      status: "skip",
+      detail: "No bootstrap admin target is configured",
+    };
+  }
+
+  if (!role) {
+    return {
+      name: "db:bootstrap-admin",
+      status: "warn",
+      detail: "The configured bootstrap admin account does not exist",
+      remediation:
+        "Create the account through the normal registration flow, then restart the API so RoleSeederService can promote it.",
+    };
+  }
+
+  if (role.toUpperCase() !== "ADMIN") {
+    return {
+      name: "db:bootstrap-admin",
+      status: "warn",
+      detail: "The configured bootstrap account is not yet an ADMIN",
+      remediation:
+        "Restart the API after confirming the bootstrap target is correct; RoleSeederService promotes an existing account on startup.",
+    };
+  }
+
+  return {
+    name: "db:bootstrap-admin",
+    status: "pass",
+    detail: "The configured bootstrap account has ADMIN role",
+  };
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Report aggregation
 // ──────────────────────────────────────────────────────────────────────────────

@@ -36,6 +36,7 @@ must be captured.
 | `data-export` | `data.audit.exported`, `data.user.exported` |
 | `compliance` | `compliance.retention-hold.placed` |
 | `protocol-config` | `config.feature-flag.changed`, `config.emergency-pause.toggled`, `config.contract.upgraded` |
+| `portfolio` | `portfolio.record.changed` for portfolio ownership, value, allocation, and holding mutations |
 
 The live list, including which actions require a reason, is served by
 `GET /audit-trail/sensitive-actions/catalogue`.
@@ -105,7 +106,12 @@ introduced.
 ## Integrity
 
 Every event stores `eventHash` (SHA-256 over the recorded fields) and
-`previousHash`, forming a chain ordered by the monotonic `sequence` column.
+`previousHash`, forming a chain ordered by the monotonic `sequence` column. A
+durable `sensitive_action_chain_heads` row stores the expected sequence, hash,
+and event ID at the chain tip. Verification enforces contiguous sequence
+numbers and compares the final event to this head, so deleting the newest rows
+is detectable as well as editing, deleting, or reordering interior rows.
+Appending fails closed when existing history and its head disagree.
 `GET /audit-trail/sensitive-actions/integrity` recomputes the chain and reports
 the first broken link:
 
@@ -119,9 +125,15 @@ the first broken link:
 }
 ```
 
-An edited, deleted, or reordered row produces `valid: false` with `brokenAt`
-pointing at the offending event, which is what makes the trail audit-grade
-rather than merely append-only by convention.
+An edited, missing, or out-of-order row (including a truncated tail) produces
+`valid: false` with `brokenAt` pointing at the offending event or expected
+chain tip.
+
+Role assignments and resets record actor, reason, and before/after roles;
+rejected conflicting assignments are recorded with `status: failed` and do not
+change the role. Portfolio create/update/delete, allocation/status changes,
+holding changes, market-price updates, and portfolio value/allocation
+recalculations record sanitized before/after snapshots against the owning user.
 
 ## Maintainer API
 
@@ -133,6 +145,11 @@ rather than merely append-only by convention.
 | `GET` | `/audit-trail/sensitive-actions/export` | JSON export (≤ 10,000 rows) with the chain status; the export itself is recorded as `data.audit.exported`. |
 | `GET` | `/audit-trail/sensitive-actions/resource/:type/:id` | Full timeline for one resource, oldest first. |
 
+Apply the `CreateSensitiveActionChainHead1790553600000` migration before
+deployment. It backfills the chain head from the latest existing event; keep
+this head row and all `sensitive_action_events` rows in the same protected
+backup/restore boundary.
+
 All routes require a JWT **and** the compliance-officer guard.
 
 ## Tests
@@ -141,5 +158,6 @@ All routes require a JWT **and** the compliance-officer guard.
   depth/array caps, cycle handling, non-object payloads.
 * `sensitive-action-audit.service.spec.ts` — actor attribution and event shape,
   reason enforcement, catalogue enforcement, sanitized snapshots, state
-  capture rules, sequence/hash chaining, tamper and deletion detection, query
-  filters, pagination, resource history, and export.
+  capture rules, sequence/hash chaining, tamper, interior/tail deletion,
+  sequence-gap and missing-head detection, query filters, pagination, resource
+  history, and export. Role-change tests cover successful and rejected updates.

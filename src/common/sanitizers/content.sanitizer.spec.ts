@@ -1,5 +1,5 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { ContentSanitizerService } from "../sanitizers/content.sanitizer";
+import { ContentSanitizerService } from "./content.sanitizer";
 import { BadRequestException } from "@nestjs/common";
 
 describe("ContentSanitizerService", () => {
@@ -45,6 +45,12 @@ describe("ContentSanitizerService", () => {
       expect(service.sanitizeHtml("")).toBe("");
       expect(service.sanitizeHtml(null as any)).toBe("");
     });
+
+    it("should decode double-encoded HTML entities before sanitizing", () => {
+      const input = "&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;";
+      const result = service.sanitizeHtml(input);
+      expect(result).not.toContain("script");
+    });
   });
 
   describe("sanitizeMarkdown", () => {
@@ -71,6 +77,75 @@ describe("ContentSanitizerService", () => {
       const result = service.sanitizeMarkdown(input);
       expect(result).toContain("Hello");
       expect(result).toContain("bold");
+    });
+  });
+
+  describe("sanitizeFilter", () => {
+    it("should strip UNION SELECT injection patterns", () => {
+      const input = "name UNION SELECT username, password FROM users";
+      const result = service.sanitizeFilter(input);
+      expect(result.toUpperCase()).not.toContain("UNION");
+      expect(result.toUpperCase()).not.toContain("SELECT");
+      expect(result).toContain("name");
+    });
+
+    it("should strip SQL comment delimiters", () => {
+      const input = "admin'--";
+      const result = service.sanitizeFilter(input);
+      expect(result).not.toContain("--");
+    });
+
+    it("should neutralize tautology patterns", () => {
+      const input = "admin or 1=1";
+      const result = service.sanitizeFilter(input);
+      expect(result).not.toContain("1=1");
+    });
+
+    it("should strip OWASP SQL injection test strings", () => {
+      const vectors = [
+        "' or '1'='1",
+        "' or 1=1--",
+        "' or '1'='1'--",
+        "' UNION SELECT NULL--",
+        "' UNION SELECT username, password FROM users--",
+        "1; DROP TABLE users",
+        "'; EXEC xp_cmshell 'dir \\\\'",
+        "1' AND SLEEP(5)--",
+        "admin'--",
+        "' OR 'a'='a",
+      ];
+
+      for (const vector of vectors) {
+        const result = service.sanitizeFilter(vector);
+        const upper = result.toUpperCase();
+        expect(upper).not.toContain("UNION");
+        expect(upper).not.toContain("SELECT");
+        expect(upper).not.toContain("DROP");
+        expect(upper).not.toContain("XP_CMSHELL");
+        expect(upper).not.toContain("SLEEP");
+        expect(result).not.toContain("--");
+        expect(result).not.toContain("='");
+      }
+    });
+
+    it("should decode double-encoded HTML entities before sanitizing", () => {
+      const input = "&amp;lt;script&amp;gat;alert(1)&amp;lt;/script&amp;gt;";
+      const result = service.sanitizeFilter(input);
+      expect(result).not.toContain("script");
+    });
+
+    it("should preserve legitimate search text", () => {
+      const input = "red shoes for running";
+      const result = service.sanitizeFilter(input);
+      expect(result).toBeTruthy();
+      expect(result).toContain("red");
+      expect(result).toContain("shoes");
+      expect(result).toContain("running");
+    });
+
+    it("should handle empty input", () => {
+      expect(service.sanitizeFilter("")).toBe("");
+      expect(service.sanitizeFilter(null as any)).toBe("");
     });
   });
 

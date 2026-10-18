@@ -17,6 +17,7 @@ import {
   StellarTransaction,
   StellarTransactionStatus,
 } from "./entities/stellar-transaction.entity";
+import { DistributedLock } from "../infrastructure/distributed-lock/distributed-lock.decorator";
 
 /**
  * Injection token for the user-facing balance source (the API's own balance
@@ -45,6 +46,7 @@ export enum ReconciliationFindingType {
   STALE_UNMATCHED_TRANSACTION = "stale_unmatched_transaction",
   FAILED_TRANSACTION = "failed_transaction",
   USER_BALANCE_DRIFT = "user_balance_drift",
+  SCAN_LIMIT_REACHED = "scan_limit_reached",
 }
 
 export enum ReconciliationSeverity {
@@ -109,6 +111,11 @@ export interface ReconciliationDryRunReport {
   invariants: ReconciliationInvariant[];
   findings: ReconciliationFinding[];
   userBalanceSource: "provider" | "unavailable" | "disabled";
+  coverage: {
+    limit: number;
+    invoicesMayBeTruncated: boolean;
+    transactionsMayBeTruncated: boolean;
+  };
 }
 
 const SCALE = 7n;
@@ -140,6 +147,8 @@ const REPAIR_GUIDANCE: Record<ReconciliationFindingType, string> = {
     "A previous reconciliation attempt failed for this transaction. Check the stored failureReason, fix the underlying cause, and retry it through the normal reconciliation path.",
   [ReconciliationFindingType.USER_BALANCE_DRIFT]:
     "Recompute the user-facing balance from settled transactions; drift usually means a settlement applied to the ledger but not to the stored balance (or the opposite).",
+  [ReconciliationFindingType.SCAN_LIMIT_REACHED]:
+    "This report is incomplete because at least one source exceeded the scan limit. Increase the limit or reconcile a smaller time/account scope before using the report to make repairs.",
 };
 
 function toUnits(value: string): bigint {
@@ -208,16 +217,37 @@ export class DryRunReconciliationService {
     const toleranceUnits = toUnits(dto.toleranceAmount ?? DEFAULT_TOLERANCE_AMOUNT);
     const includeUserBalances = dto.includeUserBalances !== false;
 
-    const invoices = await this.invoiceRepo.find({
-      order: { createdAt: "ASC" },
-      take: limit,
-    });
-    const transactions = await this.transactionRepo.find({
-      order: { observedAt: "ASC" },
-      take: limit,
-    });
+    // Fetch one extra row from each source so a full bounded page can be
+    // distinguished from a complete scan. Never report a truncated view as if
+    // it covered the whole source of truth.
+    const [invoiceWindow, transactionWindow] = await Promise.all([
+      this.invoiceRepo.find({
+        order: { createdAt: "ASC" },
+        take: limit + 1,
+      }),
+      this.transactionRepo.find({
+        order: { observedAt: "ASC" },
+        take: limit + 1,
+      }),
+    ]);
+    const invoicesMayBeTruncated = invoiceWindow.length > limit;
+    const transactionsMayBeTruncated = transactionWindow.length > limit;
+    const invoices = invoiceWindow.slice(0, limit);
+    const transactions = transactionWindow.slice(0, limit);
 
     const findings: ReconciliationFinding[] = [];
+    if (invoicesMayBeTruncated || transactionsMayBeTruncated) {
+      const truncatedSources = [
+        invoicesMayBeTruncated ? "invoices" : null,
+        transactionsMayBeTruncated ? "transactions" : null,
+      ].filter((source): source is string => source !== null);
+      findings.push({
+        type: ReconciliationFindingType.SCAN_LIMIT_REACHED,
+        severity: ReconciliationSeverity.WARNING,
+        message: `The scan limit of ${limit} was reached for ${truncatedSources.join(" and ")}; findings cover only the oldest inspected records.`,
+        suggestedAction: REPAIR_GUIDANCE[ReconciliationFindingType.SCAN_LIMIT_REACHED],
+      });
+    }
     const derivedByAccount = new Map<string, bigint>();
 
     let expectedTotal = 0n;
@@ -443,6 +473,11 @@ export class DryRunReconciliationService {
       ),
       findings: sortedFindings,
       userBalanceSource,
+      coverage: {
+        limit,
+        invoicesMayBeTruncated,
+        transactionsMayBeTruncated,
+      },
     };
   }
 
@@ -451,6 +486,7 @@ export class DryRunReconciliationService {
    * read the logged summary and act through the regular reconciliation paths.
    */
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  @DistributedLock("reconciliation:daily-dry-run", 30 * 60_000)
   async scheduledDryRun(): Promise<void> {
     try {
       const report = await this.runDryRun();

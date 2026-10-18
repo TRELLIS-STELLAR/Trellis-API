@@ -33,11 +33,11 @@ import { SkipKyc } from "src/common/decorators/skip-kyc.decorator";
 @ApiResponse({ status: 401, description: "Authentication required" })
 @ApiResponse({ status: 403, description: "Administrator role required" })
 @Roles(Role.ADMIN)
-@SkipKyc()
 @Controller("modules")
 export class ModuleRegistryController {
   constructor(private readonly registryService: ModuleRegistryService) {}
 
+  @SkipKyc()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -52,12 +52,14 @@ export class ModuleRegistryController {
     return { module: await this.registryService.register(dto) };
   }
 
+  @SkipKyc()
   @Get()
   @ApiOperation({ summary: "List registered modules and tenant states" })
   async findAll() {
     return { modules: await this.registryService.findAll() };
   }
 
+  @SkipKyc()
   @Get(":id/state")
   @ApiOperation({
     summary: "Resolve a tenant's effective module state",
@@ -76,6 +78,7 @@ export class ModuleRegistryController {
     };
   }
 
+  @SkipKyc()
   @Get(":id")
   @ApiOperation({ summary: "Get module details" })
   @ApiParam({ name: "id", description: "Module UUID" })
@@ -84,6 +87,7 @@ export class ModuleRegistryController {
     return { module: await this.registryService.findOne(id) };
   }
 
+  @SkipKyc()
   @Post(":id/enable")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -101,6 +105,7 @@ export class ModuleRegistryController {
     return { state: await this.registryService.enable(id, dto) };
   }
 
+  @SkipKyc()
   @Post(":id/disable")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -117,6 +122,7 @@ export class ModuleRegistryController {
     return { state: await this.registryService.disable(id, dto) };
   }
 
+  @SkipKyc()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Deregister a module that is disabled everywhere" })

@@ -12,6 +12,7 @@ import {
   SensitiveActionEvent,
   SensitiveActionStatus,
 } from "../entities/sensitive-action-event.entity";
+import { SensitiveActionChainHead } from "../entities/sensitive-action-chain-head.entity";
 import { RecordSensitiveActionDto } from "./dto/record-sensitive-action.dto";
 import {
   ExportSensitiveActionsDto,
@@ -87,7 +88,9 @@ export class SensitiveActionAuditService {
 
   constructor(
     @InjectRepository(SensitiveActionEvent)
-    private readonly repo: Repository<SensitiveActionEvent>
+    private readonly repo: Repository<SensitiveActionEvent>,
+    @InjectRepository(SensitiveActionChainHead)
+    private readonly headRepo: Repository<SensitiveActionChainHead>,
   ) {}
 
   /** The declared catalogue maintainers can review and extend. */
@@ -152,12 +155,30 @@ export class SensitiveActionAuditService {
       : sanitizeAuditPayload(null);
     const metadata = sanitizeAuditPayload(input.metadata ?? null);
 
-    const previous = await this.repo.findOne({
+    const latest = await this.repo.findOne({
       order: { sequence: "DESC" },
     });
+    let head = await this.headRepo.findOne({ where: { id: "global" } });
+
+    if (latest && !head) {
+      throw new BadRequestException(
+        "Sensitive action history is missing its recorded chain head; refusing to append.",
+      );
+    }
+    if (
+      head &&
+      (latest?.sequence !== head.sequence || latest?.eventHash !== head.eventHash)
+    ) {
+      throw new BadRequestException(
+        "Sensitive action history does not match its recorded chain head; refusing to append.",
+      );
+    }
+
+    const previousSequence = head?.sequence ?? latest?.sequence ?? "0";
+    const previousHash = head?.eventHash ?? latest?.eventHash ?? null;
 
     const event = this.repo.create({
-      sequence: previous ? this.nextSequence(previous.sequence) : "1",
+      sequence: this.nextSequence(previousSequence),
       action: input.action,
       scope: definition.scope,
       actorId: this.clip(input.actorId, 64) as string,
@@ -178,12 +199,19 @@ export class SensitiveActionAuditService {
         metadata.redactedPaths,
       ]),
       occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
-      previousHash: previous?.eventHash ?? null,
+      previousHash,
       eventHash: "",
     });
 
     event.eventHash = this.computeHash(event);
     const saved = await this.repo.save(event);
+    head = this.headRepo.create({
+      id: "global",
+      sequence: saved.sequence,
+      eventHash: saved.eventHash,
+      lastEventId: saved.id,
+    });
+    await this.headRepo.save(head);
 
     this.logger.log(
       `audit:${saved.action} actor=${saved.actorId}(${saved.actorType}) ` +
@@ -256,16 +284,28 @@ export class SensitiveActionAuditService {
    */
   async verifyChain(): Promise<ChainVerificationResult> {
     const events = await this.repo.find({ order: { sequence: "ASC" } });
+    const head = await this.headRepo.findOne({ where: { id: "global" } });
 
     let previousHash: string | null = null;
-    let previousSequence: string | null = null;
+    let previousSequence = "0";
 
-    for (const event of events) {
+    for (let index = 0; index < events.length; index += 1) {
+      const event = events[index];
+      const expectedSequence = this.nextSequence(previousSequence);
+      if (BigInt(event.sequence) !== BigInt(expectedSequence)) {
+        return {
+          valid: false,
+          verified: index,
+          brokenAt: event.id,
+          reason: `Sequence gap or ordering error at sequence ${event.sequence}; expected ${expectedSequence}`,
+          verifiedAt: new Date().toISOString(),
+        };
+      }
       const expectedPrevious = previousHash;
       if ((event.previousHash ?? null) !== expectedPrevious) {
         return {
           valid: false,
-          verified: events.indexOf(event),
+          verified: index,
           brokenAt: event.id,
           reason: `Chain link mismatch at sequence ${event.sequence}`,
           verifiedAt: new Date().toISOString(),
@@ -274,7 +314,7 @@ export class SensitiveActionAuditService {
       if (this.computeHash(event) !== event.eventHash) {
         return {
           valid: false,
-          verified: events.indexOf(event),
+          verified: index,
           brokenAt: event.id,
           reason: `Event hash mismatch at sequence ${event.sequence}`,
           verifiedAt: new Date().toISOString(),
@@ -282,6 +322,30 @@ export class SensitiveActionAuditService {
       }
       previousHash = event.eventHash;
       previousSequence = event.sequence;
+    }
+
+    if (
+      head &&
+      (head.sequence !== previousSequence ||
+        head.eventHash !== previousHash ||
+        head.lastEventId !== events[events.length - 1]?.id)
+    ) {
+      return {
+        valid: false,
+        verified: events.length,
+        brokenAt: head.lastEventId,
+        reason: `Recorded chain head at sequence ${head.sequence} does not match the event history`,
+        verifiedAt: new Date().toISOString(),
+      };
+    }
+    if (!head && events.length > 0) {
+      return {
+        valid: false,
+        verified: events.length,
+        brokenAt: events[events.length - 1].id,
+        reason: "Sensitive action chain head is missing",
+        verifiedAt: new Date().toISOString(),
+      };
     }
 
     return {

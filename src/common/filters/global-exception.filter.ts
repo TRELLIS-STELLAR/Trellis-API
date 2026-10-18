@@ -12,11 +12,14 @@ import { ConfigService } from "@nestjs/config";
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { AppException } from "../errors/app.exception";
+import { mapDatabaseError } from "../errors/database-error-mapper";
 import { ErrorCode, ErrorDomain } from "../errors/error-codes";
 import {
+  getProblemType,
   getErrorTaxonomy,
   sanitizeClientMessage,
 } from "../errors/error-taxonomy";
+import { getRemediationHint } from "../errors/remediation-hints";
 
 interface ValidationConstraints {
   [property: string]: string[];
@@ -91,10 +94,24 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         errorCode = this.mapStatusToCode(status);
       }
     } else {
-      // Unhandled / unexpected exception (e.g. Error, DB connection loss)
-      status = HttpStatus.INTERNAL_SERVER_ERROR;
-      errorCode = ErrorCode.INTERNAL_ERROR;
-      clientMessage = "An unexpected error occurred";
+      // Issue #97: a driver failure must never reach the client verbatim. The
+      // raw text names tables, columns, constraint names and — for 22P02 — the
+      // offending value, so it is mapped to a sanitized AppException here and
+      // left to `logError`/`reportToSentry` below for the server-side record.
+      const databaseError = mapDatabaseError(exception);
+      if (databaseError) {
+        status = databaseError.getStatus();
+        errorCode = databaseError.errorCode;
+        domain = databaseError.domain;
+        retryable = databaseError.retryable;
+        retryAfterSeconds = databaseError.retryAfterSeconds;
+        recoveryGuidance = databaseError.recoveryGuidance;
+        clientMessage = this.extractMessage(databaseError);
+      } else {
+        status = HttpStatus.INTERNAL_SERVER_ERROR;
+        errorCode = ErrorCode.INTERNAL_ERROR;
+        clientMessage = "An unexpected error occurred";
+      }
     }
 
     // 2. Resolve taxonomy defaults for domain, retryability, and recovery guidance
@@ -115,6 +132,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     this.logError(exception, status, correlationId, request);
 
     response.status(status).json({
+      type: getProblemType(errorCode),
+      title: taxonomy.defaultMessage,
+      status,
+      detail: safeMessage,
+      instance: request.path ?? request.url,
+      remediation: recoveryGuidance,
+      remediationHint: getRemediationHint(errorCode, correlationId),
       statusCode: status,
       errorCode,
       domain,

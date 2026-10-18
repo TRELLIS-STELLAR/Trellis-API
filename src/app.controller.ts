@@ -4,11 +4,15 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiExcludeEndpoint,
 } from "@nestjs/swagger";
 import { AppService } from "./app.service";
 import { RateLimit } from "./common/decorators/rate-limit.decorator";
 import { JwtAuthGuard } from "./core/auth/jwt.guard";
 import { Public } from "./common/decorators/public.decorator";
+import { RequireRole } from "./common/guard/roles.decorator";
+import { Role } from "./common/guard/roles.enum";
+import type { StorageSchemaCompatibilityReport } from "./storage-compatibility/storage-schema-compatibility";
 
 @ApiTags("Info")
 @Controller()
@@ -77,6 +81,17 @@ export class AppController {
     modules: string[];
   } {
     return this.appService.getInfo();
+  }
+
+  // Internal operator diagnostics. Keeping this out of the public OpenAPI/SDK
+  // contract avoids exposing an operational database-inspection surface to
+  // client integrations while preserving the authenticated HTTP route.
+  @ApiExcludeEndpoint()
+  @Get("ops/storage/migration-compatibility")
+  @RequireRole(Role.OPERATOR)
+  @RateLimit({ level: "standard" })
+  getStorageMigrationCompatibility(): Promise<StorageSchemaCompatibilityReport> {
+    return this.appService.getStorageMigrationCompatibility();
   }
 
   @UseGuards(JwtAuthGuard)
