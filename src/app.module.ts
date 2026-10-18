@@ -26,6 +26,8 @@ import { AuthModule } from "./core/auth/auth.module";
 import { UserModule } from "./core/user/user.module";
 import { ProfileModule } from "./core/profile/profile.module";
 import { InvitationModule } from "./core/invitation/invitation.module";
+import { OwnershipTransferModule } from "./core/ownership/ownership-transfer.module";
+import { OwnershipTransfer } from "./core/ownership/entities/ownership-transfer.entity";
 
 // Modules – infrastructure
 import { AuditModule } from "./infrastructure/audit/audit.module";
@@ -316,6 +318,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
             InvariantReportEntity,
             SearchRecord,
             Invitation,
+            OwnershipTransfer,
             RetryOperation,
             PauseScope,
             PauseAuditLog,
@@ -346,6 +349,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     UserModule,
     ProfileModule,
     InvitationModule,
+    OwnershipTransferModule,
     AuditModule,
     OracleModule,
     PortfolioModule,
