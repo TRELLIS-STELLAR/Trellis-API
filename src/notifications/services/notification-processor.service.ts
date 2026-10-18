@@ -151,18 +151,42 @@ export class NotificationProcessor {
         continue;
       }
 
-      // Create delivery log entry
-      const deliveryLog = this.deliveryLogRepo.create({
-        notificationId,
-        userId: notification.userId,
-        channel,
-        status: DeliveryStatus.PENDING,
-        maxAttempts: notification.maxAttempts,
-        providerResponse: bypassedUserPreference
-          ? { bypassedUserPreference: true, bypassReason: 'MANDATORY_ALERT' }
-          : undefined,
+      // A Bull retry can run after the provider accepted the request but before
+      // this worker persisted its result.  Never re-send a channel with a
+      // terminal successful log; use the same failed log for a genuine retry.
+      // This preserves the existing delivery-log contract while making retries
+      // idempotent for the normal crash/retry path.
+      const previousLog = await this.deliveryLogRepo.findOne({
+        where: { notificationId, channel },
+        order: { createdAt: 'DESC' },
       });
-      const savedLog = await this.deliveryLogRepo.save(deliveryLog);
+      if (
+        previousLog?.status === DeliveryStatus.SENT ||
+        previousLog?.status === DeliveryStatus.DELIVERED
+      ) {
+        this.logger.log(
+          `Notification ${notificationId} channel ${channel} already delivered; suppressing duplicate`,
+        );
+        continue;
+      }
+
+      const savedLog = previousLog
+        ? previousLog
+        : await this.deliveryLogRepo.save(this.deliveryLogRepo.create({
+            notificationId,
+            userId: notification.userId,
+            channel,
+            status: DeliveryStatus.PENDING,
+            maxAttempts: notification.maxAttempts,
+            providerResponse: bypassedUserPreference
+              ? { bypassedUserPreference: true, bypassReason: 'MANDATORY_ALERT' }
+              : undefined,
+          }));
+
+      await this.deliveryLogRepo.update(savedLog.id, {
+        status: DeliveryStatus.PENDING,
+        attemptCount: (savedLog.attemptCount ?? 0) + 1,
+      });
 
       // Deliver
       try {
