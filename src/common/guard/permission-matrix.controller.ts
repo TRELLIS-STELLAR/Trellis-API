@@ -1,9 +1,12 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Param,
   Req,
   UseGuards,
+  BadRequestException,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -11,6 +14,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
+  ApiBody,
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "src/core/auth/jwt.guard";
 import { Roles, Role } from "src/common/decorators/roles.decorator";
@@ -20,13 +24,29 @@ import {
   getActionsForRole,
   getSensitiveActions,
 } from "./permission-matrix";
-import { normalizeRole, getRolePermissions } from "./roles.enum";
+import { normalizeRole, getRolePermissions, Permission } from "./roles.enum";
+import {
+  PermissionDiffService,
+  PermissionDiffReport,
+} from "./permission-diff.service";
+
+export class PermissionDiffDto {
+  targetType: "role" | "user";
+  targetId: string;
+  currentRoles?: string[];
+  proposedRoles?: string[];
+  proposedPermissions?: Permission[];
+}
 
 @ApiTags("Permissions")
 @ApiBearerAuth()
 @Controller("permissions")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PermissionMatrixController {
+  constructor(
+    private readonly permissionDiffService: PermissionDiffService,
+  ) {}
+
   @Get("matrix")
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: "List all permission matrix entries" })
@@ -52,6 +72,40 @@ export class PermissionMatrixController {
   getSensitiveActions() {
     const entries = getSensitiveActions();
     return { success: true, entries, total: entries.length };
+  }
+
+  @Post("diff")
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: "Generate a permission-diff report before applying role or policy changes" })
+  @ApiBody({ type: PermissionDiffDto })
+  @ApiResponse({ status: 200, description: "Permission diff report" })
+  generateDiff(@Body() dto: PermissionDiffDto): PermissionDiffReport {
+    if (!dto || !dto.targetType || !dto.targetId) {
+      throw new BadRequestException("targetType ('role' | 'user') and targetId are required.");
+    }
+
+    if (dto.targetType === "role") {
+      if (!dto.proposedPermissions || !Array.isArray(dto.proposedPermissions)) {
+        throw new BadRequestException("proposedPermissions array is required for role diff.");
+      }
+      return this.permissionDiffService.generateRoleDiff(
+        dto.targetId,
+        dto.proposedPermissions,
+      );
+    }
+
+    if (dto.targetType === "user") {
+      if (!dto.proposedRoles || !Array.isArray(dto.proposedRoles)) {
+        throw new BadRequestException("proposedRoles array is required for user diff.");
+      }
+      return this.permissionDiffService.generateUserRoleDiff(
+        dto.targetId,
+        dto.currentRoles ?? [Role.USER],
+        dto.proposedRoles,
+      );
+    }
+
+    throw new BadRequestException(`Invalid targetType '${dto.targetType}'. Must be 'role' or 'user'.`);
   }
 
   @Get("my-permissions")

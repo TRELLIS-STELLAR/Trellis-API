@@ -19,6 +19,7 @@ import {
   getErrorTaxonomy,
   sanitizeClientMessage,
 } from "../errors/error-taxonomy";
+import { getRemediationHint } from "../errors/remediation-hints";
 
 interface ValidationConstraints {
   [property: string]: string[];
@@ -137,6 +138,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       detail: safeMessage,
       instance: request.path ?? request.url,
       remediation: recoveryGuidance,
+      remediationHint: getRemediationHint(errorCode, correlationId),
       statusCode: status,
       errorCode,
       domain,

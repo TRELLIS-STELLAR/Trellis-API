@@ -409,6 +409,7 @@ Every markdown document in this repository, grouped by topic:
 - [monitoring/README.md](monitoring/README.md) - Operational monitoring stack configuration (Prometheus/Grafana)
 - [docs/kubernetes-health-probes.md](docs/kubernetes-health-probes.md) - Liveness, readiness, and startup probe configuration for Kubernetes
 - [docs/operational-rollout-guardrails.md](docs/operational-rollout-guardrails.md) - Operational rollout guardrails, bounded caching, concurrency controls, and privacy-safe data export
+- [docs/OPERATIONAL_RESILIENCE_AND_REMEDIATION.md](docs/OPERATIONAL_RESILIENCE_AND_REMEDIATION.md) - Operational resilience, permission diffs, error remediation hints, fuzz guarantees, and synthetic journey monitoring
 - [PROFILING.md](PROFILING.md) - Performance monitoring and profiling documentation
 - [src/observability/PROFILING_GUIDE.md](src/observability/PROFILING_GUIDE.md) - Guide to using the built-in profiling tools
 

@@ -185,6 +185,7 @@ import { ProfilingMiddleware } from "./profiling/profiling.middleware";
 import { GraphqlGatewayModule } from "./graphql/graphql.module";
 import { ModuleRegistryModule } from "./modules/registry/module-registry.module";
 import { QuotaAdminController } from "./common/quota/quota-admin.controller";
+import { ErrorCatalogController } from "./common/errors/error-catalog.controller";
 import { VersioningModule } from "./common/versioning/versioning.module";
 // Modules referenced in `imports[]` that were never imported.
 import { ExportModule } from "./infrastructure/export/export.module";
@@ -404,7 +405,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     FeatureRolloutModule,
   ],
 
-  controllers: [AppController, QuotaAdminController],
+  controllers: [AppController, QuotaAdminController, ErrorCatalogController],
 
   providers: [
     AppService,
