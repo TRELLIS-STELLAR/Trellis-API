@@ -1,5 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { Command } from "nestjs-command";
+// Fallback decorator shim when nestjs-command is not installed
+const Command = (_options?: any): MethodDecorator => {
+  return (_target: any, _propertyKey: string | symbol, descriptor: any) => descriptor;
+};
 import { DatabaseIndexService } from "./database-index.service";
 import { logger } from "../../config/logger";
 

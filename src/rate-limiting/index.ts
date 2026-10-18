@@ -4,8 +4,8 @@ export type { RateLimitConfig } from "./rate-limiter.service";
 export { DistributedRateLimitGuard } from "./rate-limiting.guard";
 export { RateLimitMiddleware } from "./rate-limit.middleware";
 export { RateLimitingController } from "./rate-limiting.controller";
-export {
-  RateLimitStrategy,
+export { RateLimitStrategy } from "./interfaces";
+export type {
   RateLimitPolicy,
   RateLimitDecision,
   RateLimitEntry,

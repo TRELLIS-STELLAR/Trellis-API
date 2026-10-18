@@ -161,6 +161,18 @@ export class AuditLog extends BaseEntity {
   @Column({ type: "integer", nullable: true })
   resultingVersion: number;
 
+  @Column({ type: "integer", nullable: true })
+  sequence: number;
+
+  @Column({ type: "varchar", length: 64, nullable: true })
+  previousHash: string | null;
+
+  @Column({ type: "varchar", length: 64, nullable: true })
+  hash: string;
+
+  @Column({ type: "varchar", length: 64, nullable: true })
+  payloadHash: string;
+
   // ---------------------------------------------------------------------------
   // Tamper-evident ledger sealing fields
   // ---------------------------------------------------------------------------

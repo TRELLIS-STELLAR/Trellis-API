@@ -27,8 +27,8 @@ export {
 } from "./adapters/dashboard-ws-auth.adapter";
 
 // Interface exports
-export {
-  DashboardEvent,
+export { DashboardEvent } from "./interfaces/websocket.interfaces";
+export type {
   ConnectionInfo,
   BufferedEvent,
   ClientMessage,
@@ -47,14 +47,14 @@ export {
 } from "./interfaces/websocket.interfaces";
 
 // Upstream connection types from connection pool
-export {
+export type {
   UpstreamConnection,
   PoolConfig,
   PoolStats,
 } from "./services/connection-pool.service";
 
 // Client config and state types
-export {
+export type {
   ClientConfig,
   ConnectionState,
   EventHandler,

@@ -17,7 +17,7 @@ export function getProblemType(code: ErrorCode): string {
   return `${PROBLEM_TYPE_BASE_URL}/${code}`;
 }
 
-export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
+export const ERROR_TAXONOMY: Partial<Record<ErrorCode, ErrorTaxonomyEntry>> = {
   // Generic & System
   [ErrorCode.INTERNAL_ERROR]: {
     domain: ErrorDomain.SYSTEM,
@@ -383,7 +383,7 @@ export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
   [ErrorCode.IMPORT_COMMIT_FAILED]: {
     domain: ErrorDomain.SYSTEM,
     retryable: true,
-    retyAfterSeconds: 5,
+    retryAfterSeconds: 5,
     retryStrategy: "exponential_backoff",
     defaultMessage: "Import commit failed",
     recoveryGuidance:
@@ -445,3 +445,42 @@ export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
     userSafe: true,
   },
 };
+
+export function getErrorTaxonomy(code: ErrorCode): ErrorTaxonomyEntry {
+  return (
+    ERROR_TAXONOMY[code] ?? {
+      domain: ErrorDomain.SYSTEM,
+      retryable: false,
+      retryStrategy: "none",
+      defaultMessage: "An unexpected error occurred",
+      recoveryGuidance:
+        "Please quote the correlationId when contacting support or try again later.",
+      userSafe: true,
+    }
+  );
+}
+
+export function sanitizeClientMessage(
+  rawMessage: unknown,
+  isProduction?: boolean,
+  errorCode?: ErrorCode,
+): string {
+  const code = errorCode ?? ErrorCode.INTERNAL_ERROR;
+  const taxonomy = getErrorTaxonomy(code);
+
+  if (typeof rawMessage !== "string" || !rawMessage.trim()) {
+    return taxonomy.defaultMessage;
+  }
+
+  const isLeakingInternal =
+    /connection|postgres|select\s|insert\s|update\s|delete\s|from\s|where\s|pg_|typeorm|knex|at\s.*\:\d+/i.test(
+      rawMessage,
+    );
+
+  if (isProduction && (isLeakingInternal || code === ErrorCode.INTERNAL_ERROR)) {
+    return taxonomy.defaultMessage;
+  }
+
+  return rawMessage;
+}
+

@@ -106,7 +106,7 @@ describe("storage schema migration compatibility", () => {
 
     await expect(
       readAppliedMigrations(dataSourceWithQuery(query), 3, sleep),
-    ).rejects.toMatchObject<Partial<MigrationHistoryUnavailableError>>({
+    ).rejects.toMatchObject({
       name: "MigrationHistoryUnavailableError",
       attempts: 1,
       errorCode: "42P01",

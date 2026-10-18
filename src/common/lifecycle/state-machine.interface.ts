@@ -25,12 +25,13 @@ export interface TransitionRule<TState extends string, TContext = TransitionCont
   isAuditRequired?: boolean;
 }
 
-export interface StateMetadata<TState extends string> {
-  state: TState;
-  displayName: string;
-  description: string;
-  isTerminal: boolean;
+export interface StateMetadata<TState extends string = string> {
+  state?: TState;
+  displayName?: string;
+  description?: string;
+  isTerminal?: boolean;
   isLocked?: boolean; // When true, mutating operations on the record are disallowed
+  [key: string]: unknown;
 }
 
 export interface StateMachineDefinition<TState extends string, TContext = TransitionContext> {

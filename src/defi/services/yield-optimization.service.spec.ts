@@ -45,7 +45,7 @@ describe("YieldOptimizationService", () => {
   let strategyRepo: Record<string, jest.Mock>;
   let positionRepo: Record<string, jest.Mock>;
   let protocolRegistry: Record<string, jest.Mock>;
-  let mockAdapter: Record<string, jest.Mock>;
+  let mockAdapter: any;
 
   beforeEach(async () => {
     mockAdapter = {

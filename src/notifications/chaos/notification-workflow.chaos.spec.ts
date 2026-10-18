@@ -512,7 +512,7 @@ describe("notification workflow chaos", () => {
       const processor = new NotificationProcessor(
         notifRepo, logRepo,
         // Use the stale injector as the preference source
-        staleInjector as typeof prefRepo,
+        staleInjector as unknown as typeof prefRepo,
         undefined, scenario.ledger,
       );
       processor.registerProvider(mockEmailProvider(async () => {
@@ -555,7 +555,7 @@ describe("notification workflow chaos", () => {
       let delivered = 0;
       const processor = new NotificationProcessor(
         notifRepo, logRepo,
-        staleInjector as typeof prefRepo,
+        staleInjector as unknown as typeof prefRepo,
       );
       processor.registerProvider(mockEmailProvider(async () => {
         delivered += 1;

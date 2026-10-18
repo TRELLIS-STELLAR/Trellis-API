@@ -442,6 +442,18 @@ export class DeterministicStateMachine<
     };
   }
 
+  /**
+   * Derives a unified state model for UI/API contracts.
+   */
+  public deriveStateModel(currentState: TState): StateDerivedModel<TState> {
+    return {
+      state: currentState,
+      isTerminal: this.isTerminal(currentState),
+      allowedTransitions: this.getAllowedTransitions(currentState),
+      stateMetadata: this.getStateMetadata(currentState),
+    };
+  }
+
   private recordAudit(
     kind: "evaluation" | "transition",
     fromState: TState,
@@ -467,7 +479,7 @@ export class DeterministicStateMachine<
     };
     this.auditTrail.push(entry);
     if (!allowed) {
-      this.logger.warn(`${kead} ${fromState} -> ${toState} rejected: ${reason ?? "unknown"}`);
+      this.logger.warn(`${kind} ${fromState} -> ${toState} rejected: ${reason ?? "unknown"}`);
     }
   }
 }

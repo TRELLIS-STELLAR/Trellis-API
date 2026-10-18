@@ -4,8 +4,16 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
-  TooManyRequestsException,
+  HttpException,
+  HttpStatus,
 } from "@nestjs/common";
+
+export class TooManyRequestsException extends HttpException {
+  constructor(message = "Too Many Requests") {
+    super(message, HttpStatus.TOO_MANY_REQUESTS);
+  }
+}
+
 import { InjectRepository } from "@nestjs/typeorm";
 import { MoreThan, Repository } from "typeorm";
 import { AgentReview, ReviewStatus } from "./entities/agent-review.entity";

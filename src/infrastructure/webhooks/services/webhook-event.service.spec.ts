@@ -29,7 +29,7 @@ describe("WebhookEventService inbound replay claims", () => {
       ),
     ).rejects.toMatchObject({
       response: { statusCode: 409, reason: "duplicate_event" },
-    } satisfies Partial<ConflictException>);
+    } as any);
 
     expect(subscriptions.findActiveForEvent).not.toHaveBeenCalled();
     expect(deliveries.createDeliveries).not.toHaveBeenCalled();

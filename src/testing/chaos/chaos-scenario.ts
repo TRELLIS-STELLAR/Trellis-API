@@ -148,8 +148,8 @@ export class StaleReadInjector<T extends { id?: string }> {
 
   create = (value: Partial<T>): T => this.repo.create(value);
 
-  find = (options?: unknown): Promise<T[]> =>
-    this.repo.find(options);
+  find = (): Promise<T[]> =>
+    this.repo.find();
 
   save = (value: T): Promise<T> => this.repo.save(value);
 

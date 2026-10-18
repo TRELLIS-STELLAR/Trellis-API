@@ -556,7 +556,7 @@ describe("DeFi workflow chaos", () => {
       })) as unknown as typeof fetch;
 
       const service = new YieldOptimisationService(
-        stalePositionRepo as typeof positionRepo,
+        stalePositionRepo as unknown as typeof positionRepo,
         yieldRepo,
         goodFetch,
         undefined,

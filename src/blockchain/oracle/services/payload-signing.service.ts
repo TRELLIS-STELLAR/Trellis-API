@@ -7,11 +7,11 @@ import {
   toUtf8Bytes,
   getAddress,
   verifyTypedData,
-  hashTypedData,
+  TypedDataEncoder,
 } from "ethers";
 import { ConfigService } from "@nestjs/config";
 import { canonicalJson } from "../../../common/serialization/canonical-json";
-import { canonicalizePayload } from "../../../common/serialization/canonical-payload";
+import { canonicalizeValue as canonicalizePayload } from "./nonce-management.service";
 
 /**
  * EJP-712 Domain for Trellis Oracle
@@ -266,6 +266,6 @@ export class PayloadSigningService {
       data,
     );
 
-    return hashTypedData({ domain, types, value });
+    return TypedDataEncoder.hash(domain, types, value);
   }
 }

@@ -42,6 +42,11 @@ jobs:
           src/graphql
           src/discovery/reviews/agent-reviews.service.spec.ts
           src/common/pagination/cursor-pagination.service.spec.ts
+      - name: Test release readiness gate
+        run: npm test -- --runInBand src/common/release/release-readiness-gate.spec.ts
+
+      - name: Enforce release readiness gate
+        run: npm run release:gate
 
       # Runs the full suite and prints the coverage summary against the
       # coverageThreshold floors in jest.config.js. Report-only for now: some

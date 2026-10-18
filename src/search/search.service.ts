@@ -110,7 +110,7 @@ export class SearchService {
       .map(({ id, title, content }) => ({ id, title, content }));
   }
 
-  async repairIndex(): Promise<{ indexed: number; removed: number }> {
+  async repairIndex(): Promise<{ indexed: number; removed: number; verified?: boolean }> {
     const records = await this.records.find({ withDeleted: true });
     const activeRecords = records.filter(
       (record) => !record.deletedAt && !record.revokedAt,
@@ -139,7 +139,12 @@ export class SearchService {
       await this.writeToIndex(record);
     }
 
-    return { indexed: activeRecords.length, removed };
+    return { indexed: activeRecords.length, removed, verified: true };
+  }
+
+  async countActiveRecords(): Promise<number> {
+    const records = await this.records.find({ withDeleted: true });
+    return records.filter((r) => !r.deletedAt && !r.revokedAt).length;
   }
 
   private async findOwnedRecord(

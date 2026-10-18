@@ -630,7 +630,7 @@ describe("retry scheduler chaos", () => {
       staleRepo.armStaleRead({ snapshot: staleOp, onCall: 1 });
 
       // Scheduler reads the stale PENDING snapshot …
-      const scheduler = new RetryScheduler(staleRepo as typeof repo, undefined, scenario.ledger, clock);
+      const scheduler = new RetryScheduler(staleRepo as unknown as typeof repo, undefined, scenario.ledger, clock);
       let handlerCalls = 0;
       await scheduler.execute("op-race", async () => {
         handlerCalls += 1;

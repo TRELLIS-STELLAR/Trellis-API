@@ -440,7 +440,7 @@ describe("background worker chaos", () => {
 
       const executedWith: unknown[] = [];
       const worker = new BackgroundWorker(
-        staleRepo as typeof baseRepo,
+        staleRepo as unknown as typeof baseRepo,
         undefined,
         scenario.ledger,
       );

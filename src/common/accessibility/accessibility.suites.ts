@@ -10,7 +10,7 @@ import {
   buildErrorRecoveryContract,
   buildWorkflowAccessibilityEnvelope,
   assertAccessibilityInvariants,
-} from "./accessibility.contract.ts";
+} from "./accessibility.contract";
 
 /**
  * Registry of core accessible workflow definitions for regression testing and client envelopes.

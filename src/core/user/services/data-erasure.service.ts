@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Not, Repository } from "typeorm";
-import { User } from "../../core/user/entities/user.entity";
+import { User } from "../entities/user.entity";
 
 /**
  * Right-to-be-forgotten erasure (issue #141).
@@ -187,7 +187,8 @@ export class DataErasureService {
    */
   async eraseAllSoftDeleted(limit = 100): Promise<ErasureResult[]> {
     const stale = await this.userRepository.find({
-      where: { deletedAt: Not(IsNull()) },
+      where: { deletedAt: Not(IsNull()) } as any,
+      withDeleted: true,
       take: limit,
     });
 

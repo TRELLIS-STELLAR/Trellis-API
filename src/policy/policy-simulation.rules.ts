@@ -917,6 +917,7 @@ function evaluateTradingPolicyImpact(
     );
 
     if (wasAllowed.allowed && !nowAllowed.allowed) {
+      const blocked = nowAllowed as { allowed: false; code: string; reason: string };
       rejectedTradeCount++;
       affectedRecords.push({
         recordId: trade.tradeId,
@@ -924,11 +925,11 @@ function evaluateTradingPolicyImpact(
         ownerId: maskIdentifier(trade.userId),
         impactType: "blocked",
         reversible: false,
-        reason: nowAllowed.reason,
+        reason: blocked.reason,
         beforeState: { status: "eligible", asset, amount: trade.amount, side },
         afterState: {
           status: "rejected",
-          violationCode: nowAllowed.code,
+          violationCode: blocked.code,
           asset,
           amount: trade.amount,
         },

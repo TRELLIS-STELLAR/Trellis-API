@@ -164,7 +164,7 @@ describe("stale read injection scenarios", () => {
       }));
       const staleRepo = scenario.staleReader(baseRepo);
 
-      const processor = new PaymentProcessor(staleRepo as typeof baseRepo, scenario.ledger);
+      const processor = new PaymentProcessor(staleRepo as unknown as typeof baseRepo, scenario.ledger);
 
       // First call: payment not yet in DB → creates and completes it
       await processor.process("pay-1", "100.00");
@@ -238,7 +238,7 @@ describe("stale read injection scenarios", () => {
       // The write store (primary) has version 2
       // The optimistic store uses the stale replica for reads but the primary
       // for the version check — so the conflict is detected.
-      const store = new OptimisticStore(staleRepo as typeof baseRepo, baseRepo);
+      const store = new OptimisticStore(staleRepo as unknown as typeof baseRepo, baseRepo);
 
       // Attempt to update using the version from the stale read → conflict
       await expect(

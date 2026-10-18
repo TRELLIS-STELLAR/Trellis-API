@@ -22,7 +22,7 @@ export interface FindOptions {
 export abstract class BaseRepository<
   T extends BaseEntity,
 > implements IBaseRepository<T> {
-  private readonly dataSource: DataSource;
+  protected readonly dataSource: DataSource;
   private readonly entityClass: new () => T;
 
   constructor(dataSource: DataSource, entityClass: new () => T) {

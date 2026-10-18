@@ -13,6 +13,8 @@
  * Issue: #64
  */
 
+import * as semver from "semver";
+
 export type TransformFn<T = Record<string, unknown>> = (record: T) => T;
 
 export interface CompatibilityTransform<T = Record<string, unknown>> {

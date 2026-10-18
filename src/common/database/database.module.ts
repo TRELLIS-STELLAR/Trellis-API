@@ -3,8 +3,6 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
 import { DataSource, DataSourceOptions } from "typeorm";
 import { SnakeNamingStrategy } from "./strategies/snake-naming.strategy";
-import { LedgerEventEntity } from "./entities/ledger-event.entity";
-import { LedgerService } from "./ledger.service";
 
 export const DATABASE_CONFIG = "DATABASE_CONFIG";
 export const DATABASE_DATA_SOURCE = "DATABASE_DATA_SOURCE";
@@ -39,12 +37,6 @@ export class DatabaseModule {
       inject: options.inject || [],
     };
 
-    const ledgerServiceProvider: Provider = {
-      provide: LEDGER_SERVICE,
-      useFactory: (dataSource: DataSource) => new LedgerService(dataSource),
-      inject: [DATABASE_DATA_SOURCE],
-    };
-
     return {
       module: DatabaseModule,
       imports: [
@@ -55,8 +47,8 @@ export class DatabaseModule {
           useFactory: options.useFactory,
         }),
       ],
-      providers: [dataSourceProvider, ledgerServiceProvider],
-      exports: [DATABASE_DATA_SOURCE, LEDGER_SERVICE, TypeOrmModule],
+      providers: [dataSourceProvider],
+      exports: [DATABASE_DATA_SOURCE, TypeOrmModule],
     };
   }
 
@@ -66,15 +58,11 @@ export class DatabaseModule {
   }): DynamicModule {
     return {
       module: DatabaseModule,
-      providers: [LedgerService],
       imports: [
         ...(options.imports || []),
-        TypeOrmModule.forFeature([
-          LedgerEventEntity,
-          ...(options.entities || []),
-        ]),
+        TypeOrmModule.forFeature(options.entities || []),
       ],
-      exports: [LedgerService, TypeOrmModule],
+      exports: [TypeOrmModule],
     };
   }
 }

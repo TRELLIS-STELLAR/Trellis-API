@@ -72,6 +72,11 @@ export function buildOpenApiConfig(): Omit<OpenAPIObject, "paths"> {
  * controller decorators and closes the app again. Nothing is written to disk.
  */
 export async function generateOpenApiDocument(): Promise<OpenAPIObject> {
+  // Ensure minimal environment variables exist so offline bootstrap succeeds without live credentials.
+  process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/openapi_gen";
+  process.env.JWT_SECRET = process.env.JWT_SECRET || "ci-openapi-export-secret";
+  process.env.PORT = process.env.PORT || "3001";
+
   // Mock TypeORM connection initialization so OpenAPI generation works offline without live Postgres.
   const originalInitialize = DataSource.prototype.initialize;
   DataSource.prototype.initialize = async function () {
