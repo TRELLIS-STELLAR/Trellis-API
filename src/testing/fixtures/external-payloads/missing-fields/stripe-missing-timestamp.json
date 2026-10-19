@@ -1,0 +1,16 @@
+{
+  "id": "stripe-missing-timestamp",
+  "category": "missing-fields",
+  "target": "payments.webhook-signature",
+  "description": "Stripe-Signature header carries a v1 digest but no t= timestamp token; the replay window cannot be evaluated.",
+  "input": {
+    "provider": "stripe",
+    "secrets": { "STRIPE_WEBHOOK_SECRET": "corpus_stripe_secret" },
+    "rawBody": "{\"id\":\"evt_missing_ts\",\"type\":\"payment_intent.succeeded\"}",
+    "headers": {
+      "stripe-signature": "v1=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "nowSeconds": 1800000000
+  },
+  "expected": { "ok": false, "reason": "missing_timestamp", "status": 400 }
+}

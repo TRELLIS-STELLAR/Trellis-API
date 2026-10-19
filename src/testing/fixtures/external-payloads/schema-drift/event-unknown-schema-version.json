@@ -1,0 +1,25 @@
+{
+  "id": "event-unknown-schema-version",
+  "category": "schema-drift",
+  "target": "events.replay",
+  "description": "Stored user.created event pinned to schema version 9.9, which no schema and no upcaster path knows about.",
+  "input": {
+    "events": [
+      {
+        "sequence": 1,
+        "eventId": "evt-corpus-unknown-version",
+        "eventName": "user.created",
+        "schemaVersion": "9.9",
+        "timestamp": "2026-01-01T00:00:00.000Z",
+        "producer": "core-user",
+        "payload": { "userId": "u9", "email": "u9@example.com", "role": "USER" }
+      }
+    ]
+  },
+  "expected": {
+    "outcome": "halted",
+    "poisonEvents": [
+      { "sequence": 1, "eventName": "user.created", "reasonMatches": "9.9" }
+    ]
+  }
+}

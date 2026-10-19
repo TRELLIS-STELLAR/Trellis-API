@@ -1,0 +1,18 @@
+{
+  "id": "inbound-duplicate-delivery",
+  "category": "replay",
+  "target": "webhooks.inbound",
+  "description": "Second delivery of an already-processed event id: signature and window are valid, the unique externalEventId constraint must answer 409.",
+  "input": {
+    "subscriptionId": "00000000-0000-4000-8000-000000000001",
+    "signingKey": "corpus_inbound_key",
+    "rawBody": "{\"id\":\"evt_duplicate\",\"type\":\"invoice.paid\"}",
+    "headers": {
+      "x-webhook-timestamp": "1800000000",
+      "x-webhook-signature": "sha256=efc11ffee47ab16ccf8b05595fc760eab3c62cd3c78f128f592dea84bf80fcb5"
+    },
+    "nowMillis": 1800000000000,
+    "publish": "duplicate-conflict"
+  },
+  "expected": { "status": 409, "reason": "duplicate_event" }
+}

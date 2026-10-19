@@ -1,0 +1,24 @@
+{
+  "id": "event-drifted-minor-upcast",
+  "category": "schema-drift",
+  "target": "events.replay",
+  "description": "Stored user.created v1.0 (drifted minor version) that the upcaster chain must lift to v2.0 before applying.",
+  "input": {
+    "events": [
+      {
+        "sequence": 1,
+        "eventId": "evt-corpus-upcast-10",
+        "eventName": "user.created",
+        "schemaVersion": "1.0",
+        "timestamp": "2026-01-01T00:00:00.000Z",
+        "producer": "core-user",
+        "payload": { "userId": "u-upcast", "email": "up@example.com", "role": "USER" }
+      }
+    ]
+  },
+  "expected": {
+    "outcome": "published",
+    "applied": 1,
+    "upcasts": { "user.created 1.0->2.0": 1 }
+  }
+}

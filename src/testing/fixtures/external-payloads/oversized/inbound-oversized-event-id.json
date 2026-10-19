@@ -1,0 +1,17 @@
+{
+  "id": "inbound-oversized-event-id",
+  "category": "oversized",
+  "target": "webhooks.inbound",
+  "description": "Correctly signed body whose event id is 300 characters, over the 255-char dedup key contract.",
+  "input": {
+    "subscriptionId": "00000000-0000-4000-8000-000000000001",
+    "signingKey": "corpus_inbound_key",
+    "rawBody": "{\"id\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"type\":\"invoice.paid\"}",
+    "headers": {
+      "x-webhook-timestamp": "1800000000",
+      "x-webhook-signature": "sha256=7fc640ece34da68449d4e405cbbdc143b0d674f4e8f21eed65f08f8fa2e6a422"
+    },
+    "nowMillis": 1800000000000
+  },
+  "expected": { "status": 400, "reason": "malformed_event" }
+}

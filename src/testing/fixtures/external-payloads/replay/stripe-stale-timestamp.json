@@ -1,0 +1,16 @@
+{
+  "id": "stripe-stale-timestamp",
+  "category": "replay",
+  "target": "payments.webhook-signature",
+  "description": "Correctly signed Stripe delivery whose t= is 600s old, outside the 300s replay window — a captured-and-replayed delivery.",
+  "input": {
+    "provider": "stripe",
+    "secrets": { "STRIPE_WEBHOOK_SECRET": "corpus_stripe_secret" },
+    "rawBody": "{\"id\":\"evt_replay_stripe\",\"type\":\"payment_intent.succeeded\"}",
+    "headers": {
+      "stripe-signature": "t=1799999400,v1=b859b5b5fedbd11fd23c29b01bf978f70cfb83d1ea7a6cec649e986f6423c6e1"
+    },
+    "nowSeconds": 1800000000
+  },
+  "expected": { "ok": false, "reason": "stale_timestamp", "status": 400 }
+}

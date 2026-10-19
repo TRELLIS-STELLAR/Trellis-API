@@ -1,0 +1,11 @@
+{
+  "id": "oracle-submit-missing-payload-id",
+  "category": "missing-fields",
+  "target": "api.body-validation",
+  "description": "Oracle payload submission without the payloadId needed to look up the signed payload.",
+  "input": {
+    "dto": "SubmitPayloadDto",
+    "payload": {}
+  },
+  "expected": { "rejected": true, "fields": ["payloadId"] }
+}

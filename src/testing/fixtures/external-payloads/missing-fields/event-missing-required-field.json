@@ -1,0 +1,25 @@
+{
+  "id": "event-missing-required-field",
+  "category": "missing-fields",
+  "target": "events.replay",
+  "description": "Stored user.created v1.0 event missing the required email field; replay must poison it, not apply it.",
+  "input": {
+    "events": [
+      {
+        "sequence": 1,
+        "eventId": "evt-corpus-missing-email",
+        "eventName": "user.created",
+        "schemaVersion": "1.0",
+        "timestamp": "2026-01-01T00:00:00.000Z",
+        "producer": "core-user",
+        "payload": { "userId": "u-missing-email", "role": "USER" }
+      }
+    ]
+  },
+  "expected": {
+    "outcome": "halted",
+    "poisonEvents": [
+      { "sequence": 1, "eventName": "user.created", "reasonMatches": "email" }
+    ]
+  }
+}

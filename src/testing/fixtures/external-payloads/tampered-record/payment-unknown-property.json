@@ -1,0 +1,17 @@
+{
+  "id": "payment-unknown-property",
+  "category": "tampered-record",
+  "target": "api.body-validation",
+  "description": "Payment body smuggling an undeclared 'isAdmin' property past the contract; forbidNonWhitelisted must reject it.",
+  "input": {
+    "dto": "CreatePaymentDto",
+    "payload": {
+      "amount": "10",
+      "currency": "XLM",
+      "destination": "GABC1234567890",
+      "idempotencyKey": "smuggled-prop-1",
+      "isAdmin": true
+    }
+  },
+  "expected": { "rejected": true, "fields": ["isAdmin"] }
+}

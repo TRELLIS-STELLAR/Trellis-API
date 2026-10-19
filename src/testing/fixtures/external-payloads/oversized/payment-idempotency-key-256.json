@@ -1,0 +1,21 @@
+{
+  "id": "payment-idempotency-key-256",
+  "category": "oversized",
+  "target": "api.body-validation",
+  "description": "Idempotency key one character over the 255-column contract; oversized client-supplied keys must not reach the store.",
+  "input": {
+    "dto": "CreatePaymentDto",
+    "payload": {
+      "amount": "10.5",
+      "currency": "XLM",
+      "destination": "GABC1234567890",
+      "idempotencyKey": "K256_______________________________________________________________________________________XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    }
+  },
+  "expected": {
+    "rejected": true,
+    "fields": [
+      "idempotencyKey"
+    ]
+  }
+}

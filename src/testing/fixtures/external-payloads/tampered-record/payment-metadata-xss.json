@@ -1,0 +1,29 @@
+{
+  "id": "payment-metadata-xss",
+  "category": "tampered-record",
+  "target": "api.body-validation",
+  "description": "Payment metadata carrying a script tag and a javascript: URI; the SanitizePipe must neutralise them before validation and persistence.",
+  "input": {
+    "dto": "CreatePaymentDto",
+    "payload": {
+      "amount": "10",
+      "currency": "XLM",
+      "destination": "GABC1234567890",
+      "idempotencyKey": "xss-metadata-1",
+      "metadata": {
+        "note": "<script>alert('corpus')</script>settlement <b>note</b>",
+        "callback": "javascript:alert(1)"
+      }
+    }
+  },
+  "expected": {
+    "rejected": false,
+    "sanitized": {
+      "destination": "GABC1234567890",
+      "metadata": {
+        "note": "settlement &lt;b&gt;note&lt;&#x2F;b&gt;",
+        "callback": "alert(1)"
+      }
+    }
+  }
+}
