@@ -130,6 +130,10 @@ the processor per request with `X-Payment-Processor: sandbox` (or
 `NODE_ENV=production`. See [docs/SANDBOX_MODE.md](docs/SANDBOX_MODE.md) for the
 available scenarios, configuration and limitations.
 
+For oracle confirmation thresholds, stale RPC heads, retry recovery, and
+ledger entry expiry boundaries, use the fixed offline corpus documented in
+[Ledger sequence fixtures](docs/LEDGER_SEQUENCE_FIXTURES.md).
+
 ### Environment Configuration
 
 The API validates all required secrets at startup. Invalid or placeholder values
