@@ -11,6 +11,10 @@ import {
   ProrationQuote,
   quotePlanChange,
 } from "./billing-proration";
+import {
+  DomainInvariants,
+  enforceInvariant,
+} from "../common/invariants/domain-invariants";
 
 export interface BillingPlan {
   id: string;
@@ -198,9 +202,25 @@ export class BillingService {
       isFirstSubscription,
     });
 
+    // Settle on a copy and check the entitlement transition before anything is
+    // committed, so a violation leaves the account exactly as it was.
+    const next: AccountSubscription = { ...subscription, planId: plan.id };
+    this.applyProrationToSubscription(next, proration);
+    try {
+      enforceInvariant(() =>
+        DomainInvariants.assertBalanceTransition({
+          subject: `credit of ${accountId}`,
+          before: subscription.creditBalanceCents,
+          after: next.creditBalanceCents,
+          integral: true,
+        }),
+      );
+    } catch (error) {
+      if (isFirstSubscription) this.subscriptions.delete(accountId);
+      throw error;
+    }
+    Object.assign(subscription, next);
     this.accountPlans.set(accountId, plan.id);
-    subscription.planId = plan.id;
-    this.applyProrationToSubscription(subscription, proration);
 
     // Every plan change is written to the ledger — an activation included,
     // since that is the first money the account is charged — but re-submitting

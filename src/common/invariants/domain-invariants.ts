@@ -6,6 +6,8 @@
  * Ensures impossible states are rejected at the domain boundary.
  */
 
+import { UnprocessableEntityException } from "@nestjs/common";
+
 export class InvariantViolationError extends Error {
   public readonly invariantCode: string;
   public readonly details: Record<string, any>;
@@ -423,5 +425,85 @@ export class DomainInvariants {
         { moduleStatus, targetState },
       );
     }
+  }
+
+  /**
+   * INVARIANT 11: Balance Transition
+   * A balance moves between finite values and never ends below zero;
+   * integral balances (minor units such as cents) must stay safe integers.
+   */
+  public static assertBalanceTransition(params: {
+    subject: string;
+    before: number;
+    after: number;
+    integral?: boolean;
+  }): void {
+    const { subject, before, after, integral } = params;
+    if (!Number.isFinite(before) || !Number.isFinite(after)) {
+      throw new InvariantViolationError(
+        "BALANCE_NOT_FINITE",
+        `Balance of ${subject} must move between finite values.`,
+        { subject, before, after },
+      );
+    }
+    if (after < 0) {
+      throw new InvariantViolationError(
+        "NEGATIVE_BALANCE",
+        `Balance of ${subject} cannot become negative: ${after}`,
+        { subject, before, after },
+      );
+    }
+    if (integral && !Number.isSafeInteger(after)) {
+      throw new InvariantViolationError(
+        "BALANCE_NOT_INTEGRAL",
+        `Balance of ${subject} must be a whole number of minor units.`,
+        { subject, after },
+      );
+    }
+  }
+
+  /**
+   * INVARIANT 12: Ownership Transition
+   * An owned entity always has an owner, and an update can never reassign it:
+   * no API flow transfers ownership, so a changed owner is a defect.
+   */
+  public static assertOwnershipTransition(params: {
+    entityId: string;
+    beforeOwnerId: string;
+    afterOwnerId: string;
+  }): void {
+    const { entityId, beforeOwnerId, afterOwnerId } = params;
+    if (!afterOwnerId?.trim()) {
+      throw new InvariantViolationError(
+        "ORPHAN_ENTITY",
+        "Domain entity must have an associated owner ID.",
+        { entityId },
+      );
+    }
+    if (afterOwnerId !== beforeOwnerId) {
+      throw new InvariantViolationError(
+        "OWNERSHIP_REASSIGNMENT_BLOCKED",
+        `Owner of ${entityId} cannot change through an update.`,
+        { entityId, beforeOwnerId, afterOwnerId },
+      );
+    }
+  }
+}
+
+/**
+ * Runs an invariant check at an API boundary, turning a violation into a 422
+ * that carries the stable `invariantCode` instead of an opaque 500.
+ */
+export function enforceInvariant(check: () => void): void {
+  try {
+    check();
+  } catch (error) {
+    if (error instanceof InvariantViolationError) {
+      throw new UnprocessableEntityException({
+        message: error.message,
+        invariantCode: error.invariantCode,
+      });
+    }
+    throw error;
   }
 }

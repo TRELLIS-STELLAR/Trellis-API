@@ -115,3 +115,48 @@ node node_modules/jest/bin/jest.js src/dependency-health/degraded-mode/degraded-
 
 Covers the pure policy plus normal, failure, retry, fail-safe and authorization
 paths.
+
+## User-safe enforcement at the request boundary (#267)
+
+Mark a route with `@RequiresCapability("<capability>")`
+(`degraded-mode/requires-capability.decorator.ts`). The global
+`DegradedModeGuard`, registered by `DegradedModeModule`, then enforces the
+mode:
+
+- **Undecorated routes** return immediately, without evaluating the mode.
+- **Capability disabled:** `503` with `errorCode: SERVICE_UNAVAILABLE`,
+  `retryable: true` and a `Retry-After: 30` header (delay-seconds,
+  RFC 9110 §10.2.3). The message names only the capability. Dependency names,
+  hosts and diagnostics stay in the operator-only `/api/v1/dependency-mode`
+  endpoints and the server log.
+- **Health evaluation keeps failing:** the existing fail-safe decision applies
+  (`restricted`), so gated routes are blocked rather than assumed healthy.
+- **Recovery:** the next evaluation (cache TTL `DEGRADED_MODE_CACHE_TTL_MS`)
+  re-enables the route automatically. Clearing a manual override invalidates
+  the cache immediately.
+- **Authorization:** the guard is registered in an imported module, so the
+  application's global auth guards run first. Anonymous callers get `401`
+  and never learn the mode.
+
+First vertical slice: `POST /payments/stellar/create` and
+`POST /payments/stellar/submit` require `payments`. This matches the
+degradation matrix rule that an unconfirmed payment must never be reported as
+successful. Read routes such as `GET /payments/stellar/status` are not gated.
+
+Because the mode is evaluated with `networkProbes: false`, `payments` is
+disabled by:
+- the database failing its `SELECT 1`;
+- an unset `STELLAR_NETWORK_PASSPHRASE`;
+- an invalid `STELLAR_HORIZON_URL`;
+- an operator's manual `restricted` or `maintenance` override;
+- the fail-safe decision when health evaluation itself keeps failing.
+
+It is **not** disabled by Horizon being unreachable. Without network probes,
+the Horizon check only validates the URL, which keeps the request path free of
+outbound calls. During a Horizon outage, operators activate a manual override
+(`POST /api/v1/dependency-mode/manual`) to block payment writes. Note that
+Stellar now considers Horizon deprecated in favour of Stellar RPC; this
+codebase's payment adapter still submits through Horizon.
+
+**Rollback:** remove the decorator from a route. Removing the `APP_GUARD`
+provider disables enforcement everywhere. No data is involved.

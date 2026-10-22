@@ -1,5 +1,7 @@
+import { UnprocessableEntityException } from "@nestjs/common";
 import {
   DomainInvariants,
+  enforceInvariant,
   InvariantViolationError,
   PortfolioLifecycleState,
   TransactionSnapshot,
@@ -353,6 +355,80 @@ describe("Domain Invariant Test Suite (Issue #50)", () => {
       expect(() =>
         DomainInvariants.assertModuleCompatibility("deprecated", "enabled"),
       ).toThrow("DEPRECATED_MODULE_ENABLE_BLOCKED");
+    });
+  });
+  describe("Invariant 11: Balance Transition", () => {
+    const transition = (before: number, after: number, integral = false) => () =>
+      DomainInvariants.assertBalanceTransition({
+        subject: "XLM",
+        before,
+        after,
+        integral,
+      });
+
+    it("accepts a move to any finite non-negative balance", () => {
+      expect(transition(10, 0)).not.toThrow();
+      expect(transition(0, 2.5)).not.toThrow();
+    });
+
+    it.each([
+      [10, -0.0000001, false, "NEGATIVE_BALANCE"],
+      [10, NaN, false, "BALANCE_NOT_FINITE"],
+      [Infinity, 5, false, "BALANCE_NOT_FINITE"],
+      [100, 50.5, true, "BALANCE_NOT_INTEGRAL"],
+    ])("rejects %p -> %p (integral %p) as %s", (before, after, integral, code) => {
+      expect(transition(before, after, integral)).toThrow(code);
+    });
+  });
+
+  describe("Invariant 12: Ownership Transition", () => {
+    it("accepts an unchanged owner", () => {
+      expect(() =>
+        DomainInvariants.assertOwnershipTransition({
+          entityId: "p1",
+          beforeOwnerId: "u1",
+          afterOwnerId: "u1",
+        }),
+      ).not.toThrow();
+    });
+
+    it.each([
+      ["u2", "OWNERSHIP_REASSIGNMENT_BLOCKED"],
+      ["  ", "ORPHAN_ENTITY"],
+      [undefined, "ORPHAN_ENTITY"],
+    ])("rejects owner %p as %s", (afterOwnerId, code) => {
+      expect(() =>
+        DomainInvariants.assertOwnershipTransition({
+          entityId: "p1",
+          beforeOwnerId: "u1",
+          afterOwnerId: afterOwnerId as string,
+        }),
+      ).toThrow(code);
+    });
+  });
+
+  describe("enforceInvariant", () => {
+    it("maps a violation to a 422 carrying the invariant code", () => {
+      try {
+        enforceInvariant(() => {
+          throw new InvariantViolationError("NEGATIVE_BALANCE", "negative");
+        });
+        fail("expected a violation");
+      } catch (error) {
+        expect(error).toBeInstanceOf(UnprocessableEntityException);
+        expect(error.getResponse()).toMatchObject({
+          invariantCode: "NEGATIVE_BALANCE",
+        });
+      }
+    });
+
+    it("rethrows unrelated errors unchanged", () => {
+      const boom = new Error("boom");
+      expect(() =>
+        enforceInvariant(() => {
+          throw boom;
+        }),
+      ).toThrow(boom);
     });
   });
 });

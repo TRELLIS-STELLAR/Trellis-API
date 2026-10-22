@@ -10,12 +10,18 @@ describe("target allocations", () => {
   beforeEach(() => {
     versions = [];
     manager = {
-      findOne: jest.fn(async (entity) =>
-        entity === Portfolio ? { id: "p" } : versions[versions.length - 1],
-      ),
+      findOne: jest.fn(async (entity, options) => {
+        if (entity === Portfolio) return { id: "p" };
+        const version = options?.where?.version;
+        return version === undefined
+          ? versions[versions.length - 1]
+          : versions.find((entry) => entry.version === version);
+      }),
       find: jest.fn(async () => [
         { id: "a", ticker: "XLM" },
         { id: "b", ticker: "USD" },
+        { id: "c", ticker: "BTC" },
+        { id: "d", ticker: "ETH" },
       ]),
       create: jest.fn((_, value) => value),
       save: jest.fn(async (_, value) => {
@@ -80,5 +86,88 @@ describe("target allocations", () => {
     const history = await service.getTargetAllocationHistory("p");
     expect(history.map((entry) => entry.version)).toEqual([2, 1]);
     expect(history[1].allocations).toHaveLength(2);
+  });
+  describe("concurrent edits with baseVersion", () => {
+    beforeEach(async () => {
+      await service.setTargetAllocations("p", { XLM: 50, USD: 30, BTC: 20 });
+    });
+
+    it("keeps last-writer-wins when baseVersion is omitted", async () => {
+      await service.setTargetAllocations("p", { XLM: 100 });
+      expect(versions.map((v) => v.version)).toEqual([1, 2]);
+    });
+
+    it("writes directly when baseVersion is current", async () => {
+      expect(
+        await service.setTargetAllocations("p", { XLM: 60, USD: 40 }, 1),
+      ).toEqual({
+        version: 2,
+        allocations: { XLM: 60, USD: 40 },
+        merged: false,
+      });
+    });
+
+    it("merges a stale edit that touches different tickers", async () => {
+      // Client A moves 10% from XLM to USD; client B, still on v1, swaps BTC for ETH.
+      await service.setTargetAllocations("p", { XLM: 40, USD: 40, BTC: 20 }, 1);
+      const result = await service.setTargetAllocations(
+        "p",
+        { XLM: 50, USD: 30, ETH: 20 },
+        1,
+      );
+      expect(result).toEqual({
+        version: 3,
+        allocations: { ETH: 20, USD: 40, XLM: 40 },
+        merged: true,
+      });
+      expect(versions[2].allocations).toEqual([
+        { assetId: "d", ticker: "ETH", targetWeight: 20 },
+        { assetId: "b", ticker: "USD", targetWeight: 40 },
+        { assetId: "a", ticker: "XLM", targetWeight: 40 },
+      ]);
+    });
+
+    it("rejects overlapping edits with sorted conflicts and writes nothing", async () => {
+      await service.setTargetAllocations("p", { XLM: 45, USD: 35, BTC: 20 }, 1);
+      const error = await service
+        .setTargetAllocations("p", { XLM: 55, USD: 25, BTC: 20 }, 1)
+        .catch((e) => e);
+      expect(error.getStatus()).toBe(409);
+      expect(error.getResponse()).toMatchObject({
+        expectedVersion: 1,
+        actualVersion: 2,
+        action: "refresh",
+        conflicts: [
+          { field: "USD", base: 30, current: 35, proposed: 25 },
+          { field: "XLM", base: 50, current: 45, proposed: 55 },
+        ],
+      });
+      expect(versions).toHaveLength(2);
+    });
+
+    it("rejects a merge that breaks the 100% invariant", async () => {
+      await service.setTargetAllocations("p", { XLM: 40, USD: 30, BTC: 30 }, 1);
+      const error = await service
+        .setTargetAllocations("p", { XLM: 50, USD: 20, BTC: 30 }, 1)
+        .catch((e) => e);
+      expect(error.getStatus()).toBe(409);
+      expect(error.getResponse().message).toContain("100%");
+      expect(versions).toHaveLength(2);
+    });
+
+    it("treats a retried, already applied edit as a no-op", async () => {
+      const edit = { XLM: 60, USD: 20, BTC: 20 };
+      const first = await service.setTargetAllocations("p", edit, 1);
+      const retry = await service.setTargetAllocations("p", edit, 1);
+      expect(retry).toEqual(first);
+      expect(versions).toHaveLength(2);
+    });
+
+    it.each([5, -1, 1.5])("rejects an unusable baseVersion %p", async (v) => {
+      await expect(
+        service.setTargetAllocations("p", { XLM: 100 }, v),
+      ).rejects.toThrow();
+      expect(versions).toHaveLength(1);
+    });
   });
 });
