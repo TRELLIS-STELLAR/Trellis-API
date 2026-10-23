@@ -80,13 +80,13 @@
       "status": "unreleased",
       "impact": "compatible",
       "title": "Machine-readable protocol changelog",
-      "summary": "Adds GET /changelog/protocol backed by changelog/protocol-changes.json, validated against changelog/schema/protocol-changes.schema.json in CI and by npm run changelog:validate.",
+      "summary": "Adds GET /changelog/protocol backed by changelog/protocol-changes.json, validated against changelog/schema/protocol-changes.schema.json in CI and by npm run changelog:validate. Covers normal, failure, retry and authorization paths with automated tests and an operational runbook.",
       "protocolSurfaces": [
         {
           "kind": "http",
           "method": "GET",
           "path": "/changelog/protocol",
-          "description": "Protocol-facing changes with impact, migration and version filters."
+          "description": "Protocol-facing changes with impact, migration and version filters. Unauthenticated (@Public); no token required."
         },
         {
           "kind": "cli",
@@ -103,9 +103,9 @@
         "required": false,
         "automated": true,
         "steps": [],
-        "notes": "No migration. Consumers that need upgrade warnings can poll the endpoint from the version they run."
+        "notes": "No migration. Consumers that need upgrade warnings can poll the endpoint from the version they run. The reload() API allows hot-swapping the changelog without a restart; on failure the previous document is preserved."
       },
-      "relatedIssues": [126],
+      "relatedIssues": [126, 352],
       "docs": ["docs/protocol-changelog.md"]
     },
     {
