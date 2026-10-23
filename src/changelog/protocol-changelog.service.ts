@@ -99,6 +99,28 @@ export class ProtocolChangelogService implements OnModuleInit {
     return this.document ?? this.load();
   }
 
+  /**
+   * Reloads the changelog from disk and replaces the in-memory cache.
+   *
+   * Operators can call this (e.g. via an admin endpoint or SIGHUP handler) after
+   * rotating the changelog file without restarting the process. If the new file
+   * is invalid the old document is preserved and an error is thrown, so a bad
+   * deploy cannot erase a working changelog.
+   */
+  reload(): ProtocolChangelogDocument {
+    const previous = this.document;
+    try {
+      return this.load();
+    } catch (error) {
+      // Roll back to the last known-good document.
+      this.document = previous;
+      this.logger.error(
+        `reload() failed – retaining previous changelog: ${(error as Error).message}`,
+      );
+      throw error;
+    }
+  }
+
   /** Exposed so the validator script and the API share one code path. */
   validate(now: Date = new Date()): ProtocolChangelogValidationResult {
     const raw = readFileSync(this.resolvePath(), "utf8");
