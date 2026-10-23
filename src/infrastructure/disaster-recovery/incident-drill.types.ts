@@ -86,6 +86,11 @@ export interface RecoveryVerificationResult {
   duplicateSideEffectsDetected: number;
   terminalStateImmutabilityVerified: boolean;
   tenantIsolationVerified: boolean;
+  accessChecks: Array<{
+    entryId: string;
+    ownerAccessAllowed: boolean;
+    crossTenantAccessDenied: boolean;
+  }>;
   onChainLinksVerified: boolean;
   entries: Array<{
     id: string;

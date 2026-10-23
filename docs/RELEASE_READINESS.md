@@ -53,11 +53,17 @@ Non-critical changes require only the subset of **CRITICAL** severity checks.
 - **No Regression** (HIGH): Benchmark tests pass; no O(n²) algorithms; queries indexed
 - **Scaling** (MEDIUM): Known limits documented (max rows, rate limits, job queue behavior)
 
-## Automatable Checks
+## Automatable Checks & Verification Suite
 
-The following checks can be run automatically in CI:
+Trellis API provides an automated verification runner and CLI suite:
 
 ```bash
+# Full automated release readiness invariant verification (migrations, smoke tests, rollback)
+npm run verify:release-readiness
+
+# Automated unit tests for release readiness
+npx jest src/common/release/release-readiness.spec.ts
+
 # Unit test coverage
 npm run test:coverage
 
@@ -66,52 +72,120 @@ npm run test:integration
 
 # Secrets audit
 npm audit
-
-# Performance benchmarks
-npm run bench
 ```
 
-## Manual Checks
+### Automated Verification API
 
-The following checks require human review:
+Maintainers and CI/CD pipelines can trigger automated verification via the REST API:
 
-- Migration reversibility (test locally)
-- Edge case test coverage
-- Locking behavior review
-- Breaking change documentation
-- Rollback procedure validation
+```http
+POST /api/v1/admin/release-checklist/{prNumber}/verify
+Content-Type: application/json
+Authorization: Bearer <ADMIN_JWT>
 
-## Waiving Checks
-
-A check may be waived with **maintainer approval** if:
-
-1. The check is non-critical (MEDIUM or LOW severity)
-2. The reason is documented
-3. An approver explicitly signs off
-
-Waive with:
-```
-PATCH /api/v1/admin/release-checklist/{prNumber}/waive/{checkId}
 {
-  "reason": "This change does not require migrations in this deployment",
-  "approvedBy": "maintainer@example.com"
+  "migrations": [
+    { "filename": "1787313600000-create-module-registry.ts", "content": "..." }
+  ],
+  "smokeProbes": [
+    { "name": "health-check", "endpoint": "/health", "required": true }
+  ],
+  "schemaChanges": [
+    { "table": "users", "column": "avatarUrl", "isNew": true, "isNullable": true, "hasDefault": false }
+  ],
+  "options": {
+    "maxAttempts": 3,
+    "backoffMs": 150
+  }
 }
 ```
 
-## Approval Workflow
+The endpoint runs migration safety parsing, executes smoke probes with retry/backoff, and evaluates rollback backward-compatibility, automatically updating checklist statuses.
 
-1. **Author** submits PR with all changes
-2. **CI** runs automatable checks; results posted to PR
-3. **Maintainer** reviews non-automatable checks
-4. **Maintainer** marks checks as passed or waives with reason
-5. **Maintainer** approves release when all critical checks pass:
-   ```
-   PATCH /api/v1/admin/release-checklist/{prNumber}/approve
-   {
-     "approvedBy": "maintainer@example.com"
-   }
-   ```
-6. **Deployment gate** blocks deployment if checklist is not approved
+## Verification Invariants & Rules
+
+### 1. Migrations
+- **Reversibility**: Every migration must define an operational `down()` method. Migrations with empty down bodies or `throw new Error("irreversible")` fail verification.
+- **Locking Safety**: Rejects `LOCK TABLE` or `ACCESS EXCLUSIVE` in `up()`. These acquire table-level exclusive locks that stall live requests.
+- **Concurrent Indexing**: PostgreSQL `CREATE INDEX` queries must use `CONCURRENTLY` to avoid read/write locks on live tables.
+- **Column Defaults**: New columns added to existing tables must be `NULLABLE` or have a `DEFAULT`. `NOT NULL` without `DEFAULT` breaks concurrent writes from old application versions and prevents zero-downtime rollback.
+
+### 2. Smoke Tests with Automated Retry
+- **Transient Recovery**: Network probes and preflight endpoints are retried up to `maxAttempts` (default 3) with exponential backoff (multiplier 100-200ms) before reporting failure.
+- **Attempt Tracking**: Metrics distinguish immediate successes from retry recoveries (`succeeded on retry attempt N`).
+- **Required vs Optional**: Required probes (database ping, auth challenge, health live) fail the gate if retries exhaust. Optional probes (third-party analytics, external webhook pings) record warnings without blocking release.
+
+### 3. Zero-Downtime Rollback Safety
+- **Backward Compatibility**: In a rolling deployment, version N-1 code runs alongside version N database. Any schema change that breaks version N-1 queries is flagged as a breaking change.
+- **Column Lifecycle**:
+  - *Phase 1*: Add column as nullable or defaulted. Deploy code that writes both versions.
+  - *Phase 2*: Backfill historical rows.
+  - *Phase 3*: Add `NOT NULL` constraints only after 100% population.
+- **Revert Safety**: Down migrations must not drop tables or truncate records without an approved runbook and explicit waiver.
+
+### 4. Authorization & Waiver Audit Trail
+- All checklist mutations require `Role.ADMIN` enforced by `JwtAuthGuard` and `RolesGuard`.
+- Waivers require an approver identity and a detailed justification (minimum 10 characters).
+- Every state transition (`CREATE`, `CHECK_UPDATE`, `WAIVE`, `APPROVE`, `AUTOMATED_VERIFY`) is recorded in an audit log with actor and timestamp.
+
+## Release Gate
+
+Issue #372. `evaluateReleaseGate` in `src/common/release/release-gate.ts` turns
+the three kinds of release evidence into one decision. It reuses the migration
+and rollback analysis above and performs no I/O.
+
+```bash
+npm run release:gate -- evidence.json   # exit 0 PASS, 1 BLOCKED, 2 bad input
+```
+
+```json
+{
+  "releaseId": "v1.2.3",
+  "tests": {
+    "requiredSuites": ["unit", "e2e"],
+    "suites": [{ "name": "unit", "passed": 100, "failed": 0 }, { "name": "e2e", "passed": 20, "failed": 0, "retries": 1 }]
+  },
+  "migrations": [{ "filename": "1-add-col.ts", "content": "..." }],
+  "schemaChanges": [{ "table": "users", "column": "flag", "isNew": true, "isNullable": true, "hasDefault": false }],
+  "rollback": {
+    "rehearsedAt": "2026-10-15T10:00:00Z",
+    "rehearsedBy": "ops@example.com",
+    "previousVersion": "v1.2.2",
+    "revertCommand": "npm run migration:revert",
+    "outcome": "passed",
+    "evidenceUrl": "https://..."
+  },
+  "waivers": []
+}
+```
+
+| Gate | Blocks when |
+| --- | --- |
+| `tests` | No required suites are declared, a required suite has no result, a suite has failures or ran nothing. A suite that passed only after `retries` is a warning. |
+| `migrations` | Any migration lacks a working `down()`, takes an exclusive lock, or adds a `NOT NULL` column without a default. |
+| `rollback` | Schema changes have no rehearsal, the rehearsal failed, is older than 14 days, is dated in the future, or lacks the previous version, revert command, or rehearser; or the schema changes break rollback. |
+
+Authorization: a blocked gate can be waived only by an entry with
+`approverRole: "ADMIN"`, an approver, and a reason of at least 10 characters.
+A waiver covers only its own gate, and the waived findings stay in the output as
+warnings for the audit trail. Rejected waivers add the reason to the blocking
+list. The CLI trusts the evidence document, so CI must build it from the real
+test run and keep waiver entries out of contributor-editable files.
+
+Edge cases and recovery:
+
+- Rerunning the gate on the same evidence gives the same result, so it is safe to
+  retry in CI.
+- A stale rehearsal is not a code failure; rehearse the rollback again and
+  update `rehearsedAt`.
+- A flaky suite does not block, but repeated `retries` warnings should be
+  investigated before they hide a real failure.
+- If the gate itself is wrong or unavailable, release with an ADMIN waiver and
+  open a follow-up issue; do not delete the failing evidence.
+- Rollback of this change is removing `release:gate`; nothing else depends on
+  it and no data or API contracts change.
+
+Verify with `npx jest src/common/release/release-gate.spec.ts`.
 
 ## Checklist API
 

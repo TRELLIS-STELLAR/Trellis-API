@@ -5,6 +5,8 @@ import {
   CURRENT_PROTOCOL_VERSION,
   MIN_SUPPORTED_PROTOCOL_VERSION,
   MAX_SUPPORTED_PROTOCOL_VERSION,
+  DEFAULT_PROTOCOL_CONFIG,
+  validateProtocolConfigsAcrossEnvironments,
 } from './protocol-config-versioning';
 
 describe('Protocol Configuration Versioning & Compatibility Checks (#113)', () => {
@@ -73,5 +75,93 @@ describe('Protocol Configuration Versioning & Compatibility Checks (#113)', () =
     expect(() => validateProtocolConfig('not-a-version')).toThrow(
       IncompatibleProtocolVersionError,
     );
+  });
+
+  describe('cross-environment compatibility', () => {
+    const configs = (versions: {
+      development: string;
+      staging: string;
+      production: string;
+    }) => ({
+      development: {
+        ...DEFAULT_PROTOCOL_CONFIG,
+        configVersion: versions.development,
+      },
+      staging: {
+        ...DEFAULT_PROTOCOL_CONFIG,
+        configVersion: versions.staging,
+      },
+      production: {
+        ...DEFAULT_PROTOCOL_CONFIG,
+        configVersion: versions.production,
+      },
+    });
+
+    it('accepts aligned compatible protocol versions in every environment', () => {
+      const report = validateProtocolConfigsAcrossEnvironments(
+        configs({
+          development: '1.2.0',
+          staging: '1.2.0',
+          production: '1.2.0',
+        }),
+      );
+
+      expect(report.compatible).toBe(true);
+      expect(report.versionsAligned).toBe(true);
+      expect(report.environments.every((environment) => environment.compatible)).toBe(true);
+    });
+
+    it('reports version skew without hiding per-environment compatibility', () => {
+      const report = validateProtocolConfigsAcrossEnvironments(
+        configs({
+          development: '1.2.0',
+          staging: '1.1.0',
+          production: '1.2.0',
+        }),
+      );
+
+      expect(report.compatible).toBe(false);
+      expect(report.versionsAligned).toBe(false);
+      expect(report.environments.every((environment) => environment.compatible)).toBe(true);
+    });
+
+    it('identifies a failing environment and allows the check to pass after correction', () => {
+      const failing = configs({
+        development: '1.2.0',
+        staging: '1.2.0',
+        production: '2.0.0',
+      });
+      const report = validateProtocolConfigsAcrossEnvironments(failing);
+
+      expect(report.compatible).toBe(false);
+      expect(report.environments[2]).toMatchObject({
+        environment: 'production',
+        compatible: false,
+      });
+      expect(report.environments[2].error).toContain('Maximum supported version');
+
+      failing.production = {
+        ...DEFAULT_PROTOCOL_CONFIG,
+        configVersion: '1.2.0',
+      };
+      expect(
+        validateProtocolConfigsAcrossEnvironments(failing).compatible,
+      ).toBe(true);
+    });
+
+    it('fails closed when an environment configuration is absent', () => {
+      const report = validateProtocolConfigsAcrossEnvironments({
+        development: DEFAULT_PROTOCOL_CONFIG,
+        production: DEFAULT_PROTOCOL_CONFIG,
+      });
+
+      expect(report.compatible).toBe(false);
+      expect(report.versionsAligned).toBe(false);
+      expect(report.environments[1]).toMatchObject({
+        environment: 'staging',
+        compatible: false,
+        error: 'Protocol configuration is missing for staging.',
+      });
+    });
   });
 });

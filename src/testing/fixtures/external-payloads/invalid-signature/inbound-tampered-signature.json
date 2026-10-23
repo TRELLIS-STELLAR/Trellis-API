@@ -1,0 +1,17 @@
+{
+  "id": "inbound-tampered-signature",
+  "category": "invalid-signature",
+  "target": "webhooks.inbound",
+  "description": "Inbound webhook with a correctly formatted sha256= signature that does not match the body+timestamp HMAC.",
+  "input": {
+    "subscriptionId": "00000000-0000-4000-8000-000000000001",
+    "signingKey": "corpus_inbound_key",
+    "rawBody": "{\"id\":\"evt_tampered_sig\",\"type\":\"invoice.paid\"}",
+    "headers": {
+      "x-webhook-timestamp": "1800000000",
+      "x-webhook-signature": "sha256=0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "nowMillis": 1800000000000
+  },
+  "expected": { "status": 400, "reason": "invalid_signature" }
+}

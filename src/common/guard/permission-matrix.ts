@@ -457,6 +457,11 @@ export function isActionAllowed(
   const entry = matrixIndex.get(action);
   if (!entry) return false;
 
+  // Permissions are necessary but the matrix's role boundary is authoritative.
+  // This prevents a shared permission from accidentally widening a privileged
+  // action to a role that was intentionally excluded from the entrypoint.
+  if (!roles.some((role) => entry.allowedRoles.includes(role))) return false;
+
   return hasAllPermissions(roles, entry.requiredPermissions);
 }
 

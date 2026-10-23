@@ -32,6 +32,8 @@ import { WebhookNotificationProvider } from './providers/webhook-notification.pr
 import { NotificationGateway } from './websocket/notification.gateway';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationDigestService } from './services/notification-digest.service';
+import { NotificationDigestService as NotificationDigestServiceImpl } from './services/notification-digest.service';
+import { NotificationDeduplicationService } from './services/notification-deduplication.service';
 import { NotificationController } from './notification.controller';
 import { PaginationModule } from '../common/pagination/pagination.module';
 
@@ -93,6 +95,7 @@ import { PaginationModule } from '../common/pagination/pagination.module';
     // WebSocket gateway
     NotificationGateway,
     NotificationDigestService,
+    NotificationDeduplicationService,
 
     // Lifecycle events listener
     LifecycleNotificationListener,
@@ -107,6 +110,7 @@ import { PaginationModule } from '../common/pagination/pagination.module';
     NotificationQueueService,
     NotificationGateway,
     NotificationDigestService,
+    NotificationDeduplicationService,
   ],
 })
 export class NotificationModule {}

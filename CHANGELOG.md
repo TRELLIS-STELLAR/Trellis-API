@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Request correlation across the API, background workers, retries and outbound
+  webhooks via a validated `x-correlation-id` (`x-request-id` still honoured)
+  ([#270](docs/REQUEST_CORRELATION.md))
+- Oracle contract event schema registry, fail-closed decoder, golden XDR
+  compatibility fixtures and `price` event cross-check in submission
+  verification ([#348](docs/oracle-contract-event-compatibility.md))
+- Worst-case input resource budgets for log sanitisation, redaction,
+  correlation headers and contract event scans
+  ([#345](docs/resource-budget-tests.md))
 - Dependency health checks with public critical-only summary, admin diagnostics
   and a `npm run deps:health` CLI ([#124](docs/dependency-health.md))
 - Progressive transaction details via `details=summary|standard|advanced` and
@@ -32,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kubernetes health probes and liveness/readiness checks
 
 ### Security
+- Redaction of log messages, error responses (all environments), Sentry extras,
+  export values, failed-export reasons, retry/job errors and persisted webhook
+  headers, with a shared cross-surface test corpus
+  ([#271](docs/REDACTION_COVERAGE.md))
 - Added helmet security headers
 - Implemented CORS whitelisting
 - Added input sanitization on all endpoints

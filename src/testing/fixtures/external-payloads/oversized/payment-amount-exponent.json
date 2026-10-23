@@ -1,0 +1,16 @@
+{
+  "id": "payment-amount-exponent",
+  "category": "oversized",
+  "target": "api.body-validation",
+  "description": "Amount as an exponent-form decimal string ('1e999'), an oversized-value trick that bypasses naive numeric bounds.",
+  "input": {
+    "dto": "CreatePaymentDto",
+    "payload": {
+      "amount": "1e999",
+      "currency": "XLM",
+      "destination": "GABC1234567890",
+      "idempotencyKey": "oversized-amount-1"
+    }
+  },
+  "expected": { "rejected": true, "fields": ["amount"] }
+}

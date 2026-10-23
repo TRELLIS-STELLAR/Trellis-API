@@ -29,9 +29,12 @@ import { SKIP_KYC_KEY } from "../decorators/skip-kyc.decorator";
  * API down, but a positively identified sanctioned jurisdiction must not be
  * let through because the lookup was unavailable.
  *
- * Public routes and `@SkipKyc()` routes (onboarding, which has to be
- * reachable to become verified) bypass both checks. The risk-tier defaults
- * are intentionally conservative and can be overridden per deployment with
+ * Public routes and `@SkipKyc()` routes (onboarding, which has to
+ * be reachable to become verified) bypass both checks. Every `@SkipKyc()`
+ * bypass is recorded as a `KYC_BYPASS_ACCESSED` audit event so that
+ * regulatory auditors can prove which endpoints allow non-KYC access and
+ * which accounts exercised them. The risk-tier defaults are intentionally
+ * conservative and can be overridden per deployment with
  * `KYC_RESTRICTED_JURISDICTIONS` and `KYC_MAX_AML_RISK_SCORE`.
  */
 
@@ -40,6 +43,12 @@ export const JURISDICTION_RESOLVER = "KYC_JURISDICTION_RESOLVER";
 
 /** Injection token for the user risk-rating service. */
 export const AML_RISK_SERVICE = "KYC_AML_RISK_SERVICE";
+
+/** Injection token for the compliance audit log sink. */
+export const SENSITIVE_ACTION_LOGGER = "KYC_SENSITIVE_ACTION_LOGGER_TOKEN";
+
+/** Audit event name recorded when a `@SkipKyc()` route is accessed. */
+export const KYC_BYPASS_EVENT = "KYC_BYPASS_ACCESSED";
 
 /** Default maximum AML risk score tolerated on a 0-100 scale. */
 export const DEFAULT_MAX_AML_RISK_SCORE = 80;
@@ -83,6 +92,25 @@ export interface AmlRiskService {
     address?: string;
     walletAddress?: string;
   }): Promise<number | null>;
+}
+
+/** Structured payload written to the `SensitiveActionEvent` table. */
+export interface SensitiveActionEventPayload {
+  event: typeof KYC_BYPASS_EVENT;
+  userId: string | null;
+  ipAddress: string;
+  path: string;
+  method: string;
+  timestamp: Date;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Sink that persists compliance-relevant actions to the `SensitiveActionEvent`
+ * table. Deployments register an implementation through {@link SENSITIVE_ACTION_LOGGER}.
+ */
+export interface SensitiveActionLogger {
+  record(event: SensitiveActionEventPayload): Promise<void> | void;
 }
 
 /** Normalise a raw country code, mapping provider "unknown" values to null. */
@@ -133,6 +161,14 @@ export function getMaxAmlRiskScore(): number {
   return DEFAULT_MAX_AML_RISK_SCORE;
 }
 
+/** Headers a trusted edge proxy may use to attach a country code. */
+const PROXY_COUNTRY_HEADERS = [
+  "cf-ipcountry",
+  "x-vercel-ip-country",
+  "x-country-code",
+  "x-geo-country",
+] as const;
+
 @Injectable()
 export class KycGuard implements CanActivate {
   private readonly logger = new Logger(KycGuard.name);
@@ -145,6 +181,9 @@ export class KycGuard implements CanActivate {
     @Optional()
     @Inject(AML_RISK_SERVICE)
     private readonly amlRiskService?: AmlRiskService | null,
+    @Optional()
+    @Inject(SENSITIVE_ACTION_LOGGER)
+    private readonly sensitiveActionLogger?: SensitiveActionLogger | null,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -167,6 +206,7 @@ export class KycGuard implements CanActivate {
     ]);
 
     if (skipKyc) {
+      await this.recordKycBypass(context);
       return true;
     }
 
@@ -181,6 +221,69 @@ export class KycGuard implements CanActivate {
 
     // 3. Ensure the user has completed KYC
     return user?.kycVerified === true;
+  }
+
+  /**
+   * Persist a structured `KYC_BYPASS_ACCESSED` audit event for a route that
+   * bypassed the standard KYC checks. Audit failures must not break the
+   * request (the bypass is already permitted), but they are logged loudly.
+   */
+  private async recordKycBypass(context: ExecutionContext): Promise<void> {
+    const request = context.switchToHttp().getRequest();
+    const user = request?.user;
+    const path = request?.originalUrl ?? request?.url ?? "unknown";
+    const ipAddress = this.getClientIp(request);
+    const userId = this.resolveUserId(user);
+
+    const payload: SensitiveActionEventPayload = {
+      event: KYC_BYPASS_EVENT,
+      userId,
+      ipAddress,
+      path,
+      method: request?.method ?? "unknown",
+      timestamp: new Date(),
+    };
+
+    this.logger.log(
+      `KYC_BYPASS_ACCESSED user=${userId ?? "anonymous"} ip=${ipAddress} path=${path}`,
+    );
+
+    if (!this.sensitiveActionLogger) {
+      this.logger.warn(
+        "No SensitiveActionEvent logger registered; KYC_BYPASS_ACCESSED was not persisted",
+      );
+      return;
+    }
+
+    try {
+      await this.sensitiveActionLogger.record(payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Failed to persist ${KYC_BYPASS_EVENT} audit event for path=${path}: ${message}`,
+      );
+    }
+  }
+
+  private resolveUserId(user: any): string | null {
+    if (!user) return null;
+
+    const candidate = user.id ?? user.userId ?? user.sub;
+    return candidate !== undefined && candidate !== null
+      ? String(candidate)
+      : null;
+  }
+
+  private getClientIp(request: any): string {
+    const forwarded = request?.headers?.["x-forwarded-for"];
+    if (typeof forwarded === "string" && forwarded.length > 0) {
+      const first = forwarded.split(",")[0].trim();
+      if (first.length > 0) return first;
+    }
+
+    const ip =
+      request?.ip ?? request?.socket?.remoteAddress ?? request?.connection?.remoteAddress;
+    return typeof ip === "string" && ip.length > 0 ? ip : "unknown";
   }
 
   private async assertJurisdictionAllowed(request: any): Promise<void> {
@@ -298,15 +401,6 @@ export class KycGuard implements CanActivate {
       .find((part: string) => part.startsWith("geo="));
 
     return geoCookie ? geoCookie.slice("geo=".length) : null;
-  }
-
-  private getClientIp(request: any): string {
-    const forwarded = request?.headers?.["x-forwarded-for"];
-    if (typeof forwarded === "string" && forwarded.length > 0) {
-      return forwarded.split(",")[0].trim();
-    }
-
-    return request?.ip ?? request?.socket?.remoteAddress ?? "unknown";
   }
 }
 

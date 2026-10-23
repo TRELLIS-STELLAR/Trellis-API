@@ -29,6 +29,23 @@ rejected outcomes. Missing transactions and insufficient confirmations stay pend
 Soroban RPC retains a limited transaction window. Old references require a compatible
 archival RPC; missing history must never be considered proof of verification.
 
+`POST /oracle/submissions/batch` (`oracle:submit`) records 1–100 references and
+returns per-item `recorded`, `already_recorded`, `invalid`, `conflict` or
+`failed` (retryable) outcomes; resending a batch is idempotent.
+
+`GET /oracle/submissions/ledger-state` (`oracle:verify`) reports the contract
+instance, its Wasm code and the persistent `feed_his` entry as `live`,
+`archived` (TTL elapsed; before calling `submit_price`, restore with the
+simulation's `restorePreamble`, or let a simulated transaction declare the
+entries in `archivedSorobanEntries` for Protocol 23 automatic restore) or
+`missing`. Ledger scans are
+chunked at the RPC limit of 200 keys and capped at 1000 keys.
+
+On startup the verifier checks the network, then the contract instance, then
+starts polling. A failed step rolls back to stopped and records `failedStep`,
+`retryable` and a verified `rolledBack` flag in `GET /oracle/submissions/verifier`;
+retry with `POST /oracle/submissions/verifier/start` (`system:maintenance`).
+
 The separate legacy payload signing and submission services use a different protocol.
 Their payloads are not automatically treated as Stellar submissions. This verifier
 requires a successful Stellar `submit_price` transaction and its matching XDR digest;

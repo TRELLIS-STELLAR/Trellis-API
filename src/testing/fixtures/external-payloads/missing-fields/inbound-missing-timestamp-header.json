@@ -1,0 +1,16 @@
+{
+  "id": "inbound-missing-timestamp-header",
+  "category": "missing-fields",
+  "target": "webhooks.inbound",
+  "description": "Inbound delivery with no X-Webhook-Timestamp header; checked before the signature so the failure is unambiguous.",
+  "input": {
+    "subscriptionId": "00000000-0000-4000-8000-000000000001",
+    "signingKey": "corpus_inbound_key",
+    "rawBody": "{\"id\":\"evt_no_ts\",\"type\":\"invoice.paid\"}",
+    "headers": {
+      "x-webhook-signature": "sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "nowMillis": 1800000000000
+  },
+  "expected": { "status": 400, "reason": "missing_timestamp" }
+}

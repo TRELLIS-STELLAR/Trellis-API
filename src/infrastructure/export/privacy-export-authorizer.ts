@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { redactSecretValues } from "../../logging/sanitize.util";
 
 export enum FieldSensitivity {
   PUBLIC = "public",
@@ -141,6 +142,12 @@ export class PrivacyExportAuthorizer {
       }
 
       return sanitized;
+    }
+
+    // Invariant 4: a secret pasted into a public field (a note, memo or
+    // description) is scrubbed by value, since key classification cannot see it.
+    if (typeof node === "string") {
+      return redactSecretValues(node);
     }
 
     return node;

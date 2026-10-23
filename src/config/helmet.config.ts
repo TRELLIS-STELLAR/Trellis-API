@@ -5,14 +5,21 @@ export function createHelmetConfig(): HelmetOptions {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-        imgSrc: ["'self'", "data:", "https:", "http://localhost:3000"],
-        fontSrc: ["'self'", "data:", "https://cdn.jsdelivr.net"],
+        styleSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        fontSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
         workerSrc: ["'self'", "blob:"],
-        frameSrc: ["'self'"],
+        frameSrc: ["'none'"],
         connectSrc: ["'self'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
       },
+    },
+    xFrameOptions: {
+      action: "deny",
     },
     hsts: {
       maxAge: 31536000,

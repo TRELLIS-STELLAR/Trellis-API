@@ -1,13 +1,18 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectQueue } from "@nestjs/bull";
 import { Queue } from "bull";
-import { JobStatus, JobPriority, WorkerJob, RetryPolicy, DEFAULT_RETRY_POLICY, WorkerJobPayload } from "./worker.interface";
 import { JobStatus, WorkerJob, RetryPolicy, DEFAULT_RETRY_POLICY, WorkerJobPayload, JobPriority } from "./worker.interface";
 import {
   withTraceContext,
   runTracedJob,
   extractJobContext,
 } from "src/observability/async-job-tracing";
+import {
+  JOB_CORRELATION_FIELD,
+  getCorrelationId,
+  normalizeCorrelationId,
+} from "src/common/correlation/correlation-context";
+import { sanitizeErrorMessage } from "src/logging/sanitize.util";
 
 @Injectable()
 export class BackgroundWorkerService implements OnModuleInit {
@@ -50,12 +55,15 @@ export class BackgroundWorkerService implements OnModuleInit {
       const attempts = job.attemptsMade;
       const maxAttempts = workerJob?.maxAttempts ?? DEFAULT_RETRY_POLICY.maxAttempts;
 
+      // job.error is served by the inspection endpoints, so it is redacted.
+      const error = sanitizeErrorMessage(String(err?.message ?? err));
+      const correlation = workerJob?.correlationId ? ` [correlationId=${workerJob.correlationId}]` : "";
       if (attempts >= maxAttempts) {
-        this.updateJobStatus(job.id.toString(), JobStatus.DEAD_LETTER, { error: err.message });
-        this.logger.warn(`Job ${job.id} moved to dead-letter queue after ${attempts} attempts`);
+        this.updateJobStatus(job.id.toString(), JobStatus.DEAD_LETTER, { error });
+        this.logger.warn(`Job ${job.id} moved to dead-letter queue after ${attempts} attempts${correlation}`);
       } else {
-        this.updateJobStatus(job.id.toString(), JobStatus.FAILED, { error: err.message });
-        this.logger.error(`Job ${job.id} failed (attempt ${attempts}/${maxAttempts}): ${err.message}`);
+        this.updateJobStatus(job.id.toString(), JobStatus.FAILED, { error });
+        this.logger.error(`Job ${job.id} failed (attempt ${attempts}/${maxAttempts}): ${error}${correlation}`);
       }
     });
 
@@ -69,6 +77,9 @@ export class BackgroundWorkerService implements OnModuleInit {
     const policy = this.policies.get(type) || DEFAULT_RETRY_POLICY;
     const id = `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const now = new Date();
+    // Explicit ID first, then the enqueuing request's ID (#270).
+    const correlationId =
+      normalizeCorrelationId(payload.correlationId) ?? getCorrelationId();
 
     const job: WorkerJob = {
       id,
@@ -82,7 +93,7 @@ export class BackgroundWorkerService implements OnModuleInit {
       status: JobStatus.PENDING,
       createdAt: now,
       updatedAt: now,
-      correlationId: payload.correlationId,
+      correlationId,
       schemaVersion: "1.0.0",
     };
 
@@ -92,7 +103,12 @@ export class BackgroundWorkerService implements OnModuleInit {
       type,
       // Stamp the active W3C trace context so the worker-side processing
       // span is parented to the originating HTTP request span.
-      withTraceContext({ ...payload.payload, _jobId: id, _schemaVersion: "1.0.0" }),
+      withTraceContext({
+        ...payload.payload,
+        _jobId: id,
+        _schemaVersion: "1.0.0",
+        ...(correlationId && { [JOB_CORRELATION_FIELD]: correlationId }),
+      }),
       {
         jobId: id,
         priority: this.mapPriority(payload.priority || JobPriority.NORMAL),
@@ -140,7 +156,14 @@ export class BackgroundWorkerService implements OnModuleInit {
     await this.queue.add(
       job.type,
       withTraceContext(
-        { ...job.payload, _jobId: job.id, _schemaVersion: job.schemaVersion, _retry: true },
+        {
+          ...job.payload,
+          _jobId: job.id,
+          _schemaVersion: job.schemaVersion,
+          _retry: true,
+          // A manual retry keeps the ORIGINAL correlation ID, not the caller's.
+          ...(job.correlationId && { [JOB_CORRELATION_FIELD]: job.correlationId }),
+        },
         // Preserve the ORIGINAL request trace across retries.
         extractJobContext({ __trace: (job.payload as { __trace?: object })?.__trace }) as never,
       ),

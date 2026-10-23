@@ -1,0 +1,16 @@
+{
+  "id": "stripe-wrong-hmac",
+  "category": "invalid-signature",
+  "target": "payments.webhook-signature",
+  "description": "Stripe delivery whose v1 digest is well-formed hex but was computed with the wrong shared secret.",
+  "input": {
+    "provider": "stripe",
+    "secrets": { "STRIPE_WEBHOOK_SECRET": "corpus_stripe_secret" },
+    "rawBody": "{\"id\":\"evt_wrong_hmac\",\"type\":\"payment_intent.succeeded\"}",
+    "headers": {
+      "stripe-signature": "t=1800000000,v1=0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "nowSeconds": 1800000000
+  },
+  "expected": { "ok": false, "reason": "invalid_signature", "status": 400 }
+}

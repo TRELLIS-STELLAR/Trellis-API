@@ -89,4 +89,41 @@ node scripts/verify-accessibility.js
 node scripts/verify-accessibility.js --json
 ```
 
-All 18 automated checks verify schema integrity, ARIA announcements, 2D grid keys, focus order, reduced motion enforcement, and invariant protection.
+All 27 automated checks verify schema integrity, ARIA announcements, 2D grid keys, focus order, reduced motion enforcement, async status lifecycle states, retry counters, and invariant protection.
+
+---
+
+## 6. Async Status States, Focus & Keyboard Coverage
+
+Async operations (SEP-10 challenge verification, portfolio rebalancing, DeFi order execution, notifications batching, and observability recalculation) transition through explicit lifecycle phases:
+
+```
+[idle] ──(submit)──> [submitting] ──(poll)──> [polling] ──(complete)──> [succeeded]
+                           │                      │
+                       (failure)              (failure)
+                           ▼                      ▼
+                       [failed] ──(retry)──> [retrying]
+                           │                      │
+                       (abort)              (exhausted)
+                           ▼                      ▼
+                       [aborted]               [failed]
+```
+
+### Invariants:
+1. **Normal Path**:
+   - `submitting` and `polling` broadcast polite ARIA live updates (`politeness: 'polite'`) containing progress percentage hints.
+   - Focus is retained within `pendingFocusTarget` (e.g. progress bar or cancel button).
+   - `succeeded` transitions focus to `completionFocusTarget` and announces successful completion.
+2. **Failure Path**:
+   - `failed` and `timeout` states immediately issue an assertive ARIA live announcement (`politeness: 'assertive'`, `interrupt: true`).
+   - Focus is explicitly directed to `failureFocusTarget` (the error summary alert or retry trigger).
+3. **Retry Path**:
+   - Every retryable async operation defines a `retryShortcut` (default `KeyR`) and tracks `attempt` against `maxAttempts`.
+   - When retry limits are exhausted, an assertive `exhaustedAnnouncement` is broadcast.
+4. **Authorization Path**:
+   - Unauthenticated or session-expired states transition to `unauthorized`, announcing session expiration and pointing focus to `authFocusTarget` (`reauthShortcut: 'Alt+A'`).
+   - `returnFocusTargetAfterAuth` is strictly recorded to restore focus back to the pending operation after successful re-authentication.
+5. **Abort & Rollback**:
+   - Pressing `Escape` aborts any pending async job.
+   - For rollback-safe operations (`rollbackOnAbort: true`), compensating rollbacks are triggered and focus returns to `abortFocusTarget`.
+

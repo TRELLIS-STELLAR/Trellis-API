@@ -4,6 +4,7 @@ import {
   Optional,
   Inject,
   BadRequestException,
+  ConflictException,
   NotFoundException,
 } from "@nestjs/common";
 import { TradingTransactionService, TradeResult } from "src/investment/portfolio/services/trading-transaction.service";
@@ -11,6 +12,27 @@ import { DataSource } from "typeorm";
 import { Portfolio } from "src/investment/portfolio/entities/portfolio.entity";
 import { PortfolioAsset } from "src/investment/portfolio/entities/portfolio-asset.entity";
 import { TargetAllocationVersion } from "src/portfolio/entities/target-allocation.entity";
+import { threeWayMerge } from "src/common/concurrency/conflict-resolver";
+
+export interface TargetAllocationWriteResult {
+  version: number;
+  allocations: Record<string, number>;
+  /** True when a stale edit was merged with changes made since `baseVersion`. */
+  merged: boolean;
+}
+
+// Floating point addition tolerance is 1e-8 percentage points.
+const sumsToHundred = (entries: Array<[string, number]>) =>
+  Math.abs(entries.reduce((total, [, weight]) => total + weight, 0) - 100) <=
+  1e-8;
+
+const toWeights = (version: TargetAllocationVersion | null) =>
+  Object.fromEntries(
+    (version?.allocations ?? []).map(({ ticker, targetWeight }) => [
+      ticker,
+      targetWeight,
+    ]),
+  );
 
 export interface RebalancingRecommendation {
   asset: string;
@@ -87,10 +109,18 @@ export class RebalancingService {
    * @param portfolioId - The ID of the portfolio.
    * @param allocations - A map or record of asset symbols to target percentages.
    */
+  /**
+   * Replaces the target allocation set. Without `baseVersion` the last writer
+   * wins (the original contract). With `baseVersion`, an edit made against an
+   * older version is three-way merged per ticker with the changes stored since;
+   * overlapping edits or a merged set that no longer sums to 100% raise 409
+   * and write nothing. Re-sending an already applied edit writes nothing.
+   */
   async setTargetAllocations(
     portfolioId: string,
     allocations: Map<string, number> | Record<string, number>,
-  ): Promise<void> {
+    baseVersion?: number,
+  ): Promise<TargetAllocationWriteResult> {
     if (
       !allocations ||
       typeof allocations !== "object" ||
@@ -104,7 +134,7 @@ export class RebalancingService {
       allocations instanceof Map
         ? [...allocations]
         : Object.entries(allocations);
-    // Accept up to six decimal places; floating point addition tolerance is 1e-8 percentage points.
+    // Accept up to six decimal places.
     if (
       !entries.length ||
       entries.some(
@@ -122,22 +152,71 @@ export class RebalancingService {
         "Weights must be finite percentages from 0 to 100 with at most six decimal places",
       );
     }
-    if (
-      Math.abs(entries.reduce((total, [, weight]) => total + weight, 0) - 100) >
-      1e-8
-    ) {
+    if (!sumsToHundred(entries)) {
       throw new BadRequestException("Target weights must sum to 100%");
     }
-    await this.dataSource.transaction(async (manager) => {
+    if (
+      baseVersion !== undefined &&
+      (!Number.isInteger(baseVersion) || baseVersion < 0)
+    ) {
+      throw new BadRequestException("baseVersion must be a non-negative integer");
+    }
+    return this.dataSource.transaction(async (manager) => {
       const portfolio = await manager.findOne(Portfolio, {
         where: { id: portfolioId },
         lock: { mode: "pessimistic_write" },
       });
       if (!portfolio) throw new NotFoundException("Portfolio not found");
+      // Read under the portfolio row lock so concurrent writers serialize here.
+      const previous = await manager.findOne(TargetAllocationVersion, {
+        where: { portfolioId },
+        order: { version: "DESC" },
+      });
+      const currentVersion = previous?.version ?? 0;
+      let finalEntries = entries;
+      let merged = false;
+      if (baseVersion !== undefined && baseVersion !== currentVersion) {
+        const base =
+          baseVersion === 0
+            ? null
+            : await manager.findOne(TargetAllocationVersion, {
+                where: { portfolioId, version: baseVersion },
+              });
+        if (baseVersion > currentVersion || (baseVersion > 0 && !base)) {
+          throw new ConflictException({
+            message: "Unknown baseVersion; refresh and retry.",
+            expectedVersion: baseVersion,
+            actualVersion: currentVersion,
+            action: "refresh",
+          });
+        }
+        const current = toWeights(previous);
+        const result = threeWayMerge(
+          toWeights(base),
+          current,
+          Object.fromEntries(entries),
+        );
+        finalEntries = Object.entries(result.merged);
+        if (result.conflicts.length || !sumsToHundred(finalEntries)) {
+          throw new ConflictException({
+            message: result.conflicts.length
+              ? "Target allocations were changed concurrently; resolve the conflicting tickers and retry."
+              : "Merged target allocations no longer sum to 100%; refresh and retry.",
+            expectedVersion: baseVersion,
+            actualVersion: currentVersion,
+            action: "refresh",
+            conflicts: result.conflicts,
+          });
+        }
+        if (!result.changed) {
+          return { version: currentVersion, allocations: current, merged: false };
+        }
+        merged = true;
+      }
       const assets = await manager.find(PortfolioAsset, {
         where: { portfolioId },
       });
-      const targets = entries.map(([ticker, targetWeight]) => {
+      const targets = finalEntries.map(([ticker, targetWeight]) => {
         const matches = assets.filter((asset) => asset.ticker === ticker);
         if (matches.length !== 1) {
           throw new BadRequestException(
@@ -146,21 +225,20 @@ export class RebalancingService {
         }
         return { assetId: matches[0].id, ticker, targetWeight };
       });
-      const previous = await manager.findOne(TargetAllocationVersion, {
-        where: { portfolioId },
-        order: { version: "DESC" },
-      });
+      const version = currentVersion + 1;
+      const weights = Object.fromEntries(finalEntries);
       await manager.save(
         TargetAllocationVersion,
         manager.create(TargetAllocationVersion, {
           portfolioId,
-          version: (previous?.version ?? 0) + 1,
+          version,
           allocations: targets,
         }),
       );
       await manager.update(Portfolio, portfolioId, {
-        targetAllocation: Object.fromEntries(entries),
+        targetAllocation: weights,
       });
+      return { version, allocations: weights, merged };
     });
   }
 
@@ -184,13 +262,7 @@ export class RebalancingService {
   async getTargetAllocations(
     portfolioId: string,
   ): Promise<Record<string, number>> {
-    const latest = await this.getTargetAllocationVersion(portfolioId);
-    return Object.fromEntries(
-      (latest?.allocations ?? []).map(({ ticker, targetWeight }) => [
-        ticker,
-        targetWeight,
-      ]),
-    );
+    return toWeights(await this.getTargetAllocationVersion(portfolioId));
   }
 
   /**

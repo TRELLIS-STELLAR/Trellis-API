@@ -1,0 +1,16 @@
+{
+  "id": "stripe-tampered-body",
+  "category": "invalid-signature",
+  "target": "payments.webhook-signature",
+  "description": "Signature computed over the original body; the delivered bytes were tampered with afterwards (amount changed).",
+  "input": {
+    "provider": "stripe",
+    "secrets": { "STRIPE_WEBHOOK_SECRET": "corpus_stripe_secret" },
+    "rawBody": "{\"id\":\"evt_tampered\",\"type\":\"payment_intent.succeeded\",\"amount\":\"999999\"}",
+    "headers": {
+      "stripe-signature": "t=1800000000,v1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "nowSeconds": 1800000000
+  },
+  "expected": { "ok": false, "reason": "invalid_signature", "status": 400 }
+}

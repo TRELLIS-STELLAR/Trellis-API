@@ -9,7 +9,7 @@ import {
 } from "typeorm";
 import { Portfolio } from "./portfolio.entity";
 import { PortfolioAsset } from "./portfolio-asset.entity";
-import { Chain } from "./portfolio-asset.entity";
+import { Chain } from "./chain.enum";
 
 export enum TransactionType {
   BUY = "buy",

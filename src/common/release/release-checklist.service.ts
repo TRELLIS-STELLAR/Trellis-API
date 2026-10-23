@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
 import { logger } from "../../config/logger";
 import {
   ReleaseChecklist,
@@ -10,26 +10,43 @@ import {
   isCriticalChange,
   calculateReleaseStatus,
 } from "./release-checklist";
+import {
+  AutomatedVerificationPayload,
+  ReleaseReadinessEvaluation,
+  ReleaseAuditEntry,
+  MigrationReadinessReport,
+  SmokeTestReport,
+  RollbackReadinessReport,
+} from "./release-readiness.types";
+import {
+  verifyMigrationReadiness,
+  executeSmokeTestsWithRetry,
+  verifyRollbackSafety,
+} from "./release-readiness.checker";
 
 /**
  * Service for managing release readiness checklists.
  *
  * Provides:
- * - Checklist creation and initialization
- * - Check status updates
- * - Waiver management for exceptions
- * - Overall release readiness assessment
- * - Approval workflow
+ * - Checklist creation, storage, and retrieval
+ * - Check status updates and validation
+ * - Waiver management with audit trails
+ * - Automated verification for migrations, smoke tests with retry, and rollback
+ * - Approval gating for production releases
  */
 @Injectable()
 export class ReleaseChecklistService {
+  private readonly checklists = new Map<string, ReleaseChecklist>();
+  private readonly auditLogs = new Map<string, ReleaseAuditEntry[]>();
+
   /**
-   * Create a new release checklist for a PR.
+   * Create a new release checklist for a PR and register it in memory.
    */
   createChecklist(
     prNumber: string,
     title: string,
     files: string[],
+    actor = "system",
   ): ReleaseChecklist {
     const isCritical = isCriticalChange(title, files);
     const checks = isCritical ? TRELLIS_API_RELEASE_CHECKS : this.getMinimalChecks();
@@ -53,12 +70,36 @@ export class ReleaseChecklistService {
       });
     }
 
+    this.checklists.set(prNumber, checklist);
+
+    this.recordAudit(prNumber, {
+      action: "CREATE",
+      actor,
+      timestamp: new Date(),
+      details: `Created checklist for PR #${prNumber} (critical: ${isCritical}, ${checks.length} checks)`,
+      newStatus: checklist.overallStatus,
+    });
+
     logger.info(
       { prNumber, isCritical, checkCount: checks.length },
       "Release checklist created",
     );
 
     return checklist;
+  }
+
+  /**
+   * Retrieve checklist by PR number.
+   */
+  getChecklist(prNumber: string): ReleaseChecklist | undefined {
+    return this.checklists.get(prNumber);
+  }
+
+  /**
+   * List all tracked release checklists.
+   */
+  listChecklists(): ReleaseChecklist[] {
+    return Array.from(this.checklists.values());
   }
 
   /**
@@ -71,7 +112,7 @@ export class ReleaseChecklistService {
   }
 
   /**
-   * Update a check result.
+   * Update a check result directly on a checklist instance.
    */
   updateCheckResult(
     checklist: ReleaseChecklist,
@@ -83,13 +124,23 @@ export class ReleaseChecklistService {
       waiverReason?: string;
       waiverApprovedBy?: string;
       notes?: string;
+      actor?: string;
     },
   ): void {
-    const existingResult = checklist.results.get(checkId);
+    let existingResult = checklist.results.get(checkId);
     if (!existingResult) {
-      logger.warn({ checkId }, "Check not found in checklist");
-      return;
+      const standardCheck = TRELLIS_API_RELEASE_CHECKS.find((c) => c.id === checkId);
+      if (standardCheck) {
+        checklist.checks.push(standardCheck);
+        existingResult = { checkId, status: CheckStatus.NOT_STARTED };
+        checklist.results.set(checkId, existingResult);
+      } else {
+        logger.warn({ checkId }, "Check not found in checklist");
+        return;
+      }
     }
+
+    const previousStatus = existingResult.status;
 
     const result: CheckResult = {
       checkId,
@@ -106,6 +157,17 @@ export class ReleaseChecklistService {
     checklist.updatedAt = new Date();
     checklist.overallStatus = calculateReleaseStatus(checklist.results) as any;
 
+    this.recordAudit(checklist.prNumber, {
+      action: status === CheckStatus.WAIVED ? "WAIVE" : "CHECK_UPDATE",
+      actor: options?.actor || options?.waiverApprovedBy || "system",
+      timestamp: new Date(),
+      details: `Check '${checkId}' changed from ${previousStatus} to ${status}${
+        options?.failureReason ? `: ${options.failureReason}` : ""
+      }${options?.waiverReason ? ` (waiver: ${options.waiverReason})` : ""}`,
+      previousStatus,
+      newStatus: status,
+    });
+
     logger.info(
       { checkId, status, prNumber: checklist.prNumber },
       "Check result updated",
@@ -113,7 +175,31 @@ export class ReleaseChecklistService {
   }
 
   /**
-   * Waive a check with approval.
+   * Update check result by PR number.
+   */
+  updateCheckByPr(
+    prNumber: string,
+    checkId: string,
+    status: CheckStatus,
+    options?: {
+      failureReason?: string;
+      evidenceUrl?: string;
+      waiverReason?: string;
+      waiverApprovedBy?: string;
+      notes?: string;
+      actor?: string;
+    },
+  ): ReleaseChecklist {
+    const checklist = this.getChecklist(prNumber);
+    if (!checklist) {
+      throw new NotFoundException(`Release checklist for PR #${prNumber} not found`);
+    }
+    this.updateCheckResult(checklist, checkId, status, options);
+    return checklist;
+  }
+
+  /**
+   * Waive a check with required maintainer approval.
    */
   waiveCheck(
     checklist: ReleaseChecklist,
@@ -121,15 +207,40 @@ export class ReleaseChecklistService {
     reason: string,
     approvedBy: string,
   ): void {
+    if (!reason || reason.trim().length < 10) {
+      throw new BadRequestException("A detailed waiver reason (minimum 10 characters) is required.");
+    }
+    if (!approvedBy || approvedBy.trim() === "") {
+      throw new BadRequestException("An approver identifier is required to waive checks.");
+    }
+
     this.updateCheckResult(checklist, checkId, CheckStatus.WAIVED, {
-      waiverReason: reason,
-      waiverApprovedBy: approvedBy,
+      waiverReason: reason.trim(),
+      waiverApprovedBy: approvedBy.trim(),
+      actor: approvedBy.trim(),
     });
 
     logger.warn(
       { checkId, approvedBy, prNumber: checklist.prNumber },
       "Check waived",
     );
+  }
+
+  /**
+   * Waive a check by PR number.
+   */
+  waiveCheckByPr(
+    prNumber: string,
+    checkId: string,
+    reason: string,
+    approvedBy: string,
+  ): ReleaseChecklist {
+    const checklist = this.getChecklist(prNumber);
+    if (!checklist) {
+      throw new NotFoundException(`Release checklist for PR #${prNumber} not found`);
+    }
+    this.waiveCheck(checklist, checkId, reason, approvedBy);
+    return checklist;
   }
 
   /**
@@ -181,15 +292,14 @@ export class ReleaseChecklistService {
       failed: results.filter((r) => r.status === CheckStatus.FAILED).length,
       blocked: results.filter((r) => r.status === CheckStatus.BLOCKED).length,
       waived: results.filter((r) => r.status === CheckStatus.WAIVED).length,
-      notStarted: results.filter((r) => r.status === CheckStatus.NOT_STARTED)
-        .length,
+      notStarted: results.filter((r) => r.status === CheckStatus.NOT_STARTED).length,
     };
 
     const blockingIssues = results
-      .filter((r) => r.status === CheckStatus.BLOCKED)
+      .filter((r) => r.status === CheckStatus.BLOCKED || r.status === CheckStatus.FAILED)
       .map(
         (r) =>
-          `${r.checkId}: ${r.failureReason || "No reason provided"}`,
+          `${r.checkId}: ${r.failureReason || (r.status === CheckStatus.FAILED ? "Check failed" : "Blocked")}`,
       );
 
     const completedCount = byStatus.passed + byStatus.waived;
@@ -215,16 +325,27 @@ export class ReleaseChecklistService {
     checklist: ReleaseChecklist,
     approvedBy: string,
   ): boolean {
-    if (checklist.overallStatus === "BLOCKED") {
+    const checkStatus = this.canApproveRelease(checklist);
+    if (!checkStatus.canApprove) {
       logger.warn(
-        { prNumber: checklist.prNumber },
-        "Cannot approve: critical checks are blocked",
+        { prNumber: checklist.prNumber, reason: checkStatus.reason },
+        "Cannot approve release",
       );
       return false;
     }
 
     checklist.approvedBy = approvedBy;
     checklist.approvedAt = new Date();
+    checklist.updatedAt = new Date();
+
+    this.recordAudit(checklist.prNumber, {
+      action: "APPROVE",
+      actor: approvedBy,
+      timestamp: new Date(),
+      details: `Release approved for deployment by ${approvedBy}`,
+      previousStatus: checklist.overallStatus,
+      newStatus: "READY",
+    });
 
     logger.info(
       { prNumber: checklist.prNumber, approvedBy },
@@ -232,6 +353,24 @@ export class ReleaseChecklistService {
     );
 
     return true;
+  }
+
+  /**
+   * Approve release by PR number.
+   */
+  approveReleaseByPr(prNumber: string, approvedBy: string): { approved: boolean; reason?: string } {
+    const checklist = this.getChecklist(prNumber);
+    if (!checklist) {
+      throw new NotFoundException(`Release checklist for PR #${prNumber} not found`);
+    }
+
+    const check = this.canApproveRelease(checklist);
+    if (!check.canApprove) {
+      return { approved: false, reason: check.reason };
+    }
+
+    const approved = this.approveRelease(checklist, approvedBy);
+    return { approved, reason: approved ? undefined : "Approval failed" };
   }
 
   /**
@@ -244,7 +383,7 @@ export class ReleaseChecklistService {
     if (checklist.overallStatus === "BLOCKED") {
       return {
         canApprove: false,
-        reason: "Critical checks are still blocked",
+        reason: "Critical checks are still blocked or failing",
       };
     }
 
@@ -257,12 +396,150 @@ export class ReleaseChecklistService {
       if (!result || (result.status !== CheckStatus.PASSED && result.status !== CheckStatus.WAIVED)) {
         return {
           canApprove: false,
-          reason: `Critical check not completed: ${check.name}`,
+          reason: `Critical check not completed: ${check.name} (status: ${result?.status || "NOT_STARTED"})`,
         };
       }
     }
 
     return { canApprove: true };
+  }
+
+  /**
+   * Execute automated verification for migrations, smoke tests with retry, and rollback.
+   */
+  async runAutomatedVerification(
+    prNumber: string,
+    payload: AutomatedVerificationPayload,
+    actor = "system",
+  ): Promise<ReleaseReadinessEvaluation> {
+    let checklist = this.getChecklist(prNumber);
+    if (!checklist) {
+      // Auto-initialize if not yet created
+      checklist = this.createChecklist(prNumber, `Automated PR #${prNumber}`, [], actor);
+    }
+
+    let migrationReport: MigrationReadinessReport | undefined;
+    let smokeTestReport: SmokeTestReport | undefined;
+    let rollbackReport: RollbackReadinessReport | undefined;
+    const blockingReasons: string[] = [];
+
+    // 1. Run migration checks if provided
+    if (payload.migrations && payload.migrations.length > 0) {
+      migrationReport = verifyMigrationReadiness(payload.migrations);
+
+      if (migrationReport.isReady) {
+        this.updateCheckResult(checklist, "migration_reversibility", CheckStatus.PASSED, {
+          notes: `Verified ${migrationReport.checkedCount} migration(s): all reversible with valid down() methods.`,
+          actor,
+        });
+        this.updateCheckResult(checklist, "migration_locking", CheckStatus.PASSED, {
+          notes: `Verified ${migrationReport.lockingSafeCount} migration(s): no table locks or non-concurrent index additions.`,
+          actor,
+        });
+      } else {
+        const issuesSummary = migrationReport.issues.join("; ");
+        blockingReasons.push(`Migration safety issues: ${issuesSummary}`);
+
+        const hasReversibilityIssue = migrationReport.issues.some(
+          (i) => i.includes("down()") || i.includes("irreversible"),
+        );
+        if (hasReversibilityIssue) {
+          this.updateCheckResult(checklist, "migration_reversibility", CheckStatus.FAILED, {
+            failureReason: issuesSummary,
+            actor,
+          });
+        }
+
+        const hasLockingIssue = migrationReport.issues.some((i) => i.includes("LOCK TABLE"));
+        if (hasLockingIssue) {
+          this.updateCheckResult(checklist, "migration_locking", CheckStatus.FAILED, {
+            failureReason: issuesSummary,
+            actor,
+          });
+        }
+      }
+    }
+
+    // 2. Run smoke tests with retry if provided
+    if (payload.smokeProbes && payload.smokeProbes.length > 0) {
+      smokeTestReport = await executeSmokeTestsWithRetry(payload.smokeProbes, payload.options);
+
+      if (smokeTestReport.allPassed) {
+        this.updateCheckResult(checklist, "test_integration", CheckStatus.PASSED, {
+          notes: `All ${smokeTestReport.passedProbes} smoke test probes passed (${smokeTestReport.totalDurationMs}ms total).`,
+          actor,
+        });
+      } else {
+        const failedDetails = smokeTestReport.results
+          .filter((r) => r.status === "FAILED")
+          .map((r) => `${r.name}: ${r.error || r.detail}`)
+          .join("; ");
+        blockingReasons.push(`Smoke tests failed: ${failedDetails}`);
+        this.updateCheckResult(checklist, "test_integration", CheckStatus.FAILED, {
+          failureReason: failedDetails,
+          actor,
+        });
+      }
+    }
+
+    // 3. Run rollback safety checks if schema changes provided
+    if (payload.schemaChanges && payload.schemaChanges.length > 0) {
+      const downReversible = migrationReport ? migrationReport.reversibleCount === migrationReport.checkedCount : true;
+      rollbackReport = verifyRollbackSafety(payload.schemaChanges, downReversible);
+
+      if (rollbackReport.safeForZeroDowntimeRollback) {
+        this.updateCheckResult(checklist, "rollback_data_safety", CheckStatus.PASSED, {
+          notes: "Schema additions are backward-compatible (nullable / defaulted). Safe for rolling release rollback.",
+          actor,
+        });
+        this.updateCheckResult(checklist, "rollback_procedure", CheckStatus.PASSED, {
+          notes: "Rollback procedure and data safety verified.",
+          actor,
+        });
+      } else {
+        const breaking = rollbackReport.breakingChanges.join("; ");
+        blockingReasons.push(`Rollback incompatibility: ${breaking}`);
+        this.updateCheckResult(checklist, "rollback_data_safety", CheckStatus.FAILED, {
+          failureReason: breaking,
+          actor,
+        });
+      }
+    }
+
+    const overallReady = blockingReasons.length === 0 && checklist.overallStatus === "READY";
+
+    this.recordAudit(prNumber, {
+      action: "AUTOMATED_VERIFY",
+      actor,
+      timestamp: new Date(),
+      details: `Automated release readiness verification executed (overall ready: ${overallReady})`,
+      newStatus: checklist.overallStatus,
+    });
+
+    return {
+      prNumber,
+      overallReady,
+      overallStatus: checklist.overallStatus,
+      migrationReport,
+      smokeTestReport,
+      rollbackReport,
+      evaluatedAt: new Date(),
+      blockingReasons,
+    };
+  }
+
+  /**
+   * Retrieve audit history for a checklist.
+   */
+  getAuditHistory(prNumber: string): ReleaseAuditEntry[] {
+    return this.auditLogs.get(prNumber) || [];
+  }
+
+  private recordAudit(prNumber: string, entry: ReleaseAuditEntry): void {
+    if (!this.auditLogs.has(prNumber)) {
+      this.auditLogs.set(prNumber, []);
+    }
+    this.auditLogs.get(prNumber)!.push(entry);
   }
 
   /**

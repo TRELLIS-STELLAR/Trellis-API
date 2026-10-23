@@ -18,6 +18,7 @@ export enum SensitiveActionScope {
   PROTOCOL_CONFIG = "protocol-config",
   COMPLIANCE = "compliance",
   PORTFOLIO = "portfolio",
+  APPROVAL = "approval",
 }
 
 export enum SensitiveAction {
@@ -69,6 +70,8 @@ export enum SensitiveAction {
   FEATURE_FLAG_CHANGED = "config.feature-flag.changed",
   EMERGENCY_PAUSE_TOGGLED = "config.emergency-pause.toggled",
   CONTRACT_UPGRADED = "config.contract.upgraded",
+  MAINTENANCE_WINDOW_CHANGED = "config.maintenance-window.changed",
+  COMPONENT_DEGRADATION_CHANGED = "config.status-degradation.changed",
 
   // Portfolio ownership and value
   PORTFOLIO_RECORD_CHANGED = "portfolio.record.changed",
@@ -78,6 +81,12 @@ export enum SensitiveAction {
   PORTFOLIO_STATE_TRANSITION = "portfolio.state.transition",
   POSITION_STATE_TRANSITION = "defi.position.state.transition",
   TRANSACTION_STATE_TRANSITION = "transaction.state.transition",
+
+  // Maintainer approval flow (#220). The executed action records its own
+  // event; these three describe the approval lifecycle around it.
+  MAINTAINER_ACTION_PROPOSED = "maintainer.action.proposed",
+  MAINTAINER_ACTION_CANCELLED = "maintainer.action.cancelled",
+  MAINTAINER_ACTION_EXECUTED = "maintainer.action.executed",
 }
 
 export interface SensitiveActionDefinition {
@@ -285,6 +294,20 @@ export const SENSITIVE_ACTION_CATALOGUE: Record<
     reasonRequired: true,
     capturesState: true,
   },
+  [SensitiveAction.MAINTENANCE_WINDOW_CHANGED]: {
+    scope: SensitiveActionScope.PROTOCOL_CONFIG,
+    description:
+      "A maintenance window was activated or cleared, changing what the API serves.",
+    reasonRequired: true,
+    capturesState: true,
+  },
+  [SensitiveAction.COMPONENT_DEGRADATION_CHANGED]: {
+    scope: SensitiveActionScope.PROTOCOL_CONFIG,
+    description:
+      "An operator declared or cleared a component degradation on the public status.",
+    reasonRequired: true,
+    capturesState: true,
+  },
   [SensitiveAction.CONTRACT_UPGRADED]: {
     scope: SensitiveActionScope.PROTOCOL_CONFIG,
     description: "A contract was upgraded or its WASM hash changed.",
@@ -318,6 +341,27 @@ export const SENSITIVE_ACTION_CATALOGUE: Record<
   [SensitiveAction.LIFECYCLE_STATE_TRANSITION]: {
     scope: SensitiveActionScope.COMPLIANCE,
     description: "A core record underwent a deterministic lifecycle state transition.",
+    reasonRequired: false,
+    capturesState: true,
+  },
+  [SensitiveAction.MAINTAINER_ACTION_PROPOSED]: {
+    scope: SensitiveActionScope.APPROVAL,
+    description:
+      "A maintainer declared a signed intent to perform a high-impact action.",
+    reasonRequired: true,
+    capturesState: true,
+  },
+  [SensitiveAction.MAINTAINER_ACTION_CANCELLED]: {
+    scope: SensitiveActionScope.APPROVAL,
+    description:
+      "A proposed approval intent was withdrawn before it could execute.",
+    reasonRequired: true,
+    capturesState: false,
+  },
+  [SensitiveAction.MAINTAINER_ACTION_EXECUTED]: {
+    scope: SensitiveActionScope.APPROVAL,
+    description:
+      "An approval intent reached a terminal state and its signed receipt was recorded.",
     reasonRequired: false,
     capturesState: true,
   },

@@ -22,6 +22,12 @@ import { ResumePauseDto } from "./dto/resume-pause.dto";
 import { JwtAuthGuard } from "src/core/auth/jwt.guard";
 import { Roles, Role } from "src/common/decorators/roles.decorator";
 import { RolesGuard } from "src/common/guard/roles.guard";
+import { Idempotent } from "src/common/idempotency/idempotency.decorator";
+
+function userAgentOf(req: any): string | undefined {
+  const value = req?.headers?.["user-agent"];
+  return typeof value === "string" ? value : undefined;
+}
 
 @ApiTags("Pause Control")
 @ApiBearerAuth()
@@ -34,6 +40,7 @@ export class PauseControlController {
 
   @Post("activate")
   @Roles(Role.ADMIN)
+  @Idempotent()
   @ApiOperation({ summary: "Activate emergency pause on a scope" })
   @ApiResponse({ status: 201, description: "Pause activated" })
   async activatePause(@Body() dto: ActivatePauseDto, @Req() req: any) {
@@ -45,6 +52,8 @@ export class PauseControlController {
       actorRole: user?.role ?? "unknown",
       environment: dto.environment,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+      ipAddress: req?.ip,
+      userAgent: userAgentOf(req),
     });
     this.logger.warn(
       `Pause activated on '${dto.scope}' by ${user?.id}: ${dto.reason}`,
@@ -54,6 +63,7 @@ export class PauseControlController {
 
   @Post("resume")
   @Roles(Role.ADMIN)
+  @Idempotent()
   @ApiOperation({ summary: "Resume a paused scope" })
   @ApiResponse({ status: 200, description: "Pause resumed" })
   async resumePause(@Body() dto: ResumePauseDto, @Req() req: any) {
@@ -63,6 +73,7 @@ export class PauseControlController {
       dto.reason,
       user?.id ?? "unknown",
       user?.role ?? "unknown",
+      { ipAddress: req?.ip, userAgent: userAgentOf(req) },
     );
     if (!pause) {
       throw new BadRequestException(

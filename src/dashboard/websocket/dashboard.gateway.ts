@@ -11,7 +11,9 @@ import {
 } from "@nestjs/websockets";
 import { OnModuleDestroy } from "@nestjs/common";
 import { Server, Socket } from "socket.io";
-import { Logger, UseFilters, UsePipes, ValidationPipe } from "@nestjs/common";
+import { Logger, Optional, UseFilters, UsePipes, ValidationPipe } from "@nestjs/common";
+import { WsTicketService } from "./services/ws-ticket.service";
+import { DashboardWebSocketAuthAdapter } from "./adapters/dashboard-ws-auth.adapter";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { createSpan, extractContext } from "../../config/tracing";
 import {
@@ -72,6 +74,8 @@ export class DashboardGateway
     private readonly eventBuffer: EventBufferService,
     private readonly metricsService: DashboardMetricsService,
     private readonly jwtService: JwtService,
+    @Optional() private readonly ticketService?: WsTicketService,
+    @Optional() private readonly authAdapter?: DashboardWebSocketAuthAdapter,
   ) {}
 
   async afterInit(server: Server) {
@@ -113,21 +117,72 @@ export class DashboardGateway
 
     try {
       // Authenticate the client
-      const token = this.extractToken(client);
-      if (!token) {
-        this.logger.warn(
-          `Connection rejected: No token provided for client ${client.id}`,
-        );
-        client.emit("error", {
-          code: "AUTH_REQUIRED",
-          message: "Authentication token required",
-        });
-        client.disconnect(true);
-        return;
+      let userId: string | null = null;
+
+      // 1. Check if socket was already authenticated (e.g., via adapter)
+      if ((client as any).user?.id) {
+        userId = (client as any).user.id;
+      } else if (this.authAdapter) {
+        const authenticated = await this.authAdapter.authenticate(client);
+        if (authenticated && (client as any).user?.id) {
+          userId = (client as any).user.id;
+        }
       }
 
-      const payload = this.jwtService.verify(token);
-      const userId = payload.sub || payload.userId;
+      // 2. Authenticate via single-use ticket
+      if (!userId && this.ticketService) {
+        const ticket = this.extractTicket(client);
+        if (ticket) {
+          const ticketData = await this.ticketService.validateAndConsumeTicket(ticket);
+          if (ticketData?.userId) {
+            userId = ticketData.userId;
+            (client as any).user = { id: userId, ...ticketData };
+          } else {
+            this.logger.warn(
+              `Connection rejected: Invalid or expired ticket for client ${client.id}`,
+            );
+            client.emit("error", {
+              code: "AUTH_FAILED",
+              message: "Invalid or expired authentication ticket",
+            });
+            client.disconnect(true);
+            return;
+          }
+        }
+      }
+
+      // 3. Fallback: Check header/auth object JWT (disallow long-lived query tokens)
+      if (!userId) {
+        const queryToken = client.handshake.query?.token;
+        if (queryToken && typeof queryToken === "string") {
+          this.logger.warn(
+            `Connection rejected: Long-lived query tokens disabled for client ${client.id}`,
+          );
+          client.emit("error", {
+            code: "QUERY_TOKENS_DISABLED",
+            message:
+              "Long-lived tokens in query parameters are disabled. Use single-use tickets from POST /api/ws/ticket.",
+          });
+          client.disconnect(true);
+          return;
+        }
+
+        const token = this.extractToken(client);
+        if (!token) {
+          this.logger.warn(
+            `Connection rejected: No token or ticket provided for client ${client.id}`,
+          );
+          client.emit("error", {
+            code: "AUTH_REQUIRED",
+            message: "Authentication ticket or token required",
+          });
+          client.disconnect(true);
+          return;
+        }
+
+        const payload = this.jwtService.verify(token);
+        userId = payload.sub || payload.userId;
+      }
 
       if (!userId) {
         throw new Error("Invalid token: missing user ID");
@@ -379,6 +434,33 @@ export class DashboardGateway
     });
   }
 
+  private extractTicket(client: Socket): string | null {
+    const queryTicket = client.handshake.query?.ticket;
+    if (typeof queryTicket === "string" && queryTicket.trim()) {
+      return queryTicket.trim();
+    }
+
+    const authTicket = (client.handshake.auth as any)?.ticket;
+    if (typeof authTicket === "string" && authTicket.trim()) {
+      return authTicket.trim();
+    }
+
+    const headerTicket = client.handshake.headers["x-ws-ticket"];
+    if (typeof headerTicket === "string" && headerTicket.trim()) {
+      return headerTicket.trim();
+    }
+
+    const queryToken = client.handshake.query?.token;
+    if (
+      typeof queryToken === "string" &&
+      (queryToken.startsWith("wst_") || queryToken.startsWith("ticket_"))
+    ) {
+      return queryToken.trim();
+    }
+
+    return null;
+  }
+
   private extractToken(client: Socket): string | null {
     // Try authorization header first
     const authHeader = client.handshake.headers.authorization;
@@ -386,18 +468,13 @@ export class DashboardGateway
       return authHeader.substring(7);
     }
 
-    // Try auth query parameter
+    // Try auth object
     const tokenQuery = client.handshake.auth?.token;
-    if (tokenQuery) {
+    if (tokenQuery && typeof tokenQuery === "string") {
       return tokenQuery;
     }
 
-    // Try query parameter
-    const tokenQueryParam = client.handshake.query?.token;
-    if (typeof tokenQueryParam === "string") {
-      return tokenQueryParam;
-    }
-
+    // Prohibit query parameter tokens
     return null;
   }
 

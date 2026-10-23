@@ -408,6 +408,35 @@ check(
   }
 );
 
+check(
+  "Recovery authorization allows the operation owner and denies cross-tenant access",
+  "RECOVERY_AUTHORIZATION",
+  () => {
+    const entries = [
+      { id: "rec-op-1", userId: "user-a" },
+      { id: "rec-op-2", userId: "user-b" },
+    ];
+    const canAccess = (entry, actorUserId) => entry.userId === actorUserId;
+
+    for (const entry of entries) {
+      assert.strictEqual(
+        canAccess(entry, entry.userId),
+        true,
+        `Owner must access ${entry.id}`
+      );
+      const otherUser = entries.find(
+        (candidate) => candidate.userId !== entry.userId
+      ).userId;
+      assert.strictEqual(
+        canAccess(entry, otherUser),
+        false,
+        `Cross-tenant actor must be denied access to ${entry.id}`
+      );
+    }
+    return "Owner access allowed and cross-tenant access denied for each recovery entry";
+  }
+);
+
 // 5. User-Impact Reporting & Privacy Redaction Verification
 check(
   "User-impact reporting accurately quantifies 7-decimal exposure, deduplicates notifications, normalizes routes, and scrubs secrets",

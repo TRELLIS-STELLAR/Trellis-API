@@ -31,6 +31,7 @@ import { OwnershipTransfer } from "./core/ownership/entities/ownership-transfer.
 
 // Modules – infrastructure
 import { AuditModule } from "./infrastructure/audit/audit.module";
+import { ApprovalIntentModule } from "./infrastructure/audit/approval-intents/approval-intent.module";
 
 // Modules – blockchain
 import { OracleModule } from "./blockchain/oracle/oracle.module";
@@ -67,6 +68,7 @@ import { CacheModule } from "./common/cache/cache.module";
 import { MarketCacheWarmersModule } from "./common/cache/market-cache-warmers.module";
 // Modules – idempotency (replay protection for mutating requests)
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
+import { ProjectionReplayModule } from "./common/events/replay/projection-replay.module";
 import { BillingModule } from "./billing/billing.module";
 // Modules – payments (plugin system)
 import { PaymentsModule } from "./payments/payments.module";
@@ -195,6 +197,14 @@ import { ExportModule } from "./infrastructure/export/export.module";
 import { SnapshotModule } from "./snapshot/snapshot.module";
 // Modules – recovery center (issue #122)
 import { RecoveryModule } from "./recovery/recovery.module";
+// Modules – cross-repo request validation (issue #353)
+import { CrossRepoModule } from "./cross-repo/cross-repo.module";
+// Modules – signed snapshot export (issue #356)
+import { SnapshotExportModule } from "./snapshot/export/snapshot-export.module";
+// Modules – dependency-health degraded mode (issue #355)
+import { DegradedModeModule } from "./dependency-health/degraded-mode/degraded-mode.module";
+// Modules – event dead-letter recovery (issue #354)
+import { EventDeadLetterModule } from "./common/events/dead-letter/event-dead-letter.module";
 import { QuotaBudgetModule } from "./common/quota/quota-budget.module";
 import { DistributedLockModule } from "./infrastructure/distributed-lock/distributed-lock.module";
 import { ApiDeprecationMiddleware } from "./common/versioning/api-deprecation.middleware";
@@ -212,6 +222,7 @@ import { PauseScope } from "./infrastructure/pause-control/entities/pause-scope.
 import { PauseAuditLog } from "./infrastructure/pause-control/entities/pause-audit-log.entity";
 // Invariant monitor entity
 import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/invariant-report.entity";
+import { ReleaseModule } from "./common/release/release.module";
 
 @Module({
   imports: [
@@ -351,6 +362,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     InvitationModule,
     OwnershipTransferModule,
     AuditModule,
+    ApprovalIntentModule,
     OracleModule,
     PortfolioModule,
     RiskManagementModule,
@@ -375,10 +387,15 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     DistributedLockModule,
     SnapshotModule,
     RecoveryModule,
+    CrossRepoModule,
+    SnapshotExportModule,
+    DegradedModeModule,
+    EventDeadLetterModule,
     VersioningModule,
     CacheModule,
     MarketCacheWarmersModule,
     IdempotencyModule,
+    ProjectionReplayModule,
     RateLimitingModule.forRoot(),
     LoggerModule.forRootAsync({
       inject: [ConfigService],
@@ -406,7 +423,7 @@ import { InvariantReportEntity } from "./monitoring/invariant-monitor/entities/i
     PermissionMatrixModule,
     AbuseDetectionModule,
     AccessibilityModule,
-    FeatureRolloutModule,
+    ReleaseModule,
   ],
 
   controllers: [AppController, QuotaAdminController, ErrorCatalogController],

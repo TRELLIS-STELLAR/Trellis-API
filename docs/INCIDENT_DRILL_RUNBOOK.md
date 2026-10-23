@@ -110,9 +110,15 @@ For operations interrupted by the incident:
 
 1. Register affected operations in `RecoveryService` (`rec-<operationId>`).
 2. Verify on-chain inspection links (`view-on-chain`) are attached for `payment`, `submission`, and `staking` operation types.
-3. Enforce tenant isolation: a user can only view, retry, or transition their own recovery entries (`ForbiddenException` on cross-tenant access).
+3. Enforce tenant isolation: a user can view, retry, or transition only their own recovery entries. Verify owner access succeeds and a second tenant receives `ForbiddenException` on cross-tenant access before performing recovery actions.
 4. Replay operations guarded by `idempotencyKey`. Even if a retry action is dispatched multiple times, irreversible side effects (ledger credits, Stellar transaction submissions, outbound notifications) execute **at most once**.
 5. Transition verified operations to `resolved` state, which automatically strips residual `availableActions` and prevents further state transitions.
+
+The executable verification reports an owner-allowed and cross-tenant-denied
+check for every registered operation. A failed authorization check blocks the
+recovery gate; do not work around it by using an administrator identity in a
+tenant-scoped request. Route the incident through the authorized recovery
+operator procedure and retain the access-denial audit event.
 
 ### Phase 6: User-Impact Reporting & Stakeholder Communications (`USER_IMPACT_REPORTING`)
 

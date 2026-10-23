@@ -141,3 +141,63 @@ export interface AccessibilityWorkflowEnvelope {
     error: AriaAnnouncement;
   };
 }
+
+export type AsyncStatusPhase =
+  | 'idle'
+  | 'submitting'
+  | 'polling'
+  | 'retrying'
+  | 'succeeded'
+  | 'failed'
+  | 'timeout'
+  | 'unauthorized'
+  | 'aborted';
+
+export interface AsyncStatusRetryState {
+  attempt: number;
+  maxAttempts: number;
+  backoffMs: number;
+  retryable: boolean;
+  retryShortcut: string;
+  retryCountdownSeconds?: number;
+  exhaustedAnnouncement?: AriaAnnouncement;
+}
+
+export interface AsyncStatusAuthorizationState {
+  authRequired: boolean;
+  authScope?: string;
+  reauthShortcut: string;
+  reauthActionPrompt: string;
+  returnFocusTargetAfterAuth: string;
+}
+
+export interface AsyncStatusFocusManagement {
+  containFocusWhilePending: boolean;
+  pendingFocusTarget: string;
+  completionFocusTarget: string;
+  failureFocusTarget: string;
+  authFocusTarget: string;
+  abortFocusTarget: string;
+}
+
+export interface AsyncStatusKeyboardControls {
+  abortShortcut: string;
+  retryShortcut: string;
+  reauthShortcut: string;
+  shortcuts: Record<string, string>;
+}
+
+export interface AsyncStatusAccessibilityContract {
+  operationId: string;
+  operationLabel: string;
+  currentPhase: AsyncStatusPhase;
+  statusAnnouncement: AriaAnnouncement;
+  progressPercentage?: number;
+  keyboardControls: AsyncStatusKeyboardControls;
+  focusManagement: AsyncStatusFocusManagement;
+  retryState?: AsyncStatusRetryState;
+  authorizationState?: AsyncStatusAuthorizationState;
+  rollbackOnAbort: boolean;
+  rollbackActionPrompt?: string;
+}
+

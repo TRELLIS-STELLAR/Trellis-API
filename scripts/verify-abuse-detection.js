@@ -32,7 +32,14 @@ async function main() {
     __dirname,
     "../src/security/abuse-detection/abuse-detection.rules.ts",
   );
-  const rules = await import(`file://${rulesPath.replace(/\\/g, "/")}`);
+  let rules;
+  try {
+    rules = await import(`file://${rulesPath.replace(/\\/g, "/")}`);
+  } catch (_err) {
+    const createJiti = require("jiti");
+    const jiti = createJiti(__filename);
+    rules = jiti(rulesPath);
+  }
 
   let passed = 0;
   let failed = 0;

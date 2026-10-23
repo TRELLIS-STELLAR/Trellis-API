@@ -16,6 +16,7 @@ import { initSentry } from "./config/sentry";
 import { sentryBreadcrumbMiddleware } from "./common/middleware/sentry.middleware";
 import { assertSecretsValid } from "./config/secrets-validation";
 import { AccessibilityMiddleware } from "./common/middleware/accessibility.middleware";
+import { CorrelationIdMiddleware } from "./common/correlation/correlation-id.middleware";
 
 async function bootstrap() {
   // Validate secrets before any other initialisation so misconfigured
@@ -70,12 +71,21 @@ async function bootstrap() {
     app.useLogger(["error", "warn"]);
   }
 
+  // Resolve the request correlation ID before any other middleware, module
+  // middleware or guard runs, so every log line, job, outbound call and error
+  // response for this request carries the same validated ID (#270).
+  const correlationMiddleware = new CorrelationIdMiddleware();
+  app.use((req: any, res: any, next: any) =>
+    correlationMiddleware.use(req, res, next),
+  );
+
   // Initialize Sentry request and performance monitoring middleware
   // For Sentry v8+, expressIntegration automatically handles middleware when added to integrations
   app.use(sentryBreadcrumbMiddleware);
 
   // Security Headers - Helmet
-  app.use(helmet.default(createHelmetConfig()));
+  const helmetMiddleware = helmet.default || (helmet as any);
+  app.use(helmetMiddleware(createHelmetConfig()));
 
   // Handle favicon requests to prevent 404 errors in logs
   app.use((req: any, res: any, next: any) => {
@@ -87,7 +97,9 @@ async function bootstrap() {
   });
 
   // Global configuration
-  app.setGlobalPrefix("api/v1");
+  app.setGlobalPrefix("api/v1", {
+    exclude: ["api/ws/(.*)", "api/ws/ticket"],
+  });
   // URI-based versioning (e.g. /api/v1/... and /api/v2/...).
   // The global prefix remains "api" while version segments appear per-route.
   app.enableVersioning({

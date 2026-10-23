@@ -208,6 +208,18 @@ describe('IncidentDrillService', () => {
       expect(result.duplicateSideEffectsDetected).toBe(0);
       expect(result.terminalStateImmutabilityVerified).toBe(true);
       expect(result.tenantIsolationVerified).toBe(true);
+      expect(result.accessChecks).toEqual([
+        {
+          entryId: 'rec-op-1',
+          ownerAccessAllowed: true,
+          crossTenantAccessDenied: true,
+        },
+        {
+          entryId: 'rec-op-2',
+          ownerAccessAllowed: true,
+          crossTenantAccessDenied: true,
+        },
+      ]);
       expect(result.onChainLinksVerified).toBe(true);
       expect(result.entries.every((e) => e.finalState === 'resolved')).toBe(
         true,

@@ -25,7 +25,16 @@ import {
   LogLevel,
   LoggerModuleOptions,
 } from "./winston.config";
-import { sanitizeObject, formatError, sanitizeValue } from "./sanitize.util";
+import {
+  sanitizeObject,
+  formatError,
+  sanitizeValue,
+  sanitizeErrorMessage,
+  redactBounded,
+  redactSecretValues,
+  MAX_ERROR_MESSAGE_LENGTH,
+} from "./sanitize.util";
+import { getCorrelationId } from "../common/correlation/correlation-context";
 
 // ---------------------------------------------------------------------------
 // Injection token
@@ -123,7 +132,9 @@ export class LoggerService implements NestLoggerService {
     extra?: Record<string, unknown>,
   ): void {
     const entry: StructuredLogEntry = {
-      message: error instanceof Error ? error.message : String(error),
+      message: sanitizeErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      ),
       context: context ?? this._context,
       error: formatError(error),
       ...this.sanitiseMeta(extra),
@@ -160,8 +171,12 @@ export class LoggerService implements NestLoggerService {
    */
   private _log(level: LogLevel, entry: Record<string, unknown>): void {
     const { message, ...meta } = entry;
+    // Inside a correlated request or job, every line carries its ID (#270).
+    const correlationId = getCorrelationId();
+    if (correlationId && meta.correlationId === undefined)
+      meta.correlationId = correlationId;
     this.winston[level](
-      String(message),
+      redactBounded(String(message), MAX_ERROR_MESSAGE_LENGTH, redactSecretValues),
       sanitizeObject(meta as Record<string, unknown>),
     );
   }

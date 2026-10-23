@@ -10,6 +10,7 @@ import {
 import { WebhookSubscriptionService } from "./webhook-subscription.service";
 import { WebhookDeliveryService } from "./webhook-delivery.service";
 import { PublishWebhookEventDto } from "../dto/webhook.dto";
+import { withJobCorrelation } from "../../../common/correlation/correlation-context";
 
 @Injectable()
 export class WebhookEventService {
@@ -89,10 +90,10 @@ export class WebhookEventService {
     for (const delivery of deliveries) {
       await this.deliveryQueue.add(
         "deliver",
-        {
+        withJobCorrelation({
           deliveryId: delivery.id,
           eventId: saved.id,
-        },
+        }),
         {
           attempts: 1, // We handle retries ourselves via backoff
           removeOnComplete: 100,

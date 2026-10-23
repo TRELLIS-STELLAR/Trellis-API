@@ -27,3 +27,17 @@ Validation errors name the setting but do not print its value.
 These checks do not change API routes or schemas. Optional integrations remain
 disabled when their configuration is absent; the Soroban endpoint and contract
 must be supplied as a pair when enabling oracle verification.
+
+## Protocol configuration version promotion
+
+Use `validateProtocolConfigsAcrossEnvironments` before promoting a protocol
+configuration. Supply the `development`, `staging`, and `production` metadata;
+the report separately identifies an unsupported version in an environment and
+version skew between otherwise compatible environments. A promotion is
+compatible only when all three environments are present, each version is
+supported by its own metadata, and the normalized versions are aligned.
+
+If an environment fails validation, correct that environment's configuration
+revision and rerun the check. If versions are skewed during a staged rollout,
+complete or roll back the promotion before treating the fleet as aligned.
+Existing single-version validation and protocol consumers are unchanged.

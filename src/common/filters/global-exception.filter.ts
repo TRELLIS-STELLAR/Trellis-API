@@ -10,7 +10,6 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Request, Response } from "express";
-import { v4 as uuidv4 } from "uuid";
 import { AppException } from "../errors/app.exception";
 import { mapDatabaseError } from "../errors/database-error-mapper";
 import { ErrorCode, ErrorDomain } from "../errors/error-codes";
@@ -20,6 +19,19 @@ import {
   sanitizeClientMessage,
 } from "../errors/error-taxonomy";
 import { getRemediationHint } from "../errors/remediation-hints";
+import {
+  CORRELATION_ID_HEADER,
+  REQUEST_ID_HEADER,
+  getCorrelationId,
+  resolveInboundCorrelationId,
+} from "../correlation/correlation-context";
+import {
+  redactSecretValues,
+  sanitizeErrorMessage,
+  sanitizeQuery,
+  sanitizeUrl,
+  sanitizeValue,
+} from "../../logging/sanitize.util";
 
 interface ValidationConstraints {
   [property: string]: string[];
@@ -41,15 +53,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    // 1. Correlation ID extraction / generation
+    // 1. Correlation ID: the request's context when CorrelationIdMiddleware
+    // ran, otherwise a validated inbound header or a fresh ID (#270). Raw
+    // header values are never echoed, so they cannot inject headers or logs.
     const correlationId =
-      (request.headers["x-request-id"] as string) ||
-      (request.headers["x-correlation-id"] as string) ||
-      uuidv4();
+      getCorrelationId() ??
+      resolveInboundCorrelationId(request.headers as Record<string, unknown>)
+        .correlationId;
 
     if (response.setHeader) {
-      response.setHeader("x-correlation-id", correlationId);
-      response.setHeader("x-request-id", correlationId);
+      response.setHeader(CORRELATION_ID_HEADER, correlationId);
+      response.setHeader(REQUEST_ID_HEADER, correlationId);
     }
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -122,10 +136,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     recoveryGuidance = recoveryGuidance ?? taxonomy.recoveryGuidance;
 
     // 3. User-safe message rendering (strip leaks in production)
-    const safeMessage = sanitizeClientMessage(
-      clientMessage,
-      this.isProduction,
-      errorCode,
+    // Secret-shaped substrings (JWTs, bearer tokens, Stellar secret seeds,
+    // URL credentials) are scrubbed in every environment (#271).
+    const safeMessage = this.redactClientMessage(
+      sanitizeClientMessage(clientMessage, this.isProduction, errorCode),
     );
 
     this.reportToSentry(exception, status, correlationId, request);
@@ -136,7 +150,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       title: taxonomy.defaultMessage,
       status,
       detail: safeMessage,
-      instance: request.path ?? request.url,
+      instance: request.path ?? sanitizeUrl(request.url ?? ""),
       remediation: recoveryGuidance,
       remediationHint: getRemediationHint(errorCode, correlationId),
       statusCode: status,
@@ -149,8 +163,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       ...(errors && { errors }),
       correlationId,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: sanitizeUrl(request.url ?? ""),
     });
+  }
+
+  private redactClientMessage(message: string | object): string | object {
+    if (typeof message === "string") return redactSecretValues(message);
+    if (Array.isArray(message))
+      return message.map((item) =>
+        typeof item === "string" ? redactSecretValues(item) : item,
+      );
+    return sanitizeValue(message) as object;
   }
 
   private extractMessage(exception: HttpException): string {
@@ -198,9 +221,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       scope.setTag("http.method", request.method);
       scope.setTag("http.status_code", String(status));
       scope.setTag("correlation_id", correlationId);
-      scope.setExtra("path", request.url);
-      scope.setExtra("query", request.query);
-      scope.setExtra("params", request.params);
+      scope.setExtra("path", sanitizeUrl(request.url ?? ""));
+      scope.setExtra(
+        "query",
+        sanitizeQuery((request.query ?? {}) as Record<string, unknown>),
+      );
+      scope.setExtra("params", sanitizeValue(request.params));
       scope.setUser({ ip_address: request.ip });
 
       const level: "error" | "warning" = status >= 500 ? "error" : "warning";
@@ -223,16 +249,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     this.logger.error({
       correlationId,
       method: request.method,
-      url: request.url,
+      url: sanitizeUrl(request.url ?? ""),
       status,
       error:
         exception instanceof Error
           ? {
               name: exception.name,
-              message: exception.message,
-              stack: this.isProduction ? undefined : exception.stack,
+              message: sanitizeErrorMessage(exception.message ?? ""),
+              stack: this.isProduction
+                ? undefined
+                : exception.stack && sanitizeErrorMessage(exception.stack),
             }
-          : String(exception),
+          : sanitizeErrorMessage(String(exception)),
     });
   }
 }

@@ -1,0 +1,32 @@
+{
+  "id": "event-ledger-hash-mismatch",
+  "category": "tampered-record",
+  "target": "events.replay",
+  "description": "Two ledger-chained events whose second payload was edited after being sealed (role escalated to ADMIN) while keeping the stored hash; replay must abort on the chain mismatch.",
+  "input": {
+    "events": [
+      {
+        "sequence": 1,
+        "eventId": "evt-corpus-ledger-1",
+        "eventName": "user.created",
+        "schemaVersion": "1.0",
+        "timestamp": "2026-01-01T00:00:00.000Z",
+        "producer": "core-user",
+        "payload": { "userId": "u-ledger-1", "email": "l1@example.com", "role": "USER" },
+        "hash": "934ef202b09e60f18703ce95b4b29702219063e7d220dff876d63040c3278c6f"
+      },
+      {
+        "sequence": 2,
+        "eventId": "evt-corpus-ledger-2",
+        "eventName": "user.created",
+        "schemaVersion": "1.0",
+        "timestamp": "2026-01-01T00:00:01.000Z",
+        "producer": "core-user",
+        "payload": { "userId": "u-ledger-2", "email": "l2@example.com", "role": "ADMIN" },
+        "previousHash": "934ef202b09e60f18703ce95b4b29702219063e7d220dff876d63040c3278c6f",
+        "hash": "1336c712684dbbfd84f7d0580161901a5da9643056ec145a450b805c37504160"
+      }
+    ]
+  },
+  "expected": { "rejected": true, "errorMatches": "hash mismatch", "reportOutcome": "aborted" }
+}

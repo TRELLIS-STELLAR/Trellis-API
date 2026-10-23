@@ -56,8 +56,17 @@ async function run() {
   const contractPath = path.resolve(__dirname, "../src/common/accessibility/accessibility.contract.ts");
   const suitesPath = path.resolve(__dirname, "../src/common/accessibility/accessibility.suites.ts");
 
-  const contract = await import(`file://${contractPath.replace(/\\/g, "/")}`);
-  const suites = await import(`file://${suitesPath.replace(/\\/g, "/")}`);
+  let contract;
+  let suites;
+  try {
+    contract = await import(`file://${contractPath.replace(/\\/g, "/")}`);
+    suites = await import(`file://${suitesPath.replace(/\\/g, "/")}`);
+  } catch (_err) {
+    const createJiti = require("jiti");
+    const jiti = createJiti(__filename);
+    contract = jiti(contractPath);
+    suites = jiti(suitesPath);
+  }
 
   // Test 1: Reduced-Motion Contract
   check(
@@ -219,6 +228,130 @@ async function run() {
       return "All 5 core workflow suites passed invariant verification";
     }
   );
+
+  // Test 7: Async Status Contract Suite Across All 5 Domains
+  domains.forEach(({ name, suiteFn }) => {
+    check(
+      `Async status contract, keyboard navigation, and focus order for ${name}`,
+      "ASYNC_STATUS",
+      () => {
+        const suite = suiteFn();
+        const asyncStatus = suite.asyncStatus;
+        assert(asyncStatus, "Suite must expose asyncStatus contract");
+        assert(asyncStatus.operationId && asyncStatus.operationLabel, "Must have valid operationId and label");
+        assert(asyncStatus.focusManagement.pendingFocusTarget, "Must declare pendingFocusTarget");
+        assert(asyncStatus.focusManagement.completionFocusTarget, "Must declare completionFocusTarget");
+        assert(asyncStatus.focusManagement.failureFocusTarget, "Must declare failureFocusTarget");
+        assert(asyncStatus.keyboardControls.abortShortcut === "Escape", "Abort shortcut must be Escape");
+        assert(asyncStatus.keyboardControls.shortcuts["Escape"], "Escape must be declared in shortcuts");
+        contract.assertAsyncStatusInvariants(asyncStatus);
+        return `Async status contract validated for ${name}`;
+      }
+    );
+  });
+
+  // Test 8: Async Status Normal Path (Idle -> Submitting -> Succeeded)
+  check(
+    "Async status normal lifecycle emits polite announcements and moves focus to completionFocusTarget",
+    "ASYNC_STATUS_NORMAL",
+    () => {
+      const base = contract.buildAsyncStatusAccessibilityContract({
+        operationId: "verify-normal-op",
+        operationLabel: "Async Asset Allocation",
+      });
+      assert.strictEqual(base.currentPhase, "idle");
+      assert.strictEqual(base.progressPercentage, 0);
+
+      const submitting = contract.transitionAsyncStatus(base, "submitting", { progressPercentage: 25 });
+      assert.strictEqual(submitting.currentPhase, "submitting");
+      assert.strictEqual(submitting.statusAnnouncement.politeness, "polite");
+      assert(submitting.statusAnnouncement.message.includes("Submitting"));
+      assert.strictEqual(submitting.focusManagement.pendingFocusTarget, "verify-normal-op-progress");
+
+      const succeeded = contract.transitionAsyncStatus(submitting, "succeeded");
+      assert.strictEqual(succeeded.currentPhase, "succeeded");
+      assert.strictEqual(succeeded.progressPercentage, 100);
+      assert.strictEqual(succeeded.statusAnnouncement.politeness, "polite");
+      assert(succeeded.statusAnnouncement.message.includes("completed successfully"));
+      assert.strictEqual(succeeded.focusManagement.completionFocusTarget, "verify-normal-op-success-summary");
+      return "Normal path transitions successfully with polite ARIA updates";
+    }
+  );
+
+  // Test 9: Async Status Failure & Timeout Path (Assertive Announcements & failureFocusTarget)
+  check(
+    "Async status failure and timeout emit assertive announcements and redirect focus to failureFocusTarget",
+    "ASYNC_STATUS_FAILURE",
+    () => {
+      const base = contract.buildAsyncStatusAccessibilityContract({
+        operationId: "verify-fail-op",
+        operationLabel: "Soroban Contract Call",
+      });
+
+      const failed = contract.transitionAsyncStatus(base, "failed", { errorMessage: "Slippage exceeded" });
+      assert.strictEqual(failed.currentPhase, "failed");
+      assert.strictEqual(failed.statusAnnouncement.politeness, "assertive");
+      assert.strictEqual(failed.statusAnnouncement.interrupt, true);
+      assert(failed.statusAnnouncement.message.includes("Slippage exceeded"));
+      assert(failed.statusAnnouncement.message.includes("KeyR"));
+      assert.strictEqual(failed.focusManagement.failureFocusTarget, "verify-fail-op-error-alert");
+
+      const timedOut = contract.transitionAsyncStatus(base, "timeout");
+      assert.strictEqual(timedOut.currentPhase, "timeout");
+      assert.strictEqual(timedOut.statusAnnouncement.politeness, "assertive");
+      assert(timedOut.statusAnnouncement.message.includes("timed out"));
+      return "Failure and timeout emit assertive live announcements and point to error alert";
+    }
+  );
+
+  // Test 10: Async Status Retry Path with Attempt Counter and Limit Exhaustion
+  check(
+    "Async status retry path tracks attempt counters, backoff, and signals exhaustion when limit is reached",
+    "ASYNC_STATUS_RETRY",
+    () => {
+      const base = contract.buildAsyncStatusAccessibilityContract({
+        operationId: "verify-retry-op",
+        operationLabel: "Webhook Delivery",
+        maxAttempts: 3,
+      });
+
+      const r1 = contract.transitionAsyncStatus(base, "retrying", { attempt: 1 });
+      assert.strictEqual(r1.currentPhase, "retrying");
+      assert.strictEqual(r1.retryState.attempt, 1);
+      assert(r1.statusAnnouncement.message.includes("attempt 1 of 3"));
+
+      const r2 = contract.transitionAsyncStatus(r1, "retrying", { attempt: 2 });
+      assert.strictEqual(r2.retryState.attempt, 2);
+
+      const exhausted = contract.transitionAsyncStatus(r2, "failed", { attempt: 3 });
+      assert.strictEqual(exhausted.statusAnnouncement.politeness, "assertive");
+      assert(exhausted.statusAnnouncement.message.includes("Maximum retry attempts reached"));
+      return "Retry progression and limit exhaustion validated";
+    }
+  );
+
+  // Test 11: Async Status Authorization Path (Session Expiration, Auth Target, and Return Target)
+  check(
+    "Async status authorization path redirects focus to authFocusTarget and preserves returnFocusTargetAfterAuth",
+    "ASYNC_STATUS_AUTH",
+    () => {
+      const base = contract.buildAsyncStatusAccessibilityContract({
+        operationId: "verify-auth-op",
+        operationLabel: "Portfolio Optimization",
+        authRequired: true,
+      });
+
+      const unauth = contract.transitionAsyncStatus(base, "unauthorized", { authRequired: true });
+      assert.strictEqual(unauth.currentPhase, "unauthorized");
+      assert.strictEqual(unauth.statusAnnouncement.politeness, "assertive");
+      assert.strictEqual(unauth.authorizationState.authRequired, true);
+      assert.strictEqual(unauth.authorizationState.reauthShortcut, "Alt+A");
+      assert.strictEqual(unauth.focusManagement.authFocusTarget, "verify-auth-op-auth-modal");
+      assert.strictEqual(unauth.authorizationState.returnFocusTargetAfterAuth, "verify-auth-op-progress");
+      return "Authorization expiration and focus preservation verified";
+    }
+  );
+
 
   if (!isJson) {
     console.log("\n-------------------------------------------------------------------");

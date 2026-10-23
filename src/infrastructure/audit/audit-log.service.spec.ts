@@ -24,6 +24,22 @@ describe("AuditLogService retention", () => {
     expect(repo.remove).toHaveBeenCalledWith([eligible]);
     expect(result.protectedIds).toEqual(["protected"]);
   });
+
+  it("keeps previews read-only and allows a failed deletion to be retried without touching protected evidence", async () => {
+    const eligible = { id: "eligible", createdAt: new Date("2010-01-01"), metadata: null };
+    const held = { id: "held", createdAt: new Date("2010-01-01"), metadata: { retentionHold: true } };
+    const repo = {
+      find: jest.fn().mockResolvedValue([eligible, held]),
+      remove: jest.fn().mockRejectedValueOnce(new Error("database unavailable")).mockResolvedValueOnce(undefined),
+    };
+    const service = new AuditLogService(repo as any, {} as any, {} as any);
+
+    await service.previewRetention(new Date("2020-01-01"));
+    expect(repo.remove).not.toHaveBeenCalled();
+    await expect(service.enforceRetention()).rejects.toThrow("database unavailable");
+    await expect(service.enforceRetention()).resolves.toMatchObject({ eligible: 1, protected: 1 });
+    expect(repo.remove).toHaveBeenLastCalledWith([eligible]);
+  });
 });
 
 describe("AuditLogService record minimization", () => {

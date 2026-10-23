@@ -93,6 +93,50 @@ describe("FeatureFlagRolloutGuard", () => {
     });
   });
 
+  it("retries a transient rollback verification failure before escalating", async () => {
+    const verifyRollback = jest
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockRejectedValueOnce(new Error("read replica unavailable"))
+      .mockResolvedValueOnce(true);
+
+    await expect(
+      guard.run({
+        scopeId: "horizon-poll-canary",
+        flag,
+        execute: async () => "partial-result",
+        verify: async () => ({ healthy: false }),
+        rollback: jest.fn(),
+        verifyRollback,
+        rollbackVerificationAttempts: 3,
+        rollbackVerificationBackoffMs: 0,
+      }),
+    ).rejects.toMatchObject({
+      name: GuardedRolloutAbortedError.name,
+      rolledBack: true,
+    });
+
+    expect(verifyRollback).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects unsafe rollback verification retry limits before executing", async () => {
+    const execute = jest.fn(async () => "result");
+
+    await expect(
+      guard.run({
+        scopeId: "horizon-poll-canary",
+        flag,
+        execute,
+        verify: async () => ({ healthy: true }),
+        rollback: jest.fn(),
+        verifyRollback: async () => true,
+        rollbackVerificationAttempts: 6,
+      }),
+    ).rejects.toThrow(RangeError);
+
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("runs compensation when rollout execution throws before returning a result", async () => {
     const rolloutFailure = new Error("write failed after partial work");
     const rollback = jest.fn(async (value: string | undefined, cause: unknown) => {

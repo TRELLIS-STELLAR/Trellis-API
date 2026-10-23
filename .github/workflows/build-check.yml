@@ -43,6 +43,20 @@ jobs:
           src/discovery/reviews/agent-reviews.service.spec.ts
           src/common/pagination/cursor-pagination.service.spec.ts
 
+      - name: Enforce resource budgets (asset search and worst-case inputs)
+        run: npm test -- --runInBand resource-budget
+
+      - name: Contract event compatibility, request correlation and redaction
+        run: >-
+          npm test -- --runInBand
+          src/blockchain/oracle/events
+          src/blockchain/oracle/services/stellar-oracle.adapter.events.spec.ts
+          src/common/correlation
+          src/logging/redaction-surfaces.spec.ts
+          src/infrastructure/workers/background-worker.correlation.spec.ts
+          src/infrastructure/retry-scheduler/retry-scheduler.correlation.spec.ts
+          src/infrastructure/webhooks/services/webhook-delivery.correlation.spec.ts
+
       # Runs the full suite and prints the coverage summary against the
       # coverageThreshold floors in jest.config.js. Report-only for now: some
       # suites already fail on main, so this step does not fail the build.

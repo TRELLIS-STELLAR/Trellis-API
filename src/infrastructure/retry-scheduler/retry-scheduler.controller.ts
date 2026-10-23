@@ -8,6 +8,8 @@ import {
   UseGuards,
   Logger,
   NotFoundException,
+  HttpCode,
+  Req,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -18,7 +20,11 @@ import {
   ApiParam,
 } from "@nestjs/swagger";
 import { RetrySchedulerService } from "./retry-scheduler.service";
-import { ScheduleRetryDto, RetryDeadLetterDto } from "./dto/schedule-retry.dto";
+import {
+  ScheduleRetryDto,
+  RetryDeadLetterDto,
+  RetryDeadLettersDto,
+} from "./dto/schedule-retry.dto";
 import { JwtAuthGuard } from "src/core/auth/jwt.guard";
 import { Roles, Role } from "src/common/decorators/roles.decorator";
 import { RolesGuard } from "src/common/guard/roles.guard";
@@ -103,13 +109,19 @@ export class RetrySchedulerController {
   @ApiOperation({ summary: "Manually retry a dead-lettered operation" })
   @ApiResponse({ status: 200, description: "Operation re-queued for retry" })
   @ApiParam({ name: "operationId", description: "Operation ID" })
+  @ApiResponse({
+    status: 409,
+    description: "Failure was non-retryable; resend with force",
+  })
   async retryDeadLetter(
     @Param("operationId") operationId: string,
     @Body() dto: RetryDeadLetterDto,
+    @Req() req: { user?: { id?: string } },
   ) {
     const operation = await this.retryService.retryDeadLetter(
       operationId,
       dto.maxAttempts,
+      { actor: req.user?.id, reason: dto.reason, force: dto.force },
     );
     if (!operation) {
       throw new NotFoundException(
@@ -118,6 +130,28 @@ export class RetrySchedulerController {
     }
     this.logger.log(`Dead-lettered operation ${operationId} retried via API`);
     return { success: true, operation };
+  }
+
+  @Post("dead-letters/retry")
+  @HttpCode(200)
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      "Re-queue the oldest retryable dead letters with a per-item report",
+  })
+  @ApiResponse({ status: 200, description: "Per-operation retry outcomes" })
+  async retryDeadLetters(
+    @Body() dto: RetryDeadLettersDto,
+    @Req() req: { user?: { id?: string } },
+  ) {
+    const result = await this.retryService.retryDeadLetters(
+      { operationType: dto.operationType, limit: dto.limit },
+      { actor: req.user?.id, reason: dto.reason },
+    );
+    this.logger.log(
+      `Bulk dead-letter retry re-queued ${result.requeued}/${result.requested} operations`,
+    );
+    return { success: true, ...result };
   }
 
   @Get("metrics")

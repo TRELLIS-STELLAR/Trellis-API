@@ -7,8 +7,12 @@ import {
   IsObject,
   Min,
   Max,
+  MaxLength,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+/** Hard cap on one bulk retry so a single call cannot flood the workers. */
+export const MAX_BULK_DEAD_LETTER_RETRY = 100;
 
 export class ScheduleRetryDto {
   @ApiProperty({ description: "Type of operation (e.g., webhook.delivery, payment.submit)" })
@@ -72,4 +76,37 @@ export class RetryDeadLetterDto {
   @Min(1)
   @Max(20)
   maxAttempts?: number;
+
+  @ApiPropertyOptional({ description: "Why the operation is being retried (audit trail)" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+
+  @ApiPropertyOptional({
+    description: "Re-queue even though the failure was recorded as non-retryable",
+  })
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
+}
+
+export class RetryDeadLettersDto {
+  @ApiPropertyOptional({ description: "Only retry dead letters of this operation type" })
+  @IsOptional()
+  @IsString()
+  operationType?: string;
+
+  @ApiPropertyOptional({ description: "Maximum operations to re-queue (1-100)" })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_BULK_DEAD_LETTER_RETRY)
+  limit?: number;
+
+  @ApiPropertyOptional({ description: "Why the operations are being retried (audit trail)" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
 }

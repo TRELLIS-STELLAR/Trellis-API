@@ -38,6 +38,26 @@ describe("PermissionMatrix", () => {
         }
       }
     });
+
+    it("should enforce the declared role boundary for every action", () => {
+      const roles = Object.values(Role);
+      for (const entry of PERMISSION_MATRIX) {
+        expect(entry.requiredPermissions.length).toBeGreaterThan(0);
+        for (const role of roles) {
+          const allowed = entry.allowedRoles.includes(role);
+          expect(isActionAllowed([role], entry.action)).toBe(allowed || role === Role.ADMIN);
+        }
+      }
+    });
+
+    it("should grant every declared action only when its roles also hold its permissions", () => {
+      for (const entry of PERMISSION_MATRIX) {
+        for (const role of entry.allowedRoles) {
+          expect(hasPermission(role, entry.requiredPermissions[0])).toBe(true);
+          expect(isActionAllowed([role], entry.action)).toBe(true);
+        }
+      }
+    });
   });
 
   describe("ADMIN access", () => {
@@ -172,6 +192,11 @@ describe("PermissionMatrix", () => {
           "reconciliation.run",
         ),
       ).toBe(true);
+    });
+
+    it("should deny a role that has the permission but is excluded by the matrix", () => {
+      expect(hasPermission(Role.OPERATOR, Permission.PAYMENT_PROCESS)).toBe(true);
+      expect(isActionAllowed([Role.OPERATOR], "payment.process")).toBe(false);
     });
   });
 

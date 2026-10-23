@@ -3,6 +3,8 @@ import { EventEmitter2 } from "@nestjs/event-emitter";
 import { HealthService } from "./health.service";
 import { DependencyHealthService } from "../dependency-health/dependency-health.service";
 import { PauseControlService } from "../infrastructure/pause-control/pause-control.service";
+import { AdminConfigAuditService } from "../infrastructure/audit/admin-config/admin-config-audit.service";
+import { SensitiveAction } from "../infrastructure/audit/sensitive-actions/sensitive-action.enum";
 import {
   ActivePauseRecordInput,
   ApiRequestGateContext,
@@ -29,6 +31,15 @@ import {
 
 const MAX_HISTORY_ENTRIES = 50;
 
+/** Request context recorded as audit evidence for operator changes (#280). */
+export interface AdminActionContext {
+  actorRole?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+const ROLLBACK_NOTE = "Rolled back: audit evidence could not be recorded";
+
 @Injectable()
 export class PublicStatusService implements OnModuleInit {
   private readonly logger = new Logger(PublicStatusService.name);
@@ -46,6 +57,7 @@ export class PublicStatusService implements OnModuleInit {
     private readonly dependencyHealthService?: DependencyHealthService,
     @Optional() private readonly pauseControlService?: PauseControlService,
     @Optional() private readonly eventEmitter?: EventEmitter2,
+    @Optional() private readonly adminConfigAudit?: AdminConfigAuditService,
   ) {}
 
   onModuleInit(): void {
@@ -171,27 +183,49 @@ export class PublicStatusService implements OnModuleInit {
     actorId = "operator",
     actorRole = "ADMIN",
     now: Date = new Date(),
+    context: AdminActionContext = {},
   ): Promise<OperatorSystemStatusView> {
-    this.maintenanceWindow = {
-      active: true,
-      reason: input.reason,
-      scheduledStartAt: input.scheduledStartAt ?? now.toISOString(),
-      estimatedEndAt: input.estimatedEndAt ?? null,
-      activatedBy: actorId,
-      activatedByRole: actorRole,
-      activatedAt: now.toISOString(),
-      affectedScopes:
-        input.affectedScopes && input.affectedScopes.length > 0
-          ? input.affectedScopes
-          : ["all"],
-    };
-
-    await this.syncStateTransition(
-      "maintenance_enabled",
+    await this.withEvidence({
+      action: SensitiveAction.MAINTENANCE_WINDOW_CHANGED,
       actorId,
-      input.reason,
-      now,
-    );
+      context: { ...context, actorRole },
+      resourceType: "status.maintenance-window",
+      resourceId: "global",
+      reason: input.reason,
+      operation: "activate",
+      snapshot: () => this.maintenanceSnapshot(),
+      apply: async () => {
+        this.maintenanceWindow = {
+          active: true,
+          reason: input.reason,
+          scheduledStartAt: input.scheduledStartAt ?? now.toISOString(),
+          estimatedEndAt: input.estimatedEndAt ?? null,
+          activatedBy: actorId,
+          activatedByRole: actorRole,
+          activatedAt: now.toISOString(),
+          affectedScopes:
+            input.affectedScopes && input.affectedScopes.length > 0
+              ? input.affectedScopes
+              : ["all"],
+        };
+
+        await this.syncStateTransition(
+          "maintenance_enabled",
+          actorId,
+          input.reason,
+          now,
+        );
+      },
+      revert: async (before) => {
+        this.maintenanceWindow = before.maintenanceWindow;
+        await this.syncStateTransition(
+          "maintenance_cleared",
+          "system",
+          ROLLBACK_NOTE,
+          now,
+        );
+      },
+    });
 
     this.logger.warn(
       `Maintenance mode activated by ${actorId}: ${sanitizeStatusText(input.reason)}`,
@@ -207,17 +241,39 @@ export class PublicStatusService implements OnModuleInit {
   async clearMaintenance(
     reason: string,
     actorId = "operator",
-    _actorRole = "ADMIN",
+    actorRole = "ADMIN",
     now: Date = new Date(),
+    context: AdminActionContext = {},
   ): Promise<OperatorSystemStatusView> {
-    this.maintenanceWindow = null;
-
-    await this.syncStateTransition(
-      "maintenance_cleared",
+    await this.withEvidence({
+      action: SensitiveAction.MAINTENANCE_WINDOW_CHANGED,
       actorId,
+      context: { ...context, actorRole },
+      resourceType: "status.maintenance-window",
+      resourceId: "global",
       reason,
-      now,
-    );
+      operation: "clear",
+      snapshot: () => this.maintenanceSnapshot(),
+      apply: async () => {
+        this.maintenanceWindow = null;
+
+        await this.syncStateTransition(
+          "maintenance_cleared",
+          actorId,
+          reason,
+          now,
+        );
+      },
+      revert: async (before) => {
+        this.maintenanceWindow = before.maintenanceWindow;
+        await this.syncStateTransition(
+          "maintenance_enabled",
+          "system",
+          ROLLBACK_NOTE,
+          now,
+        );
+      },
+    });
 
     this.logger.log(
       `Maintenance mode cleared by ${actorId}: ${sanitizeStatusText(reason)}`,
@@ -237,21 +293,43 @@ export class PublicStatusService implements OnModuleInit {
     },
     actorId = "operator",
     now: Date = new Date(),
+    context: AdminActionContext = {},
   ): Promise<OperatorSystemStatusView> {
-    this.manualDegradations.set(input.componentId, {
-      componentId: input.componentId,
-      reason: input.reason,
-      declaredBy: actorId,
-      declaredAt: now.toISOString(),
-      estimatedRecoveryAt: input.estimatedRecoveryAt ?? null,
-    });
-
-    await this.syncStateTransition(
-      "degradation_declared",
+    await this.withEvidence({
+      action: SensitiveAction.COMPONENT_DEGRADATION_CHANGED,
       actorId,
-      `${input.componentId}: ${input.reason}`,
-      now,
-    );
+      context,
+      resourceType: "status.component-degradation",
+      resourceId: input.componentId,
+      reason: input.reason,
+      operation: "declare",
+      snapshot: () => this.degradationSnapshot(input.componentId),
+      apply: async () => {
+        this.manualDegradations.set(input.componentId, {
+          componentId: input.componentId,
+          reason: input.reason,
+          declaredBy: actorId,
+          declaredAt: now.toISOString(),
+          estimatedRecoveryAt: input.estimatedRecoveryAt ?? null,
+        });
+
+        await this.syncStateTransition(
+          "degradation_declared",
+          actorId,
+          `${input.componentId}: ${input.reason}`,
+          now,
+        );
+      },
+      revert: async (before) => {
+        this.restoreDegradation(input.componentId, before.degradation);
+        await this.syncStateTransition(
+          "degradation_cleared",
+          "system",
+          ROLLBACK_NOTE,
+          now,
+        );
+      },
+    });
 
     return this.getOperatorStatus({ now });
   }
@@ -264,17 +342,112 @@ export class PublicStatusService implements OnModuleInit {
     reason = "Component recovered",
     actorId = "operator",
     now: Date = new Date(),
+    context: AdminActionContext = {},
   ): Promise<OperatorSystemStatusView> {
-    this.manualDegradations.delete(componentId);
-
-    await this.syncStateTransition(
-      "degradation_cleared",
+    await this.withEvidence({
+      action: SensitiveAction.COMPONENT_DEGRADATION_CHANGED,
       actorId,
-      `${componentId}: ${reason}`,
-      now,
-    );
+      context,
+      resourceType: "status.component-degradation",
+      resourceId: componentId,
+      reason,
+      operation: "clear",
+      snapshot: () => this.degradationSnapshot(componentId),
+      apply: async () => {
+        this.manualDegradations.delete(componentId);
+
+        await this.syncStateTransition(
+          "degradation_cleared",
+          actorId,
+          `${componentId}: ${reason}`,
+          now,
+        );
+      },
+      revert: async (before) => {
+        this.restoreDegradation(componentId, before.degradation);
+        await this.syncStateTransition(
+          "degradation_declared",
+          "system",
+          ROLLBACK_NOTE,
+          now,
+        );
+      },
+    });
 
     return this.getOperatorStatus({ now });
+  }
+
+  /**
+   * Applies an operator change with fail-closed audit evidence (#280) when the
+   * audit service is wired in; otherwise applies it directly (unit tests,
+   * standalone use) so existing callers keep their behaviour.
+   */
+  private async withEvidence<TState>(change: {
+    action: SensitiveAction;
+    actorId: string;
+    context: AdminActionContext;
+    resourceType: string;
+    resourceId: string;
+    reason: string;
+    operation: string;
+    snapshot: () => TState;
+    apply: () => Promise<void>;
+    revert: (before: TState) => Promise<void>;
+  }): Promise<void> {
+    if (!this.adminConfigAudit) {
+      await change.apply();
+      return;
+    }
+
+    await this.adminConfigAudit.applyWithEvidence({
+      action: change.action,
+      actor: {
+        id: change.actorId,
+        role: change.context.actorRole ?? null,
+        ipAddress: change.context.ipAddress ?? null,
+        userAgent: change.context.userAgent ?? null,
+      },
+      // Matches the `@Roles(Role.ADMIN)` on the operator routes.
+      allowedRoles: ["ADMIN"],
+      resourceType: change.resourceType,
+      resourceId: change.resourceId,
+      reason: change.reason,
+      metadata: { operation: change.operation },
+      snapshot: change.snapshot,
+      apply: change.apply,
+      revert: change.revert,
+    });
+  }
+
+  private maintenanceSnapshot(): {
+    maintenanceWindow: MaintenanceWindowInput | null;
+  } {
+    return {
+      maintenanceWindow: this.maintenanceWindow
+        ? {
+            ...this.maintenanceWindow,
+            affectedScopes: [...(this.maintenanceWindow.affectedScopes ?? [])],
+          }
+        : null,
+    };
+  }
+
+  private degradationSnapshot(componentId: PublicComponentId): {
+    degradation: ManualDegradationInput | null;
+  } {
+    const current = this.manualDegradations.get(componentId);
+    return { degradation: current ? { ...current } : null };
+  }
+
+  private restoreDegradation(
+    componentId: PublicComponentId,
+    degradation: ManualDegradationInput | null,
+  ): void {
+    if (degradation) {
+      this.manualDegradations.set(componentId, degradation);
+    } else {
+      this.manualDegradations.delete(componentId);
+    }
   }
 
   /**

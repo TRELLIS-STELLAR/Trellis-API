@@ -1,0 +1,17 @@
+{
+  "id": "inbound-missing-event-id",
+  "category": "missing-fields",
+  "target": "webhooks.inbound",
+  "description": "Correctly signed body with no id/eventId; dedup would be impossible, so it must be rejected as malformed.",
+  "input": {
+    "subscriptionId": "00000000-0000-4000-8000-000000000001",
+    "signingKey": "corpus_inbound_key",
+    "rawBody": "{\"type\":\"invoice.paid\"}",
+    "headers": {
+      "x-webhook-timestamp": "1800000000",
+      "x-webhook-signature": "sha256=180e6404bc33d353bf7767576240dcaee74bef959a0f7cad1b576843372dfc2d"
+    },
+    "nowMillis": 1800000000000
+  },
+  "expected": { "status": 400, "reason": "malformed_event" }
+}

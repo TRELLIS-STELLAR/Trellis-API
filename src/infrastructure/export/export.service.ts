@@ -13,6 +13,7 @@ import {
   PrivacyExportAuthorizer,
   FieldAuthorizationContext,
 } from "./privacy-export-authorizer";
+import { sanitizeErrorMessage } from "../../logging/sanitize.util";
 
 @Injectable()
 export class ExportService {
@@ -93,10 +94,13 @@ export class ExportService {
 
       this.logger.log(`Export ${exportId} completed successfully`);
     } catch (error) {
+      // The stored reason is returned by GET /exports/:id, so it must not
+      // carry credentials from the failing dependency (#271).
+      const reason = sanitizeErrorMessage(String(error?.message ?? error));
       exportRecord.status = ExportStatus.FAILED;
-      exportRecord.error = error.message;
+      exportRecord.error = reason;
       await this.exportRepo.save(exportRecord);
-      this.logger.error(`Export ${exportId} failed: ${error.message}`);
+      this.logger.error(`Export ${exportId} failed: ${reason}`);
     }
   }
 

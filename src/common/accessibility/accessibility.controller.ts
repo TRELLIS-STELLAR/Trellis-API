@@ -1,6 +1,8 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Query,
   Headers,
   Param,
@@ -14,6 +16,7 @@ import {
   ApiQuery,
   ApiParam,
   ApiHeader,
+  ApiBody,
 } from "@nestjs/swagger";
 import {
   getAuthAccessibilitySuite,
@@ -28,7 +31,10 @@ import {
   AccessibleTableContract,
   DenseFormAccessibilityContract,
   ErrorRecoveryAccessibilityContract,
+  AsyncStatusAccessibilityContract,
+  AsyncStatusPhase,
 } from "./accessibility.types";
+import { transitionAsyncStatus } from "./accessibility.contract";
 
 export type AccessibleDomain = "auth" | "portfolio" | "defi" | "notifications" | "observability";
 
@@ -127,5 +133,67 @@ export class AccessibilityController {
     @Headers("sec-ch-prefers-reduced-motion") reducedMotion?: string,
   ): AccessibilityWorkflowEnvelope {
     return this.getSuiteForDomain(domain, reducedMotion).workflow;
+  }
+
+  @Get("async-status/:domain")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Get async status accessibility contract including phase, progress, and retry semantics",
+  })
+  getAsyncStatus(
+    @Param("domain") domain: AccessibleDomain,
+  ): AsyncStatusAccessibilityContract {
+    return this.getSuiteForDomain(domain).asyncStatus;
+  }
+
+  @Post("async-status/:domain/transition")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Simulate or transition async status phase and receive updated ARIA announcements and focus targets",
+  })
+  @ApiBody({
+    description: "Next phase and optional error or attempt payload",
+    schema: {
+      type: "object",
+      required: ["nextPhase"],
+      properties: {
+        nextPhase: {
+          type: "string",
+          enum: [
+            "idle",
+            "submitting",
+            "polling",
+            "retrying",
+            "succeeded",
+            "failed",
+            "timeout",
+            "unauthorized",
+            "aborted",
+          ],
+        },
+        errorMessage: { type: "string" },
+        progressPercentage: { type: "number" },
+        attempt: { type: "number" },
+        retryCountdownSeconds: { type: "number" },
+        authRequired: { type: "boolean" },
+        authScope: { type: "string" },
+      },
+    },
+  })
+  transitionAsyncStatus(
+    @Param("domain") domain: AccessibleDomain,
+    @Body()
+    dto: {
+      nextPhase: AsyncStatusPhase;
+      errorMessage?: string;
+      progressPercentage?: number;
+      attempt?: number;
+      retryCountdownSeconds?: number;
+      authRequired?: boolean;
+      authScope?: string;
+    },
+  ): AsyncStatusAccessibilityContract {
+    const suite = this.getSuiteForDomain(domain);
+    return transitionAsyncStatus(suite.asyncStatus, dto.nextPhase, dto);
   }
 }

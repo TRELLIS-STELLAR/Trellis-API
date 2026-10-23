@@ -43,7 +43,13 @@ export {
   sanitizeHeaders,
   sanitizeQuery,
   sanitizeErrorMessage,
+  sanitizeUrl,
+  redactSecretValues,
+  redactBounded,
   formatError,
+  MAX_OBJECT_KEYS,
+  MAX_STRING_LENGTH,
+  MAX_ERROR_MESSAGE_LENGTH,
 } from "./sanitize.util";
 
 export {

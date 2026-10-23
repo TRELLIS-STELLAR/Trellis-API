@@ -25,7 +25,11 @@ import { AdminTwoFactorGuard } from "../core/auth/guards/admin-two-factor.guard"
 import { RolesGuard } from "../common/guard/roles.guard";
 import { Roles } from "../common/guard/roles.decorator";
 import { Role } from "../common/guard/roles.enum";
-import { PublicStatusService } from "./public-status.service";
+import { Idempotent } from "../common/idempotency/idempotency.decorator";
+import {
+  AdminActionContext,
+  PublicStatusService,
+} from "./public-status.service";
 import {
   ClearComponentDegradationDto,
   ClearMaintenanceWindowDto,
@@ -37,6 +41,16 @@ import {
   OperatorSystemStatusView,
   UiStatusBannerContract,
 } from "./public-status.model";
+
+/** Actor context recorded with operator changes as audit evidence (#280). */
+function actionContext(req: any): AdminActionContext {
+  const userAgent = req?.headers?.["user-agent"];
+  return {
+    actorRole: req?.user?.role ?? undefined,
+    ipAddress: req?.ip ?? undefined,
+    userAgent: typeof userAgent === "string" ? userAgent : undefined,
+  };
+}
 
 @ApiTags("Status")
 @Controller()
@@ -126,6 +140,9 @@ export class PublicStatusController {
 
   @Post("status/maintenance")
   @HttpCode(HttpStatus.OK)
+  // A retried request (same Idempotency-Key) replays the stored response
+  // instead of applying the change and recording evidence twice.
+  @Idempotent()
   @UseGuards(JwtAuthGuard, RolesGuard, AdminTwoFactorGuard)
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
@@ -144,11 +161,16 @@ export class PublicStatusController {
       dto,
       actorId,
       actorRole,
+      new Date(),
+      actionContext(req),
     );
   }
 
   @Post("status/maintenance/clear")
   @HttpCode(HttpStatus.OK)
+  // A retried request (same Idempotency-Key) replays the stored response
+  // instead of applying the change and recording evidence twice.
+  @Idempotent()
   @UseGuards(JwtAuthGuard, RolesGuard, AdminTwoFactorGuard)
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
@@ -167,11 +189,16 @@ export class PublicStatusController {
       dto.reason,
       actorId,
       actorRole,
+      new Date(),
+      actionContext(req),
     );
   }
 
   @Post("status/degradation")
   @HttpCode(HttpStatus.OK)
+  // A retried request (same Idempotency-Key) replays the stored response
+  // instead of applying the change and recording evidence twice.
+  @Idempotent()
   @UseGuards(JwtAuthGuard, RolesGuard, AdminTwoFactorGuard)
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
@@ -185,11 +212,19 @@ export class PublicStatusController {
     @Req() req: any,
   ): Promise<OperatorSystemStatusView> {
     const actorId = req?.user?.id ?? "admin";
-    return this.publicStatusService.declareComponentDegradation(dto, actorId);
+    return this.publicStatusService.declareComponentDegradation(
+      dto,
+      actorId,
+      new Date(),
+      actionContext(req),
+    );
   }
 
   @Post("status/degradation/clear")
   @HttpCode(HttpStatus.OK)
+  // A retried request (same Idempotency-Key) replays the stored response
+  // instead of applying the change and recording evidence twice.
+  @Idempotent()
   @UseGuards(JwtAuthGuard, RolesGuard, AdminTwoFactorGuard)
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
@@ -207,6 +242,8 @@ export class PublicStatusController {
       dto.componentId,
       dto.reason ?? "Component recovered",
       actorId,
+      new Date(),
+      actionContext(req),
     );
   }
 }

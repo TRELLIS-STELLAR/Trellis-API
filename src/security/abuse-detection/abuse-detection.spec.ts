@@ -493,7 +493,7 @@ describe("Risk-Scored Abuse Detection (#abuse-detection)", () => {
       expect(headersOut[ABUSE_RESPONSE_HEADERS.DISPOSITION]).toBe(
         "allow_after_step_up",
       );
-      expect(Reflect.get(ABUSE_HIGH_IMPACT_METADATA_KEY, {})).toBeUndefined();
+      expect((Reflect as any).getMetadata(ABUSE_HIGH_IMPACT_METADATA_KEY, {})).toBeUndefined();
     });
 
     it("exposes controller evaluate, assert, review resolution, and metrics endpoints", () => {

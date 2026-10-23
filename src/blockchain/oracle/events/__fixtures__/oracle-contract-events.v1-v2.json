@@ -1,0 +1,131 @@
+{
+  "description": "Frozen ContractEvent XDR for every oracle event shape published by Trellis-contracts contracts/oracle-contract/src/events.rs. Do not regenerate: a decoder change that cannot read these is a breaking change. Add new files/entries for new contract releases instead.",
+  "contractId": "CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR",
+  "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+  "events": [
+    {
+      "kind": "sub_reg",
+      "version": 1,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAAB3N1Yl9yZWcAAAAAEAAAAAEAAAACAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAFAAAAAGjneAA=",
+      "fields": {
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "timestamp": "1760000000"
+      }
+    },
+    {
+      "kind": "sub_reg",
+      "version": 2,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAAB3N1Yl9yZWcAAAAAEAAAAAEAAAADAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAFAAAAAGjneAAAAAAPAAAACHJlcV83ZjNh",
+      "fields": {
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "timestamp": "1760000000",
+        "correlation_id": "req_7f3a"
+      }
+    },
+    {
+      "kind": "sub_del",
+      "version": 1,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAAB3N1Yl9kZWwAAAAAEAAAAAEAAAACAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAFAAAAAGjneAA=",
+      "fields": {
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "timestamp": "1760000000"
+      }
+    },
+    {
+      "kind": "sub_del",
+      "version": 2,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAAB3N1Yl9kZWwAAAAAEAAAAAEAAAADAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAFAAAAAGjneAAAAAAPAAAACHJlcV83ZjNh",
+      "fields": {
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "timestamp": "1760000000",
+        "correlation_id": "req_7f3a"
+      }
+    },
+    {
+      "kind": "price",
+      "version": 1,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAABXByaWNlAAAAAAAAEAAAAAEAAAAEAAAADwAAAAdYTE1fVVNEAAAAAAoAAAAAAAAAAAAAAAAAvGFOAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAFAAAAAGjneAA=",
+      "fields": {
+        "feed_id": "XLM_USD",
+        "price": "12345678",
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "timestamp": "1760000000"
+      }
+    },
+    {
+      "kind": "price",
+      "version": 2,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAABXByaWNlAAAAAAAAEAAAAAEAAAAFAAAADwAAAAdYTE1fVVNEAAAAAAoAAAAAAAAAAAAAAAAAvGFOAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAFAAAAAGjneAAAAAAPAAAACHJlcV83ZjNh",
+      "fields": {
+        "feed_id": "XLM_USD",
+        "price": "12345678",
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "timestamp": "1760000000",
+        "correlation_id": "req_7f3a"
+      }
+    },
+    {
+      "kind": "stale",
+      "version": 1,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAABXN0YWxlAAAAAAAAEAAAAAEAAAACAAAABQAAAAAAAAEsAAAABQAAAABo53gA",
+      "fields": {
+        "window_seconds": "300",
+        "timestamp": "1760000000"
+      }
+    },
+    {
+      "kind": "stale",
+      "version": 2,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAABXN0YWxlAAAAAAAAEAAAAAEAAAADAAAABQAAAAAAAAEsAAAABQAAAABo53gAAAAADwAAAAhyZXFfN2YzYQ==",
+      "fields": {
+        "window_seconds": "300",
+        "timestamp": "1760000000",
+        "correlation_id": "req_7f3a"
+      }
+    },
+    {
+      "kind": "staked",
+      "version": 1,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAABnN0YWtlZAAAAAAAEAAAAAEAAAAEAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAKAAAAAAAAAAAAAAAAAAAD6AAAAAoAAAAAAAAAAAAAAAAAABOIAAAABQAAAABo53gA",
+      "fields": {
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "amount": "1000",
+        "total_stake": "5000",
+        "timestamp": "1760000000"
+      }
+    },
+    {
+      "kind": "slashed",
+      "version": 1,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAAB3NsYXNoZWQAAAAAEAAAAAEAAAAFAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAKAAAAAAAAAAAAAAAAAAAA+gAAAAoAAAAAAAAAAAAAAAAAABKOAAAADwAAAAhzdGFsZV9weAAAAAUAAAAAaOd4AA==",
+      "fields": {
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "penalty_amount": "250",
+        "remaining_stake": "4750",
+        "reason": "stale_px",
+        "timestamp": "1760000000"
+      }
+    },
+    {
+      "kind": "unbond",
+      "version": 1,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAABnVuYm9uZAAAAAAAEAAAAAEAAAAEAAAAEgAAAAAAAAAACQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkAAAAKAAAAAAAAAAAAAAAAAAASjgAAAAUAAAAAaOjJgAAAAAUAAAAAaOd4AA==",
+      "fields": {
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "amount": "4750",
+        "unlock_time": "1760086400",
+        "timestamp": "1760000000"
+      }
+    },
+    {
+      "kind": "withdrawn",
+      "version": 1,
+      "xdr": "AAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAEAAAAAAAAAAgAAAA8AAAAGb3JhY2xlAAAAAAAPAAAACXdpdGhkcmF3bgAAAAAAABAAAAABAAAAAwAAABIAAAAAAAAAAAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAAACgAAAAAAAAAAAAAAAAAAEo4AAAAFAAAAAGjneAA=",
+      "fields": {
+        "submitter": "GAEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSCIJBEEQSH7S",
+        "amount": "4750",
+        "timestamp": "1760000000"
+      }
+    }
+  ]
+}

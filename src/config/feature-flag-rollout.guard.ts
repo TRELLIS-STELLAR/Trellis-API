@@ -18,6 +18,10 @@ export interface GuardedRolloutOptions<T> {
   rollback: (value: T | undefined, cause: unknown) => Promise<void>;
   /** Confirms the pre-rollout invariant after compensation has completed. */
   verifyRollback: () => Promise<boolean>;
+  /** Maximum number of checks for the restored invariant, including the first. */
+  rollbackVerificationAttempts?: number;
+  /** Base delay between retry checks; each delay is multiplied by its attempt number. */
+  rollbackVerificationBackoffMs?: number;
 }
 
 export interface GuardedRolloutResult<T> {
@@ -65,6 +69,28 @@ export class FeatureFlagRolloutGuard {
   async run<T>(options: GuardedRolloutOptions<T>): Promise<GuardedRolloutResult<T>> {
     const scopeId = options.scopeId.trim();
     if (!scopeId) throw new TypeError("scopeId must be a non-empty rollout identifier");
+    const rollbackVerificationAttempts =
+      options.rollbackVerificationAttempts ?? 3;
+    const rollbackVerificationBackoffMs =
+      options.rollbackVerificationBackoffMs ?? 100;
+    if (
+      !Number.isInteger(rollbackVerificationAttempts) ||
+      rollbackVerificationAttempts < 1 ||
+      rollbackVerificationAttempts > 5
+    ) {
+      throw new RangeError(
+        "rollbackVerificationAttempts must be an integer between 1 and 5",
+      );
+    }
+    if (
+      !Number.isFinite(rollbackVerificationBackoffMs) ||
+      rollbackVerificationBackoffMs < 0 ||
+      rollbackVerificationBackoffMs > 10_000
+    ) {
+      throw new RangeError(
+        "rollbackVerificationBackoffMs must be between 0 and 10000",
+      );
+    }
 
     let value: T | undefined;
     let cause: unknown;
@@ -103,9 +129,28 @@ export class FeatureFlagRolloutGuard {
         new Map([[options.flag, false]]),
         async () => {
           await options.rollback(value, cause);
-          if (!(await options.verifyRollback())) {
-            throw new Error("Rollback completed but the pre-rollout invariant was not verified.");
+          let lastVerificationError: unknown;
+          for (
+            let attempt = 1;
+            attempt <= rollbackVerificationAttempts;
+            attempt += 1
+          ) {
+            try {
+              if (await options.verifyRollback()) return;
+              lastVerificationError = new Error(
+                `Rollback check ${attempt}/${rollbackVerificationAttempts} did not verify the pre-rollout invariant.`,
+              );
+            } catch (error) {
+              lastVerificationError = error;
+            }
+
+            if (attempt < rollbackVerificationAttempts) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, rollbackVerificationBackoffMs * attempt),
+              );
+            }
           }
+          throw lastVerificationError;
         },
       );
       this.logger.warn(`Feature-flag rollout '${scopeId}' was rolled back and verified.`);

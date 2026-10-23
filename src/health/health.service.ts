@@ -84,6 +84,22 @@ export class HealthService {
     };
   }
 
+  /**
+   * Core probes for the public `/health` endpoint (#281). Unlike readiness, an
+   * unconfigured Redis is reported as `null` (not wired up) rather than `down`,
+   * so a deployment that does not use Redis is not reported as unhealthy.
+   */
+  async checkCoreComponents(): Promise<{
+    database: ComponentStatusDto;
+    redis: ComponentStatusDto | null;
+  }> {
+    const [database, redis] = await Promise.all([
+      this.checkDatabase(),
+      this.redis ? this.checkRedis() : Promise.resolve(null),
+    ]);
+    return { database, redis };
+  }
+
   private async checkDatabase(): Promise<ComponentStatusDto> {
     const start = Date.now();
     try {

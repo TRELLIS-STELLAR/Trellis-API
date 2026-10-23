@@ -3,9 +3,24 @@ import { AuditLogService } from "src/infrastructure/audit/audit-log.service";
 import { telemetryService } from "src/observability/telemetry.service";
 import { SubmissionHistoryService } from "./services/submission-history.service";
 import {
+  OracleLedgerState,
   OracleVerificationError,
   StellarOracleAdapter,
 } from "./services/stellar-oracle.adapter";
+
+export type VerifierInitStep = "network" | "contract" | "polling";
+
+export interface VerifierInitialization {
+  state: "idle" | "disabled" | "starting" | "running" | "failed";
+  attempts: number;
+  failedStep?: VerifierInitStep;
+  error?: string;
+  /** True when the failure is transient and POST .../verifier/start may succeed. */
+  retryable?: boolean;
+  /** True once rollback was verified to leave no polling timer or cycle behind. */
+  rolledBack?: boolean;
+  ledger?: OracleLedgerState;
+}
 
 export interface CanonicalizationInput {
   [key: string]: unknown;
@@ -63,7 +78,7 @@ function normalizePrimitive(value: unknown): string {
       return String(num);
     }
     case "bigint":
-      return ((value as bigint) < 0N ? "-" : "") + (value as bigint).toString();
+      return ((value as bigint) < 0n ? "-" : "") + (value as bigint).toString();
     case "undefined":
       return "null";
     default:
@@ -217,6 +232,11 @@ export class SubmissionVerifierService implements OnModuleDestroy {
   private readonly pollingInterval = 15000;
   private timer?: ReturnType<typeof setInterval>;
   private verifying = false;
+  private starting?: Promise<VerifierInitialization>;
+  private initialization: VerifierInitialization = {
+    state: "idle",
+    attempts: 0,
+  };
 
   constructor(
     private readonly auditLogService: AuditLogService,
@@ -237,24 +257,86 @@ export class SubmissionVerifierService implements OnModuleDestroy {
     return canonicalizePayload(submission);
   }
 
-  start() {
+  /**
+   * Runs the initialization steps in order. Any failure rolls back to the
+   * stopped state and verifies the rollback. Never rejects, so the
+   * fire-and-forget call in AppModule.onModuleInit cannot crash bootstrap;
+   * concurrent and repeated calls share one attempt or return the running state.
+   */
+  start(): Promise<VerifierInitialization> {
     if (!this.adapter.isEnabled) {
       this.logger.warn(
         "Submission verifier disabled: configure SOROBAN_RPC_URL and ORACLE_CONTRACT_ADDRESS",
       );
-      return;
+      this.initialization = { ...this.initialization, state: "disabled" };
+      return Promise.resolve(this.getInitialization());
     }
-    if (this.timer) return;
-    this.timer = setInterval(() => {
-      this.verifyCycle().catch((error) =>
-        this.logger.error("Oracle verification cycle failed", error),
+    if (this.timer) return Promise.resolve(this.getInitialization());
+    this.starting ??= this.initialize().finally(() => {
+      this.starting = undefined;
+    });
+    return this.starting;
+  }
+
+  private async initialize(): Promise<VerifierInitialization> {
+    const attempts = this.initialization.attempts + 1;
+    this.initialization = { state: "starting", attempts };
+    let step: VerifierInitStep = "network";
+    try {
+      await this.adapter.assertNetwork();
+      step = "contract";
+      const ledger = await this.adapter.getOracleLedgerState();
+      if (ledger.instance.state === "missing")
+        throw new OracleVerificationError(
+          "CONTRACT_NOT_DEPLOYED",
+          "ORACLE_CONTRACT_ADDRESS has no contract instance on this network",
+        );
+      // Verification reads transaction history only, so archived contract
+      // state does not block it; new submit_price calls must restore first.
+      if (
+        [ledger.instance, ledger.code, ledger.history].some(
+          (entry) => entry?.state === "archived",
+        )
+      )
+        this.logger.warn(
+          "Oracle contract state is archived; submit_price requires restoration",
+        );
+      step = "polling";
+      this.timer = setInterval(() => {
+        this.verifyCycle().catch((error) =>
+          this.logger.error("Oracle verification cycle failed", error),
+        );
+      }, this.pollingInterval);
+      this.initialization = { state: "running", attempts, ledger };
+    } catch (error) {
+      const rolledBack = this.rollback();
+      this.initialization = {
+        state: "failed",
+        attempts,
+        failedStep: step,
+        error: error instanceof Error ? error.message : String(error),
+        retryable: error instanceof OracleVerificationError && error.retryable,
+        rolledBack,
+      };
+      this.logger.error(
+        `Oracle verifier initialization failed at ${step}${
+          rolledBack ? "" : "; rollback could not be verified"
+        }`,
+        error,
       );
-    }, this.pollingInterval);
+    }
+    return this.getInitialization();
+  }
+
+  /** Stops polling and verifies that no verification cycle is still in flight. */
+  private rollback(): boolean {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+    return !this.verifying;
   }
 
   onModuleDestroy() {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = undefined;
+    this.rollback();
   }
 
   async verifyCycle() {
@@ -332,11 +414,16 @@ export class SubmissionVerifierService implements OnModuleDestroy {
     }
   }
 
+  getInitialization(): VerifierInitialization {
+    return { ...this.initialization };
+  }
+
   getStatus() {
     return {
       running: !!this.timer,
       enabled: this.adapter.isEnabled,
       interval: this.pollingInterval,
+      initialization: this.getInitialization(),
     };
   }
 }

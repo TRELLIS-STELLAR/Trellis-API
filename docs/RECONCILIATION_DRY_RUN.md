@@ -70,6 +70,13 @@ the investigation before treating the scan as complete. A report that does not
 hit the limit can still be bounded by the configured query scope and balance
 provider, so verify those inputs before repair.
 
+Rows are fetched oldest-first with their stable invoice/transaction identifier
+as a tie-breaker. Findings and duplicate-payment representatives are also
+ordered by stable identifiers, so the decision content is unchanged when a
+source returns equal-timestamp records in a different order. `generatedAt` and
+`durationMs` remain per-run metadata and are intentionally not stable across
+separate executions.
+
 ## Drift the report detects
 
 | Finding | Severity | Meaning |

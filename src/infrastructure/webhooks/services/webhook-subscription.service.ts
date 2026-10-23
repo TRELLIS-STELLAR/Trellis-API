@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { randomBytes } from "crypto";
@@ -10,6 +15,7 @@ import {
   CreateWebhookSubscriptionDto,
   UpdateWebhookSubscriptionDto,
 } from "../dto/webhook.dto";
+import { DestinationAllowListService } from "../../../common/validators/allow-list/destination-allow-list";
 
 @Injectable()
 export class WebhookSubscriptionService {
@@ -18,16 +24,29 @@ export class WebhookSubscriptionService {
   constructor(
     @InjectRepository(WebhookSubscription)
     private readonly subscriptionRepo: Repository<WebhookSubscription>,
+    @Optional()
+    private readonly destinationAllowList?: DestinationAllowListService,
   ) {}
+
+  /**
+   * Rejects destinations outside the allow-list (#279) and returns the
+   * normalized URL to store. Throws `DestinationNotAllowedError` (HTTP 400).
+   */
+  private async allowedDestination(url: string): Promise<string> {
+    if (!this.destinationAllowList) return url;
+    const destination = await this.destinationAllowList.validate(url);
+    return destination.url;
+  }
 
   async create(
     userId: string,
     dto: CreateWebhookSubscriptionDto,
   ): Promise<WebhookSubscription & { signingKey: string }> {
+    const url = await this.allowedDestination(dto.url);
     const signingKey = this.generateSigningKey();
     const subscription = this.subscriptionRepo.create({
       userId,
-      url: dto.url,
+      url,
       signingKey,
       events: dto.events,
       description: dto.description,
@@ -42,7 +61,7 @@ export class WebhookSubscriptionService {
     });
     const saved = await this.subscriptionRepo.save(subscription);
     this.logger.log(
-      `Webhook subscription created: ${saved.id} for user ${userId}, url=${dto.url}`,
+      `Webhook subscription created: ${saved.id} for user ${userId}, url=${url}`,
     );
     return { ...saved, signingKey };
   }
@@ -93,7 +112,11 @@ export class WebhookSubscriptionService {
     dto: UpdateWebhookSubscriptionDto,
   ): Promise<WebhookSubscription> {
     const sub = await this.findOne(id, userId);
-    Object.assign(sub, dto);
+    const changes = { ...dto };
+    if (changes.url !== undefined) {
+      changes.url = await this.allowedDestination(changes.url);
+    }
+    Object.assign(sub, changes);
     const saved = await this.subscriptionRepo.save(sub);
     this.logger.log(`Webhook subscription updated: ${id}`);
     return saved;

@@ -2,6 +2,9 @@
 
 Issue: [#124](https://github.com/TRELLIS-STELLAR/Trellis-API/issues/124)
 
+For the service-by-service user behavior, safe fallback, and recovery matrix,
+see [External dependency degradation matrix](./DEPENDENCY_DEGRADATION_MATRIX.md).
+
 Trellis depends on services that are not in this process: PostgreSQL, Redis,
 Horizon, an Ethereum RPC, object storage, SMTP, Elasticsearch, tracing and error
 reporting. This feature makes each dependency's state explicit instead of

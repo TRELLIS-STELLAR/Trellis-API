@@ -4,6 +4,8 @@ export { DashboardGateway } from "./dashboard.gateway";
 // Service exports
 export { ConnectionManagerService } from "./services/connection-manager.service";
 export { EventBufferService } from "./services/event-buffer.service";
+export { WsTicketService, WsTicketData } from "./services/ws-ticket.service";
+export { WsTicketController } from "./controllers/ws-ticket.controller";
 export { ConnectionPoolService } from "./services/connection-pool.service";
 export { DashboardMetricsService } from "./services/dashboard-metrics.service";
 export {

@@ -16,6 +16,9 @@ import { FeatureFlagRolloutGuard } from "../config/feature-flag-rollout.guard";
 import { AuthModule } from "../core/auth/auth.module";
 import { UserModule } from "../core/user/user.module";
 
+import { AuthModule } from "../core/auth/auth.module";
+import { UserModule } from "../core/user/user.module";
+
 @Module({
   imports: [
     AuthModule,

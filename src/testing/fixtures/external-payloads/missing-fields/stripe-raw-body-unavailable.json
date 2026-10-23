@@ -1,0 +1,16 @@
+{
+  "id": "stripe-raw-body-unavailable",
+  "category": "missing-fields",
+  "target": "payments.webhook-signature",
+  "description": "Signature header present but the raw body never reached the verifier (e.g. body-parser consumed it); verification must fail closed.",
+  "input": {
+    "provider": "stripe",
+    "secrets": { "STRIPE_WEBHOOK_SECRET": "corpus_stripe_secret" },
+    "rawBody": null,
+    "headers": {
+      "stripe-signature": "t=1800000000,v1=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "nowSeconds": 1800000000
+  },
+  "expected": { "ok": false, "reason": "raw_body_unavailable", "status": 400 }
+}

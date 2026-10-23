@@ -28,6 +28,7 @@ import {
 } from "./interfaces/payment-processor.interface";
 import { PaymentsService } from "./payments.service";
 import { Telemetry } from "src/observability/telemetry.decorator";
+import { RequiresCapability } from "../dependency-health/degraded-mode/requires-capability.decorator";
 
 /**
  * Stellar-specific convenience API matching the endpoints named in the feature
@@ -59,6 +60,7 @@ export class StellarPaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post("create")
+  @RequiresCapability("payments")
   @HttpCode(HttpStatus.CREATED)
   @Telemetry({
     operation: "payment.create",
@@ -79,6 +81,7 @@ export class StellarPaymentsController {
   }
 
   @Post("submit")
+  @RequiresCapability("payments")
   @HttpCode(HttpStatus.OK)
   @Telemetry({
     operation: "payment.process",

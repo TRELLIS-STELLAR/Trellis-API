@@ -12,6 +12,7 @@ import { ConfigService } from "@nestjs/config";
 import { getDataSourceToken } from "@nestjs/typeorm";
 import { DataSource } from "typeorm";
 import { DependencyHealthService } from "./dependency-health.service";
+import { DEPENDENCY_DEFINITIONS } from "./dependency-health.registry";
 import { runDependencyChecks } from "./dependency-health.runner";
 import {
   DependencyCheckResult,
@@ -143,6 +144,28 @@ function findCheck(report: DependencyReport, id: string): DependencyCheckResult 
 }
 
 describe("DependencyHealthService", () => {
+  it("keeps a remediation path for every dependency in the degradation matrix", () => {
+    expect(DEPENDENCY_DEFINITIONS.map(({ id }) => id)).toEqual([
+      "database",
+      "redis",
+      "background_jobs",
+      "stellar_horizon",
+      "stellar_network_passphrase",
+      "eth_rpc",
+      "object_storage",
+      "smtp",
+      "elasticsearch",
+      "otel_collector",
+      "sentry",
+      "ai_provider",
+    ]);
+
+    for (const definition of DEPENDENCY_DEFINITIONS) {
+      expect(definition.remediation.unavailable).toBeTruthy();
+      expect(definition.remediation.misconfigured).toBeTruthy();
+    }
+  });
+
   let fetchMock: jest.SpyInstance;
 
   beforeEach(() => {

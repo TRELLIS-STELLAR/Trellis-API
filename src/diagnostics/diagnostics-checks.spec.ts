@@ -5,6 +5,14 @@ import {
   checkHttpEndpoint,
   checkBootstrapAdmin,
   buildReport,
+  checkTcpConnectivityWithRetry,
+  checkHttpEndpointWithRetry,
+  checkDatabaseAuth,
+  checkSecretEntropy,
+  checkDirectoryPermissions,
+  parseEnvKeys,
+  checkEnvTemplateDrift,
+  checkPortAvailable,
   REQUIRED_ENV_SPECS,
   DiagnosticCheck,
 } from "./diagnostics-checks";
@@ -268,5 +276,257 @@ describe("buildReport", () => {
   it("includes all checks in the report", () => {
     const report = buildReport(checks);
     expect(report.checks).toHaveLength(checks.length);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// checkTcpConnectivityWithRetry
+// ──────────────────────────────────────────────────────────────────────────────
+describe("checkTcpConnectivityWithRetry", () => {
+  it("passes on first attempt when probe succeeds immediately", async () => {
+    const probe = jest.fn().mockResolvedValue(true);
+    const result = await checkTcpConnectivityWithRetry("tcp:db", "localhost", 5432, probe, "remediation");
+    expect(result.status).toBe("pass");
+    expect(result.attempts).toBe(1);
+    expect(probe).toHaveBeenCalledTimes(1);
+  });
+
+  it("succeeds on retry after initial failure", async () => {
+    const probe = jest
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    const onRetry = jest.fn();
+    const result = await checkTcpConnectivityWithRetry(
+      "tcp:db",
+      "localhost",
+      5432,
+      probe,
+      "remediation",
+      { maxAttempts: 3, backoffMs: 10, onRetry },
+    );
+
+    expect(result.status).toBe("pass");
+    expect(result.attempts).toBe(2);
+    expect(result.detail).toMatch(/retry attempt 2/i);
+    expect(onRetry).toHaveBeenCalledWith(1);
+  });
+
+  it("fails when all retry attempts are exhausted", async () => {
+    const probe = jest.fn().mockResolvedValue(false);
+    const result = await checkTcpConnectivityWithRetry(
+      "tcp:db",
+      "localhost",
+      5432,
+      probe,
+      "Start postgres container",
+      { maxAttempts: 3, backoffMs: 10 },
+    );
+
+    expect(result.status).toBe("fail");
+    expect(result.attempts).toBe(3);
+    expect(result.detail).toMatch(/after 3 attempts/i);
+    expect(result.remediation).toBe("Start postgres container");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// checkHttpEndpointWithRetry
+// ──────────────────────────────────────────────────────────────────────────────
+describe("checkHttpEndpointWithRetry", () => {
+  it("passes on first attempt on HTTP 200", async () => {
+    const probe = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    const result = await checkHttpEndpointWithRetry("http:horizon", "https://horizon.stellar.org", probe, "remediation");
+    expect(result.status).toBe("pass");
+    expect(result.attempts).toBe(1);
+  });
+
+  it("retries on temporary error and passes when endpoint recovers", async () => {
+    const probe = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const result = await checkHttpEndpointWithRetry(
+      "http:horizon",
+      "https://horizon.stellar.org",
+      probe,
+      "remediation",
+      { maxAttempts: 2, backoffMs: 10 },
+    );
+
+    expect(result.status).toBe("pass");
+    expect(result.attempts).toBe(2);
+    expect(result.detail).toMatch(/retry attempt 2/i);
+  });
+
+  it("warns after exhausting retry attempts without blocking", async () => {
+    const probe = jest.fn().mockResolvedValue({ ok: false });
+    const result = await checkHttpEndpointWithRetry(
+      "http:horizon",
+      "https://horizon.stellar.org",
+      probe,
+      "Check connection",
+      { maxAttempts: 3, backoffMs: 10 },
+    );
+
+    expect(result.status).toBe("warn");
+    expect(result.attempts).toBe(3);
+    expect(result.detail).toMatch(/unreachable.*3 attempts/i);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// checkDatabaseAuth
+// ──────────────────────────────────────────────────────────────────────────────
+describe("checkDatabaseAuth", () => {
+  it("passes when credentials and connection succeed", () => {
+    const result = checkDatabaseAuth({ connected: true, authenticated: true });
+    expect(result.status).toBe("pass");
+    expect(result.detail).toMatch(/credentials and authentication handshake succeeded/i);
+  });
+
+  it("fails with auth remediation when password or user is rejected", () => {
+    const result = checkDatabaseAuth({
+      connected: false,
+      authenticated: false,
+      errorCategory: "auth_failed",
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toMatch(/authentication failed/i);
+    expect(result.remediation).toMatch(/verify username and password in DATABASE_URL/i);
+  });
+
+  it("fails with db creation remediation when database does not exist", () => {
+    const result = checkDatabaseAuth({
+      connected: true,
+      authenticated: true,
+      errorCategory: "db_missing",
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toMatch(/target database does not exist/i);
+    expect(result.remediation).toMatch(/createdb.*trellis_dev/i);
+  });
+
+  it("fails with general connection remediation for generic connection issues", () => {
+    const result = checkDatabaseAuth({
+      connected: false,
+      authenticated: false,
+      errorMessage: "ECONNREFUSED",
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toMatch(/ECONNREFUSED/i);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// checkSecretEntropy
+// ──────────────────────────────────────────────────────────────────────────────
+describe("checkSecretEntropy", () => {
+  it("passes for high-entropy secret with at least 32 characters", () => {
+    const secret = "4b8e2f019c4d8721fa039b561849a0ce6d5e1284a73f8d91c2b5e709a341f28b";
+    const result = checkSecretEntropy("JWT_SECRET", secret);
+    expect(result.status).toBe("pass");
+    expect(result.detail).toMatch(/meets cryptographic length and entropy standards/i);
+  });
+
+  it("fails when secret is empty or unset", () => {
+    const result = checkSecretEntropy("JWT_SECRET", undefined);
+    expect(result.status).toBe("fail");
+    expect(result.detail).toMatch(/not set/i);
+  });
+
+  it("fails when secret is shorter than minLength", () => {
+    const result = checkSecretEntropy("JWT_SECRET", "short_secret_123");
+    expect(result.status).toBe("fail");
+    expect(result.detail).toMatch(/below recommended 32 characters/i);
+  });
+
+  it("warns when secret contains predictable dictionary words", () => {
+    const weak = "my_development_supersecret_password_for_jwt_auth_123456";
+    const result = checkSecretEntropy("JWT_SECRET", weak);
+    expect(result.status).toBe("warn");
+    expect(result.detail).toMatch(/predictable dictionary words/i);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// checkDirectoryPermissions
+// ──────────────────────────────────────────────────────────────────────────────
+describe("checkDirectoryPermissions", () => {
+  it("passes when directory write test succeeds", () => {
+    const testWrite = jest.fn().mockReturnValue(true);
+    const result = checkDirectoryPermissions("dir:scratch", "/var/trellis/scratch", testWrite);
+    expect(result.status).toBe("pass");
+    expect(result.detail).toMatch(/read\/write access/i);
+  });
+
+  it("fails when directory is not writable or access is denied", () => {
+    const testWrite = jest.fn().mockReturnValue(false);
+    const result = checkDirectoryPermissions("dir:scratch", "/var/trellis/scratch", testWrite);
+    expect(result.status).toBe("fail");
+    expect(result.detail).toMatch(/not writable or access is denied/i);
+    expect(result.remediation).toMatch(/chmod/i);
+  });
+});
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Local setup failures (issue #370)
+// ──────────────────────────────────────────────────────────────────────────────
+describe("parseEnvKeys", () => {
+  it("reads variable names only, ignoring comments, blanks, and values", () => {
+    const keys = parseEnvKeys("# comment\n\nFOO=bar\nexport BAZ = 1\r\nNOT A KEY\n#X=1\n");
+    expect([...keys].sort()).toEqual(["BAZ", "FOO"]);
+  });
+});
+
+describe("checkEnvTemplateDrift", () => {
+  it("passes when .env defines every template variable", () => {
+    const result = checkEnvTemplateDrift("A=1\nB=2\n", "B=x\nA=y\nEXTRA=z\n");
+    expect(result.status).toBe("pass");
+  });
+
+  it("warns with variable names, never values, when variables are missing", () => {
+    const result = checkEnvTemplateDrift("A=1\nB=2\nC=3\n", "A=super-secret\n");
+    expect(result.status).toBe("warn");
+    expect(result.detail).toContain("B, C");
+    expect(result.detail).not.toContain("super-secret");
+    expect(result.remediation).toMatch(/\.env\.example/);
+  });
+
+  it("skips when either file is absent", () => {
+    expect(checkEnvTemplateDrift(null, "A=1").status).toBe("skip");
+    expect(checkEnvTemplateDrift("A=1", null).status).toBe("skip");
+  });
+});
+
+describe("checkPortAvailable", () => {
+  it("passes when the port is free", async () => {
+    const result = await checkPortAvailable("env:PORT", 3001, async () => true);
+    expect(result.status).toBe("pass");
+  });
+
+  it("fails with remediation when the port is in use", async () => {
+    const result = await checkPortAvailable("env:PORT", 3001, async () => false);
+    expect(result.status).toBe("fail");
+    expect(result.remediation).toMatch(/lsof -i :3001/);
+  });
+
+  it("fails on an invalid port without probing", async () => {
+    const probe = jest.fn();
+    for (const port of [NaN, 0, 70000, 3000.5]) {
+      const result = await checkPortAvailable("env:PORT", port, probe);
+      expect(result.status).toBe("fail");
+    }
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("warns instead of failing when the probe itself errors", async () => {
+    const result = await checkPortAvailable("env:PORT", 3001, async () => {
+      throw new Error("EACCES");
+    });
+    expect(result.status).toBe("warn");
   });
 });

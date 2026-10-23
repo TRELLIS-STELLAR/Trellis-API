@@ -424,14 +424,29 @@ export class IncidentDrillService {
     }
 
     // 2. Verify tenant isolation (user A cannot mutate user B's recovery entry)
-    let tenantIsolationVerified = true;
-    const firstEntry = [...entries.values()][0];
-    if (firstEntry) {
-      const unauthorizedActor = 'unauthorized-user-999';
-      if (firstEntry.userId === unauthorizedActor) {
-        tenantIsolationVerified = false;
-      }
-    }
+    const accessChecks = [...entries.values()].map((entry) => {
+      const ownerAccessAllowed = this.canAccessRecoveryEntry(
+        entry,
+        entry.userId,
+      );
+      const otherUserId = operations.find(
+        (operation) => operation.userId !== entry.userId,
+      )?.userId;
+      const unauthorizedActor =
+        otherUserId ?? `unauthorized-user-for-${entry.userId}`;
+      return {
+        entryId: entry.id,
+        ownerAccessAllowed,
+        crossTenantAccessDenied: !this.canAccessRecoveryEntry(
+          entry,
+          unauthorizedActor,
+        ),
+      };
+    });
+    const tenantIsolationVerified = accessChecks.every(
+      (check) =>
+        check.ownerAccessAllowed && check.crossTenantAccessDenied,
+    );
 
     // 3. Execute idempotent retry (simulating 2 retry attempts per operation with idempotency key guard)
     for (const op of operations) {
@@ -480,6 +495,7 @@ export class IncidentDrillService {
       duplicateSideEffectsDetected,
       terminalStateImmutabilityVerified,
       tenantIsolationVerified,
+      accessChecks,
       onChainLinksVerified,
       entries: [...entries.values()].map((e) => ({
         id: e.id,
@@ -489,6 +505,13 @@ export class IncidentDrillService {
         hasResidualActions: e.availableActions.length > 0,
       })),
     };
+  }
+
+  private canAccessRecoveryEntry(
+    entry: RecoveryEntry & { userId: string },
+    actorUserId: string,
+  ): boolean {
+    return entry.userId === actorUserId;
   }
 
   // ===========================================================================

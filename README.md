@@ -411,6 +411,10 @@ Every markdown document in this repository, grouped by topic:
 - [docs/operational-rollout-guardrails.md](docs/operational-rollout-guardrails.md) - Operational rollout guardrails, bounded caching, concurrency controls, and privacy-safe data export
 - [docs/OPERATIONAL_RESILIENCE_AND_REMEDIATION.md](docs/OPERATIONAL_RESILIENCE_AND_REMEDIATION.md) - Operational resilience, permission diffs, error remediation hints, fuzz guarantees, and synthetic journey monitoring
 - [docs/MIGRATION_ROLLBACK_AND_DATA_RELIABILITY.md](docs/MIGRATION_ROLLBACK_AND_DATA_RELIABILITY.md) - Post-rollback verification, deterministic mixed-status sorting, failure fixtures, and safe ownership transfer
+- [docs/BOUNDED_QUEUE_BACKPRESSURE.md](docs/BOUNDED_QUEUE_BACKPRESSURE.md) - Bounded queue with 429 backpressure, per-actor fairness and retries for expensive background work
+- [docs/DETERMINISTIC_REPLAY.md](docs/DETERMINISTIC_REPLAY.md) - Deterministic schedule replay and exhaustive interleaving tests for concurrent writes and retries
+- [docs/EVIDENCE_VERIFICATION.md](docs/EVIDENCE_VERIFICATION.md) - Ed25519 verification, key trust and replay protection for imported external evidence
+- [docs/REPAIR_JOB.md](docs/REPAIR_JOB.md) - Resumable, rollback-capable repair job for orphaned and inconsistent records
 - [PROFILING.md](PROFILING.md) - Performance monitoring and profiling documentation
 - [src/observability/PROFILING_GUIDE.md](src/observability/PROFILING_GUIDE.md) - Guide to using the built-in profiling tools
 

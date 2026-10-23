@@ -69,6 +69,7 @@ export class AbuseDetectionService {
     string,
     { reviewId: string; actorId: string; operationDigest: string; expiresAtMs: number }
   >();
+  private lastEvaluatedAtMs?: number;
 
   private totalAssessments = 0;
   private shadowWouldHaveBlockedOrChallenged = 0;
@@ -163,6 +164,7 @@ export class AbuseDetectionService {
     };
     const asOf = operation.asOf ?? new Date().toISOString();
     const nowMs = this.parseTimestampMs(asOf);
+    this.lastEvaluatedAtMs = nowMs;
 
     const windowState = this.getBehavioralWindowState(
       actor.actorId,
@@ -291,8 +293,12 @@ export class AbuseDetectionService {
   listReviews(filter?: {
     status?: AbuseReviewStatus;
     actorId?: string;
+    asOf?: string;
   }): AbuseReviewRecord[] {
-    this.expireStaleReviews(Date.now());
+    const nowMs = filter?.asOf
+      ? this.parseTimestampMs(filter.asOf)
+      : (this.lastEvaluatedAtMs ?? Date.now());
+    this.expireStaleReviews(nowMs);
     const all = Array.from(this.reviews.values());
     return all
       .filter((r) => {
@@ -304,8 +310,11 @@ export class AbuseDetectionService {
   }
 
   /** Retrieves a single review record by ID. */
-  getReview(reviewId: string): AbuseReviewRecord {
-    this.expireStaleReviews(Date.now());
+  getReview(reviewId: string, asOf?: string): AbuseReviewRecord {
+    const nowMs = asOf
+      ? this.parseTimestampMs(asOf)
+      : (this.lastEvaluatedAtMs ?? Date.now());
+    this.expireStaleReviews(nowMs);
     const review = this.reviews.get(reviewId);
     if (!review) {
       throw new NotFoundException(`Abuse review record ${reviewId} not found`);
@@ -332,7 +341,11 @@ export class AbuseDetectionService {
       );
     }
 
-    const nowIso = asOf ?? new Date().toISOString();
+    const nowIso =
+      asOf ??
+      (this.lastEvaluatedAtMs
+        ? new Date(this.lastEvaluatedAtMs).toISOString()
+        : new Date().toISOString());
     const nowMs = this.parseTimestampMs(nowIso);
     this.expireStaleReviews(nowMs);
 
@@ -381,8 +394,11 @@ export class AbuseDetectionService {
   }
 
   /** Returns a structured telemetry snapshot for observability dashboards. */
-  getMetricsSnapshot(): AbuseDetectionMetricsSnapshot {
-    this.expireStaleReviews(Date.now());
+  getMetricsSnapshot(asOf?: string): AbuseDetectionMetricsSnapshot {
+    const nowMs = asOf
+      ? this.parseTimestampMs(asOf)
+      : (this.lastEvaluatedAtMs ?? Date.now());
+    this.expireStaleReviews(nowMs);
     const reviews = Array.from(this.reviews.values());
 
     return {

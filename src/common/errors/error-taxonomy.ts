@@ -445,3 +445,35 @@ export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
     userSafe: true,
   },
 };
+
+export function getErrorTaxonomy(code: ErrorCode): ErrorTaxonomyEntry {
+  return (
+    ERROR_TAXONOMY[code] ?? {
+      domain: ErrorDomain.SYSTEM,
+      retryable: false,
+      retryStrategy: "none",
+      defaultMessage: "An internal server error occurred",
+      recoveryGuidance: "Please try again later or contact support.",
+      userSafe: true,
+    }
+  );
+}
+
+export function sanitizeClientMessage(
+  message: string | object,
+  isProduction: boolean,
+  code: ErrorCode,
+): string | object {
+  if (typeof message !== "string") {
+    return message;
+  }
+  if (!isProduction) {
+    return message;
+  }
+  const entry = ERROR_TAXONOMY[code];
+  if (entry && !entry.userSafe) {
+    return entry.defaultMessage;
+  }
+  return message;
+}
+

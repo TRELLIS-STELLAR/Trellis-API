@@ -3,6 +3,7 @@ import type {
   AccessibleTableContract,
   ErrorRecoveryAccessibilityContract,
   AccessibilityWorkflowEnvelope,
+  AsyncStatusAccessibilityContract,
 } from "./accessibility.types";
 import {
   buildFormAccessibilityContract,
@@ -10,7 +11,9 @@ import {
   buildErrorRecoveryContract,
   buildWorkflowAccessibilityEnvelope,
   assertAccessibilityInvariants,
-} from "./accessibility.contract.ts";
+  buildAsyncStatusAccessibilityContract,
+  assertAsyncStatusInvariants,
+} from "./accessibility.contract";
 
 /**
  * Registry of core accessible workflow definitions for regression testing and client envelopes.
@@ -27,6 +30,7 @@ export interface DomainAccessibilitySuite {
   table: AccessibleTableContract;
   errorRecovery: ErrorRecoveryAccessibilityContract;
   workflow: AccessibilityWorkflowEnvelope;
+  asyncStatus: AsyncStatusAccessibilityContract;
 }
 
 export function getAuthAccessibilitySuite(reducedMotionHeader?: string | null): DomainAccessibilitySuite {
@@ -124,7 +128,29 @@ export function getAuthAccessibilitySuite(reducedMotionHeader?: string | null): 
 
   assertAccessibilityInvariants(workflow);
 
-  return { form, table, errorRecovery, workflow };
+  const asyncStatus = buildAsyncStatusAccessibilityContract({
+    operationId: "auth-sep10-verify",
+    operationLabel: "Stellar SEP-10 Wallet Signature Challenge Verification",
+    initialPhase: "idle",
+    pendingFocusTarget: "auth-sep10-verify-progress",
+    completionFocusTarget: "auth-session-established",
+    failureFocusTarget: "auth-challenge-signature-error",
+    authFocusTarget: "auth-wallet-reconnect",
+    abortFocusTarget: "auth-connect-wallet-btn",
+    abortShortcut: "Escape",
+    retryShortcut: "KeyR",
+    reauthShortcut: "Alt+A",
+    maxAttempts: 3,
+    backoffMs: 1500,
+    retryable: true,
+    authRequired: true,
+    authScope: "sep10:challenge",
+    rollbackOnAbort: true,
+    rollbackActionPrompt: "Discard temporary challenge nonce and reset session state.",
+  });
+  assertAsyncStatusInvariants(asyncStatus);
+
+  return { form, table, errorRecovery, workflow, asyncStatus };
 }
 
 export function getPortfolioAccessibilitySuite(reducedMotionHeader?: string | null): DomainAccessibilitySuite {
@@ -227,7 +253,29 @@ export function getPortfolioAccessibilitySuite(reducedMotionHeader?: string | nu
 
   assertAccessibilityInvariants(workflow);
 
-  return { form, table, errorRecovery, workflow };
+  const asyncStatus = buildAsyncStatusAccessibilityContract({
+    operationId: "portfolio-rebalance-submit",
+    operationLabel: "Portfolio Multi-Asset Target Rebalance Execution",
+    initialPhase: "idle",
+    pendingFocusTarget: "portfolio-rebalance-progress-bar",
+    completionFocusTarget: "portfolio-rebalance-complete-card",
+    failureFocusTarget: "portfolio-rebalance-error-summary",
+    authFocusTarget: "portfolio-rebalance-auth-stepup",
+    abortFocusTarget: "portfolio-rebalance-cancel-btn",
+    abortShortcut: "Escape",
+    retryShortcut: "KeyR",
+    reauthShortcut: "Alt+A",
+    maxAttempts: 3,
+    backoffMs: 2000,
+    retryable: true,
+    authRequired: true,
+    authScope: "portfolio:write",
+    rollbackOnAbort: true,
+    rollbackActionPrompt: "Restore previous portfolio snapshot allocations.",
+  });
+  assertAsyncStatusInvariants(asyncStatus);
+
+  return { form, table, errorRecovery, workflow, asyncStatus };
 }
 
 export function getDefiAccessibilitySuite(reducedMotionHeader?: string | null): DomainAccessibilitySuite {
@@ -323,7 +371,29 @@ export function getDefiAccessibilitySuite(reducedMotionHeader?: string | null): 
 
   assertAccessibilityInvariants(workflow);
 
-  return { form, table, errorRecovery, workflow };
+  const asyncStatus = buildAsyncStatusAccessibilityContract({
+    operationId: "defi-liquidity-order-submit",
+    operationLabel: "DeFi Protocol Liquidity Order Execution",
+    initialPhase: "idle",
+    pendingFocusTarget: "defi-order-progress-stepper",
+    completionFocusTarget: "defi-order-receipt",
+    failureFocusTarget: "defi-order-error-banner",
+    authFocusTarget: "defi-wallet-sign-prompt",
+    abortFocusTarget: "defi-order-abort-btn",
+    abortShortcut: "Escape",
+    retryShortcut: "KeyR",
+    reauthShortcut: "Alt+A",
+    maxAttempts: 2,
+    backoffMs: 3000,
+    retryable: true,
+    authRequired: true,
+    authScope: "defi:execute",
+    rollbackOnAbort: true,
+    rollbackActionPrompt: "Execute atomic unwind of staged liquidity position.",
+  });
+  assertAsyncStatusInvariants(asyncStatus);
+
+  return { form, table, errorRecovery, workflow, asyncStatus };
 }
 
 export function getNotificationsAccessibilitySuite(reducedMotionHeader?: string | null): DomainAccessibilitySuite {
@@ -411,7 +481,29 @@ export function getNotificationsAccessibilitySuite(reducedMotionHeader?: string 
 
   assertAccessibilityInvariants(workflow);
 
-  return { form, table, errorRecovery, workflow };
+  const asyncStatus = buildAsyncStatusAccessibilityContract({
+    operationId: "notification-batch-dispatch",
+    operationLabel: "Emergency Notification Multi-Channel Batch Dispatch",
+    initialPhase: "idle",
+    pendingFocusTarget: "notification-dispatch-progress",
+    completionFocusTarget: "notification-dispatch-audit-receipt",
+    failureFocusTarget: "notification-dispatch-error-panel",
+    authFocusTarget: "notification-admin-auth-modal",
+    abortFocusTarget: "notification-dispatch-abort-btn",
+    abortShortcut: "Escape",
+    retryShortcut: "KeyR",
+    reauthShortcut: "Alt+A",
+    maxAttempts: 4,
+    backoffMs: 1000,
+    retryable: true,
+    authRequired: true,
+    authScope: "notifications:admin",
+    rollbackOnAbort: false,
+    rollbackActionPrompt: "Drain queued dispatches and alert dead-letter queue.",
+  });
+  assertAsyncStatusInvariants(asyncStatus);
+
+  return { form, table, errorRecovery, workflow, asyncStatus };
 }
 
 export function getObservabilityAccessibilitySuite(reducedMotionHeader?: string | null): DomainAccessibilitySuite {
@@ -499,5 +591,27 @@ export function getObservabilityAccessibilitySuite(reducedMotionHeader?: string 
 
   assertAccessibilityInvariants(workflow);
 
-  return { form, table, errorRecovery, workflow };
+  const asyncStatus = buildAsyncStatusAccessibilityContract({
+    operationId: "observability-baseline-recalculation",
+    operationLabel: "Telemetry P95 Baseline Recalculation and Anomaly Scan",
+    initialPhase: "idle",
+    pendingFocusTarget: "observability-scan-progress",
+    completionFocusTarget: "observability-baseline-card",
+    failureFocusTarget: "observability-scan-error-summary",
+    authFocusTarget: "observability-auth-modal",
+    abortFocusTarget: "observability-cancel-scan-btn",
+    abortShortcut: "Escape",
+    retryShortcut: "KeyR",
+    reauthShortcut: "Alt+A",
+    maxAttempts: 3,
+    backoffMs: 2500,
+    retryable: true,
+    authRequired: true,
+    authScope: "observability:read",
+    rollbackOnAbort: true,
+    rollbackActionPrompt: "Discard in-flight baseline delta and retain last stable checkpoint.",
+  });
+  assertAsyncStatusInvariants(asyncStatus);
+
+  return { form, table, errorRecovery, workflow, asyncStatus };
 }

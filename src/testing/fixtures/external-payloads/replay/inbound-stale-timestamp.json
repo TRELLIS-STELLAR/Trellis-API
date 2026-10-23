@@ -1,0 +1,17 @@
+{
+  "id": "inbound-stale-timestamp",
+  "category": "replay",
+  "target": "webhooks.inbound",
+  "description": "Inbound delivery with a valid HMAC but a timestamp 600s outside the 300s replay window.",
+  "input": {
+    "subscriptionId": "00000000-0000-4000-8000-000000000001",
+    "signingKey": "corpus_inbound_key",
+    "rawBody": "{\"id\":\"evt_replay_inbound\",\"type\":\"invoice.paid\"}",
+    "headers": {
+      "x-webhook-timestamp": "1799999400",
+      "x-webhook-signature": "sha256=b5a1e760724b7eb96ea58cdd5433c2392607045b26bac6110ea65e558790c5d4"
+    },
+    "nowMillis": 1800000000000
+  },
+  "expected": { "status": 400, "reason": "stale_timestamp" }
+}

@@ -122,6 +122,10 @@ const SCALE = 7n;
 const SCALE_FACTOR = 10n ** SCALE;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 const SEVERITY_ORDER: Record<ReconciliationSeverity, number> = {
   [ReconciliationSeverity.CRITICAL]: 0,
   [ReconciliationSeverity.WARNING]: 1,
@@ -222,18 +226,24 @@ export class DryRunReconciliationService {
     // it covered the whole source of truth.
     const [invoiceWindow, transactionWindow] = await Promise.all([
       this.invoiceRepo.find({
-        order: { createdAt: "ASC" },
+        order: { createdAt: "ASC", invoiceId: "ASC" },
         take: limit + 1,
       }),
       this.transactionRepo.find({
-        order: { observedAt: "ASC" },
+        order: { observedAt: "ASC", transactionId: "ASC" },
         take: limit + 1,
       }),
     ]);
     const invoicesMayBeTruncated = invoiceWindow.length > limit;
     const transactionsMayBeTruncated = transactionWindow.length > limit;
-    const invoices = invoiceWindow.slice(0, limit);
-    const transactions = transactionWindow.slice(0, limit);
+    const invoices = invoiceWindow.slice(0, limit).sort((left, right) =>
+      compareText(left.invoiceId, right.invoiceId),
+    );
+    const transactions = transactionWindow
+      .slice(0, limit)
+      .sort((left, right) =>
+        compareText(left.transactionId, right.transactionId),
+      );
 
     const findings: ReconciliationFinding[] = [];
     if (invoicesMayBeTruncated || transactionsMayBeTruncated) {
@@ -435,7 +445,11 @@ export class DryRunReconciliationService {
       userBalanceSource = "disabled";
     } else if (this.balanceProvider) {
       userBalanceSource = "provider";
-      const accounts = [...derivedByAccount.keys()];
+      const accounts = [
+        ...new Set(
+          [...derivedByAccount.keys()].map((key) => key.split("|")[0]),
+        ),
+      ];
       const snapshots = await this.loadBalanceSnapshots(accounts);
       findings.push(
         ...this.findBalanceDrift(derivedByAccount, snapshots, toleranceUnits)
@@ -554,11 +568,14 @@ export class DryRunReconciliationService {
     const findings: ReconciliationFinding[] = [];
     for (const bucket of groups.values()) {
       if (bucket.length < 2) continue;
-      for (const transaction of bucket.slice(1)) {
+      const orderedBucket = [...bucket].sort((left, right) =>
+        compareText(left.transactionId, right.transactionId),
+      );
+      for (const transaction of orderedBucket.slice(1)) {
         findings.push({
           type: ReconciliationFindingType.DUPLICATE_TRANSACTION,
           severity: ReconciliationSeverity.WARNING,
-          message: `Transaction ${transaction.transactionId} looks like a duplicate of ${bucket[0].transactionId}: same source, destination, amount, and reference (${transaction.amount} ${transaction.assetCode}).`,
+          message: `Transaction ${transaction.transactionId} looks like a duplicate of ${orderedBucket[0].transactionId}: same source, destination, amount, and reference (${transaction.amount} ${transaction.assetCode}).`,
           suggestedAction:
             REPAIR_GUIDANCE[ReconciliationFindingType.DUPLICATE_TRANSACTION],
           transactionId: transaction.transactionId,
@@ -701,10 +718,24 @@ export class DryRunReconciliationService {
       const bySeverity =
         SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity];
       if (bySeverity !== 0) return bySeverity;
-      if (left.type !== right.type) return left.type < right.type ? -1 : 1;
-      return String(left.transactionId ?? left.invoiceId ?? "").localeCompare(
-        String(right.transactionId ?? right.invoiceId ?? "")
-      );
+      const byType = compareText(left.type, right.type);
+      if (byType !== 0) return byType;
+      const stableKey = (finding: ReconciliationFinding) =>
+        [
+          finding.transactionId,
+          finding.invoiceId,
+          finding.account,
+          finding.assetCode,
+          finding.expected,
+          finding.actual,
+          finding.delta,
+          finding.ageDays?.toString(),
+          finding.message,
+          finding.suggestedAction,
+        ]
+          .map((value) => value ?? "")
+          .join("\u0000");
+      return compareText(stableKey(left), stableKey(right));
     });
   }
 

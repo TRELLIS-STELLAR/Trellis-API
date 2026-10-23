@@ -130,6 +130,10 @@ the processor per request with `X-Payment-Processor: sandbox` (or
 `NODE_ENV=production`. See [docs/SANDBOX_MODE.md](docs/SANDBOX_MODE.md) for the
 available scenarios, configuration and limitations.
 
+For oracle confirmation thresholds, stale RPC heads, retry recovery, and
+ledger entry expiry boundaries, use the fixed offline corpus documented in
+[Ledger sequence fixtures](docs/LEDGER_SEQUENCE_FIXTURES.md).
+
 ### Environment Configuration
 
 The API validates all required secrets at startup. Invalid or placeholder values
@@ -220,16 +224,17 @@ Run `npm run diagnostics` at any time to verify your local setup:
 |---|---|
 | Required tools | node ≥ 18, npm, git, docker (optional), psql (optional) |
 | Dependencies | node_modules present, no critical npm audit findings |
-| Environment | All required `.env` vars set with non-placeholder values |
-| Database | TCP reachability + optional psql query |
-| Redis | TCP reachability |
-| Stellar Horizon | HTTP reachability (skipped with `--quick`) |
-| SMTP | TCP reachability (skipped with `--quick`) |
+| Environment & Auth | Required `.env` vars, secret length & entropy (`auth:JWT_SECRET`), workspace filesystem write permissions (`fs:workspace-write`) |
+| Database | TCP reachability with retries + auth handshake verification (`db:authentication`) + `public.users` table presence |
+| Redis | TCP reachability with retries and exponential backoff |
+| Stellar Horizon | HTTP reachability with retries and backoff (skipped with `--quick`) |
+| SMTP | TCP reachability with retries (skipped with `--quick`) |
 | Build | TypeScript type-check via `tsc --noEmit` (skipped with `--quick`) |
 | Tests | Runs diagnostics-related unit tests |
 
 The command exits 0 on pass/warn and exits 1 on any failure. It **never
-mutates any data**.
+mutates any data**. See [docs/DEVELOPER_DIAGNOSTICS.md](docs/DEVELOPER_DIAGNOSTICS.md)
+for comprehensive failure modes, retry details, and safe recovery procedures.
 
 ### Improving The Documentation
 

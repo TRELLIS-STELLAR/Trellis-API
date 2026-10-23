@@ -12,6 +12,9 @@ import {
   buildErrorRecoveryContract,
   buildWorkflowAccessibilityEnvelope,
   assertAccessibilityInvariants,
+  buildAsyncStatusAccessibilityContract,
+  transitionAsyncStatus,
+  assertAsyncStatusInvariants,
 } from "./accessibility.contract";
 
 describe("Accessibility Regression Coverage Suite", () => {
@@ -199,4 +202,212 @@ describe("Accessibility Regression Coverage Suite", () => {
       expect(() => assertAccessibilityInvariants(getObservabilityAccessibilitySuite().workflow)).not.toThrow();
     });
   });
+
+  describe("Async Status States & Keyboard/Focus Coverage", () => {
+    const suites = [
+      { name: "Auth (SEP-10 Challenge)", suite: getAuthAccessibilitySuite() },
+      { name: "Portfolio (Rebalance Execution)", suite: getPortfolioAccessibilitySuite() },
+      { name: "DeFi (Liquidity Order)", suite: getDefiAccessibilitySuite() },
+      { name: "Notifications (Batch Dispatch)", suite: getNotificationsAccessibilitySuite() },
+      { name: "Observability (Baseline Recalculation)", suite: getObservabilityAccessibilitySuite() },
+    ];
+
+    describe("Domain Async Status Suite Contracts", () => {
+      suites.forEach(({ name, suite }) => {
+        it(`${name} exposes valid asyncStatus contract and passes invariants`, () => {
+          expect(suite.asyncStatus).toBeDefined();
+          expect(suite.asyncStatus.operationId).toBeTruthy();
+          expect(suite.asyncStatus.operationLabel).toBeTruthy();
+          expect(suite.asyncStatus.focusManagement.pendingFocusTarget).toBeTruthy();
+          expect(suite.asyncStatus.keyboardControls.shortcuts["Escape"]).toBeTruthy();
+          expect(() => assertAsyncStatusInvariants(suite.asyncStatus)).not.toThrow();
+        });
+      });
+    });
+
+    describe("Normal Path (Idle -> Submitting -> Succeeded)", () => {
+      it("transitions smoothly with polite announcements and completion focus target", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "test-normal-op",
+          operationLabel: "Portfolio Transfer",
+        });
+
+        expect(contract.currentPhase).toBe("idle");
+        expect(contract.progressPercentage).toBe(0);
+
+        // Step 1: Submitting
+        const submitting = transitionAsyncStatus(contract, "submitting", { progressPercentage: 20 });
+        expect(submitting.currentPhase).toBe("submitting");
+        expect(submitting.statusAnnouncement.politeness).toBe("polite");
+        expect(submitting.statusAnnouncement.message).toMatch(/Submitting/i);
+        expect(submitting.progressPercentage).toBe(20);
+        expect(submitting.focusManagement.pendingFocusTarget).toBe("test-normal-op-progress");
+
+        // Step 2: Polling progress
+        const polling = transitionAsyncStatus(submitting, "polling", { progressPercentage: 65 });
+        expect(polling.currentPhase).toBe("polling");
+        expect(polling.statusAnnouncement.message).toContain("65%");
+
+        // Step 3: Success completion
+        const succeeded = transitionAsyncStatus(polling, "succeeded");
+        expect(succeeded.currentPhase).toBe("succeeded");
+        expect(succeeded.progressPercentage).toBe(100);
+        expect(succeeded.statusAnnouncement.politeness).toBe("polite");
+        expect(succeeded.statusAnnouncement.message).toMatch(/completed successfully/i);
+        expect(succeeded.focusManagement.completionFocusTarget).toBe("test-normal-op-success-summary");
+      });
+    });
+
+    describe("Failure & Timeout Path (Submitting -> Failed / Timeout)", () => {
+      it("emits assertive announcements and redirects focus to failureFocusTarget", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "test-failure-op",
+          operationLabel: "DeFi Borrow Execution",
+        });
+
+        const failed = transitionAsyncStatus(contract, "failed", {
+          errorMessage: "Insufficient collateral ratio",
+        });
+
+        expect(failed.currentPhase).toBe("failed");
+        expect(failed.statusAnnouncement.politeness).toBe("assertive");
+        expect(failed.statusAnnouncement.interrupt).toBe(true);
+        expect(failed.statusAnnouncement.message).toMatch(/Insufficient collateral ratio/i);
+        expect(failed.statusAnnouncement.message).toMatch(/Press KeyR to retry or Escape to cancel/i);
+        expect(failed.focusManagement.failureFocusTarget).toBe("test-failure-op-error-alert");
+        expect(() => assertAsyncStatusInvariants(failed)).not.toThrow();
+
+        // Timeout transition
+        const timedOut = transitionAsyncStatus(contract, "timeout");
+        expect(timedOut.currentPhase).toBe("timeout");
+        expect(timedOut.statusAnnouncement.politeness).toBe("assertive");
+        expect(timedOut.statusAnnouncement.message).toMatch(/timed out/i);
+        expect(() => assertAsyncStatusInvariants(timedOut)).not.toThrow();
+      });
+    });
+
+    describe("Retry Path (Failed -> Retrying with Backoff & Exhaustion)", () => {
+      it("tracks retry attempts, emits backoff progress, and asserts exhaustion on limit", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "test-retry-op",
+          operationLabel: "Payment Sync",
+          maxAttempts: 3,
+          backoffMs: 1000,
+        });
+
+        // Attempt 1
+        const retry1 = transitionAsyncStatus(contract, "retrying", { attempt: 1 });
+        expect(retry1.currentPhase).toBe("retrying");
+        expect(retry1.retryState?.attempt).toBe(1);
+        expect(retry1.statusAnnouncement.message).toMatch(/attempt 1 of 3/i);
+        expect(() => assertAsyncStatusInvariants(retry1)).not.toThrow();
+
+        // Attempt 2
+        const retry2 = transitionAsyncStatus(retry1, "retrying", { attempt: 2 });
+        expect(retry2.retryState?.attempt).toBe(2);
+
+        // Attempt 3: Exhausted limit
+        const exhausted = transitionAsyncStatus(retry2, "failed", { attempt: 3 });
+        expect(exhausted.statusAnnouncement.politeness).toBe("assertive");
+        expect(exhausted.statusAnnouncement.message).toMatch(/Maximum retry attempts reached/i);
+      });
+    });
+
+    describe("Authorization Path (Session Expiry & Re-Authentication)", () => {
+      it("captures unauthorized phase, targets auth modal, and preserves returnFocusTarget", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "test-auth-op",
+          operationLabel: "SEP-10 Rebalance",
+          authRequired: true,
+          authScope: "portfolio:write",
+        });
+
+        const unauthorized = transitionAsyncStatus(contract, "unauthorized", {
+          authRequired: true,
+          authScope: "portfolio:write",
+        });
+
+        expect(unauthorized.currentPhase).toBe("unauthorized");
+        expect(unauthorized.statusAnnouncement.politeness).toBe("assertive");
+        expect(unauthorized.statusAnnouncement.interrupt).toBe(true);
+        expect(unauthorized.statusAnnouncement.message).toMatch(/Session authorization expired/i);
+        expect(unauthorized.authorizationState?.authRequired).toBe(true);
+        expect(unauthorized.authorizationState?.reauthShortcut).toBe("Alt+A");
+        expect(unauthorized.focusManagement.authFocusTarget).toBe("test-auth-op-auth-modal");
+        expect(unauthorized.authorizationState?.returnFocusTargetAfterAuth).toBe("test-auth-op-progress");
+        expect(() => assertAsyncStatusInvariants(unauthorized)).not.toThrow();
+      });
+    });
+
+    describe("Abort & Rollback Path", () => {
+      it("aborts pending operation, emits polite cancellation announcement, and directs focus to abort target", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "test-abort-op",
+          operationLabel: "DeFi Position Unwind",
+          rollbackOnAbort: true,
+          rollbackActionPrompt: "Restore prior position state",
+        });
+
+        const submitting = transitionAsyncStatus(contract, "submitting");
+        const aborted = transitionAsyncStatus(submitting, "aborted");
+
+        expect(aborted.currentPhase).toBe("aborted");
+        expect(aborted.progressPercentage).toBe(0);
+        expect(aborted.statusAnnouncement.politeness).toBe("polite");
+        expect(aborted.statusAnnouncement.message).toMatch(/was aborted\. Reverting pending changes/i);
+        expect(aborted.focusManagement.abortFocusTarget).toBe("test-abort-op-trigger");
+        expect(aborted.rollbackOnAbort).toBe(true);
+      });
+    });
+
+    describe("Async Status Invariant Assertions", () => {
+      it("throws when operationId or operationLabel is empty", () => {
+        const invalid = buildAsyncStatusAccessibilityContract({
+          operationId: "",
+          operationLabel: "",
+        });
+        expect(() => assertAsyncStatusInvariants(invalid)).toThrow(/operationId and operationLabel must not be empty/i);
+      });
+
+      it("throws when abortShortcut is not defined in shortcuts map", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "op-1",
+          operationLabel: "Valid Operation",
+        });
+        (contract.keyboardControls as any).shortcuts = {};
+        expect(() => assertAsyncStatusInvariants(contract)).toThrow(/abortShortcut must be declared/i);
+      });
+
+      it("throws when failed state has non-assertive ARIA politeness", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "op-1",
+          operationLabel: "Valid Operation",
+          initialPhase: "failed",
+        });
+        contract.statusAnnouncement.politeness = "polite";
+        expect(() => assertAsyncStatusInvariants(contract)).toThrow(/failure and timeout states must have assertive ARIA politeness/i);
+      });
+
+      it("throws when unauthorized phase has authRequired === false", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "op-1",
+          operationLabel: "Valid Operation",
+          initialPhase: "unauthorized",
+        });
+        contract.authorizationState!.authRequired = false;
+        expect(() => assertAsyncStatusInvariants(contract)).toThrow(/authorizationState\.authRequired must be true/i);
+      });
+
+      it("throws when retrying phase has attempt < 1", () => {
+        const contract = buildAsyncStatusAccessibilityContract({
+          operationId: "op-1",
+          operationLabel: "Valid Operation",
+          initialPhase: "retrying",
+        });
+        contract.retryState!.attempt = 0;
+        expect(() => assertAsyncStatusInvariants(contract)).toThrow(/retryState\.attempt must be at least 1/i);
+      });
+    });
+  });
 });
+

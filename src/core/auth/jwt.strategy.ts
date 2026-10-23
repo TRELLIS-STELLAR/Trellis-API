@@ -57,6 +57,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException("Token has been revoked");
     }
 
+    // Reject sessions issued before the subject's revocation cutoff (logout
+    // everywhere, password change) even when their jti was never recorded.
+    const subject = payload.sub ?? payload.address;
+    if (subject && (await this.tokenBlacklist.isSessionStale(subject, payload.iat))) {
+      throw new UnauthorizedException("Session is no longer valid");
+    }
+
     // Check if it's a traditional auth payload (has sub) or wallet auth payload (has address)
     const isTraditionalAuth = !!payload.sub;
     const isWalletAuth = !!payload.address;

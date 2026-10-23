@@ -6,7 +6,9 @@ import {
   DEFAULT_MAX_AML_RISK_SCORE,
   DEFAULT_RESTRICTED_JURISDICTIONS,
   JURISDICTION_RESOLVER,
+  KYC_BYPASS_ACCESSED_EVENT,
   KycGuard,
+  SENSITIVE_ACTION_LOGGER,
   isRestrictedJurisdiction,
   normalizeCountryCode,
 } from "./kyc.guard";
@@ -36,6 +38,7 @@ async function makeGuard(
     skipKyc?: boolean;
     jurisdictionResolver?: { resolveCountryCode: jest.Mock };
     amlRiskService?: { getRiskScore: jest.Mock };
+    sensitiveActionLogger?: { record: jest.Mock };
   } = {},
 ): Promise<KycGuard> {
   const module: TestingModule = await Test.createTestingModule({
@@ -47,6 +50,10 @@ async function makeGuard(
         useValue: options.jurisdictionResolver ?? null,
       },
       { provide: AML_RISK_SERVICE, useValue: options.amlRiskService ?? null },
+      {
+        provide: SENSITIVE_ACTION_LOGGER,
+        useValue: options.sensitiveActionLogger ?? null,
+      },
     ],
   }).compile();
 
@@ -113,7 +120,9 @@ describe("KycGuard", () => {
       await expect(
         guard.canActivate(
           makeContext({
-            headers: { "cf-ipcountry": "KP" },
+            headers: { "cf-ipcountry": "KP", "x-forwarded-for": "203.0.113.10" },
+            url: "/auth/register",
+            method: "POST",
             user: VERIFIED_USER,
           }),
         ),
@@ -141,6 +150,94 @@ describe("KycGuard", () => {
           makeContext({ headers: {}, user: { id: "u1", kycVerified: false } }),
         ),
       ).resolves.toBe(false);
+    });
+  });
+
+  describe("@SkipKyc() audit logging", () => {
+    it("emits a KYC_BYPASS_ACCESSED event with user and path context", async () => {
+      const sensitiveActionLogger = {
+        record: jest.fn().mockResolved(undefined),
+      };
+      const guard = await makeGuard({ skipKyc: true, sensitiveActionLogger });
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            headers: { "x-forwarded-for": "192.0.2.7, 10.0.0.1" },
+            ip: "192.0.2.7",
+            originalUrl: "/auth/register",
+            method: "POST",
+            user: VERIFIED_USER,
+          }),
+        ),
+      ).resolves.toBe(true);
+
+      expect(sensitiveActionLogger.record).toHaveBeenCalledTimes(1);
+      const event = sensitiveActionLogger.record.mock.calls[0][0];
+      expect(event).toMatchObject({
+        eventType: KYC_BYPASS_ACCESSED_EVENT,
+        clientIp: "192.0.2.7",
+        userId: "u1",
+        path: "/auth/register",
+        method: "POST",
+      });
+      expect(event.timestamp).toBeInstanceOf(Date);
+    });
+
+    it("records a null userId for anonymous bypass access", async () => {
+      const sensitiveActionLogger = {
+        record: jest.fn().mockResolved(undefined),
+      };
+      const guard = await makeGuard({ skipKyc: true, sensitiveActionLogger });
+
+      await guard.canActivate(
+        makeContext({
+          headers: {},
+          ip: "198.51.100.5",
+          url: "/auth/register",
+        }),
+      );
+
+      expect(sensitiveActionLogger.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: KYC_BYPASS_ACCESSED_EVENT,
+          clientIp: "198.51.100.5",
+          userId: null,
+          path: "/auth/register",
+        }),
+      );
+    });
+
+    it("does not emit an audit event for non-SkipKyc routes", async () => {
+      const sensitiveActionLogger = {
+        record: jest.fn().mockResolved(undefined),
+      };
+      const guard = await makeGuard({ sensitiveActionLogger });
+
+      await guard.canActivate(
+        makeContext({
+          headers: { "cf-ipcountry": "DE" },
+          user: VERIFIED_USER,
+        }),
+      );
+
+      expect(sensitiveActionLogger.record).not.toHaveBeenCalled();
+    });
+
+    it("still allows the request when the audit sink fails", async () => {
+      const sensitiveActionLogger = {
+        record: jest.fn().mockRejected(new Error("db down")),
+      };
+      const guard = await makeGuard({ skipKyc: true, sensitiveActionLogger });
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            headers: {},
+            user: VERIFIED_USER,
+          }),
+        ),
+      ).resolves.toBe(true);
     });
   });
 

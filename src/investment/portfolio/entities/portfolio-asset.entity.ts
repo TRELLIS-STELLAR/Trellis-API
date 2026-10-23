@@ -10,6 +10,7 @@ import {
   Index,
 } from "typeorm";
 import { Portfolio } from "./portfolio.entity";
+import { Chain } from "./chain.enum";
 
 export enum AssetType {
   STOCK = "stock",
@@ -22,17 +23,7 @@ export enum AssetType {
   OTHER = "other",
 }
 
-export enum Chain {
-  ETHEREUM = "ethereum",
-  POLYGON = "polygon",
-  BINANCE = "binance",
-  SOLANA = "solana",
-  BITCOIN = "bitcoin",
-  ARBITRUM = "arbitrum",
-  OPTIMISM = "optimism",
-  BASE = "base",
-  OTHER = "other",
-}
+export { Chain };
 
 @Entity("portfolio_assets")
 @Index(["portfolioId", "ticker", "chain"], { unique: true })

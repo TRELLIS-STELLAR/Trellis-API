@@ -1,0 +1,14 @@
+{
+  "id": "payment-create-empty-body",
+  "category": "missing-fields",
+  "target": "api.body-validation",
+  "description": "POST /payments body with every required field absent.",
+  "input": {
+    "dto": "CreatePaymentDto",
+    "payload": {}
+  },
+  "expected": {
+    "rejected": true,
+    "fields": ["amount", "currency", "destination", "idempotencyKey"]
+  }
+}

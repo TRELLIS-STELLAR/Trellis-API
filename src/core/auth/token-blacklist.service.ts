@@ -16,12 +16,22 @@ import { Injectable, Logger, OnModuleDestroy, Optional } from "@nestjs/common";
  * bug, so the degradation is logged and observable via `isDistributed()`.
  *
  * Issue #144 (token revocation) and the original jti replay defence.
+ *
+ * Issue #369 adds a per-subject cutoff on top of per-jti revocation. A jti
+ * list only covers tokens whose jti is known at revocation time; "log out
+ * everywhere", a password change, or a refresh-token reuse detection must also
+ * kill access tokens the server never enumerated. `revokeSubjectSessions`
+ * records a cutoff, and any token whose `iat` is at or before it is stale.
  */
+
+/** Longer than any access token lifetime, so a cutoff outlives every token it covers. */
+export const SESSION_CUTOFF_TTL_SECONDS = 24 * 60 * 60;
 
 /** The subset of the ioredis client this service uses. */
 export interface RedisLikeClient {
   set(key: string, value: string, mode: "EX", ttlSeconds: number): Promise<unknown>;
   exists(key: string): Promise<number>;
+  get?(key: string): Promise<string | null>;
   del?(key: string): Promise<number>;
   quit?(): Promise<unknown>;
   disconnect?(): void;
@@ -32,6 +42,10 @@ export interface RedisLikeClient {
 export class TokenBlacklistService implements OnModuleDestroy {
   private readonly logger = new Logger(TokenBlacklistService.name);
   private readonly local = new Map<string, number>(); // jti -> expiry epoch ms
+  private readonly localCutoffs = new Map<
+    string,
+    { cutoff: number; expiresAt: number }
+  >(); // subject -> cutoff (epoch seconds) and expiry epoch ms
   private readonly cleanupIntervalMs = 5 * 60 * 1000;
   private client: RedisLikeClient | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -93,6 +107,86 @@ export class TokenBlacklistService implements OnModuleDestroy {
     return true;
   }
 
+  /**
+   * Invalidate every session issued to `subject` at or before `cutoffSeconds`
+   * (epoch seconds, defaults to now). A later call can only move the cutoff
+   * forward, so a retried or out-of-order revocation never re-admits sessions.
+   */
+  async revokeSubjectSessions(
+    subject: string,
+    cutoffSeconds: number = Math.floor(Date.now() / 1000),
+  ): Promise<void> {
+    const existing = await this.getSubjectCutoff(subject);
+    const cutoff = Math.max(cutoffSeconds, existing ?? 0);
+
+    if (this.client?.get) {
+      try {
+        await this.client.set(
+          this.subjectKey(subject),
+          String(cutoff),
+          "EX",
+          SESSION_CUTOFF_TTL_SECONDS,
+        );
+        return;
+      } catch (error) {
+        this.logger.error(
+          `Redis session cutoff failed for subject ${subject}; recording locally only: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    this.localCutoffs.set(subject, {
+      cutoff,
+      expiresAt: Date.now() + SESSION_CUTOFF_TTL_SECONDS * 1000,
+    });
+  }
+
+  /**
+   * True when the session was issued at or before the subject's cutoff. A token
+   * without an `iat` cannot be placed relative to the cutoff, so it is stale
+   * whenever a cutoff exists.
+   */
+  async isSessionStale(
+    subject: string,
+    issuedAtSeconds: number | undefined,
+  ): Promise<boolean> {
+    const cutoff = await this.getSubjectCutoff(subject);
+    if (cutoff === null) return false;
+    if (typeof issuedAtSeconds !== "number") return true;
+    return issuedAtSeconds <= cutoff;
+  }
+
+  private async getSubjectCutoff(subject: string): Promise<number | null> {
+    let cutoff: number | null = null;
+
+    if (this.client?.get) {
+      try {
+        const raw = await this.client.get(this.subjectKey(subject));
+        const parsed = raw === null ? NaN : Number(raw);
+        if (Number.isFinite(parsed)) cutoff = parsed;
+      } catch (error) {
+        this.logger.error(
+          `Redis cutoff lookup failed for subject ${subject}; falling back to local state: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    const local = this.localCutoffs.get(subject);
+    if (local) {
+      if (Date.now() > local.expiresAt) {
+        this.localCutoffs.delete(subject);
+      } else if (cutoff === null || local.cutoff > cutoff) {
+        cutoff = local.cutoff;
+      }
+    }
+
+    return cutoff;
+  }
+
   async onModuleDestroy(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
@@ -112,11 +206,18 @@ export class TokenBlacklistService implements OnModuleDestroy {
     return `token-blacklist:${jti}`;
   }
 
+  private subjectKey(subject: string): string {
+    return `token-cutoff:${subject}`;
+  }
+
   /** Remove expired local entries to prevent unbounded memory growth. */
   private cleanup(): void {
     const now = Date.now();
     for (const [jti, exp] of this.local) {
       if (now > exp) this.local.delete(jti);
+    }
+    for (const [subject, entry] of this.localCutoffs) {
+      if (now > entry.expiresAt) this.localCutoffs.delete(subject);
     }
   }
 }

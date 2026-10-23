@@ -102,3 +102,25 @@ This document specifies the core domain invariants enforced across the Trellis A
 - **Relevant Code Paths**:
   - `src/migrations/1787313600000-create-module-registry.ts`
   - `src/common/invariants/domain-invariants.ts` (`assertModuleCompatibility`)
+
+---
+
+### 11. Balance Transition (#268)
+- **Rule**: a balance moves between finite values and never ends below zero; integral balances (minor units such as cents) stay safe integers.
+- **Enforced at**:
+  - `PortfolioService.updateHolding`: holding quantity. The DTO accepts any number, so a negative quantity was previously persisted.
+  - `BillingService.setPlan`: the prepaid credit balance after proration, which is the money side of a plan entitlement. The unknown-plan case is already rejected by `findPlan`.
+- **Code**: `DomainInvariants.assertBalanceTransition`
+
+---
+
+### 12. Ownership Transition (#268)
+- **Rule**: an owned entity always has an owner, and no update can reassign it. There is no ownership-transfer flow, so a changed owner is a defect.
+- **Enforced at**: `PortfolioService.updatePortfolio`, after the DTO is merged and before the save.
+- **Code**: `DomainInvariants.assertOwnershipTransition`
+
+### Enforcement and rollback
+- `enforceInvariant()` turns an `InvariantViolationError` into HTTP `422` with the stable `invariantCode`, instead of a `500`.
+- **Portfolio**: every check runs before `save()`, so a violation writes nothing.
+- **Billing**: proration is settled on a copy of the subscription and committed only after the check passes. A rejected first activation also removes the subscription it created.
+- **Authorization**: the holding and portfolio routes keep the existing `PortfolioOwnerGuard`. Invariants are defence in depth behind it.

@@ -36,6 +36,10 @@ import {
   derivePortfolioLifecycleState,
 } from "src/common/lifecycle/record-state-machines";
 import { InvalidStateTransitionException } from "src/common/lifecycle/invalid-state-transition.exception";
+import {
+  DomainInvariants,
+  enforceInvariant,
+} from "src/common/invariants/domain-invariants";
 
 @Injectable()
 export class PortfolioService {
@@ -272,6 +276,13 @@ export class PortfolioService {
     }
 
     Object.assign(portfolio, dto);
+    enforceInvariant(() =>
+      DomainInvariants.assertOwnershipTransition({
+        entityId: portfolioId,
+        beforeOwnerId: before.userId as string,
+        afterOwnerId: portfolio.userId,
+      }),
+    );
 
     const saved = await this.portfolioRepository.save(portfolio);
     await this.recordPortfolioChange(
@@ -362,6 +373,13 @@ export class PortfolioService {
 
     // Update fields
     if (dto.quantity !== undefined) {
+      enforceInvariant(() =>
+        DomainInvariants.assertBalanceTransition({
+          subject: holding.ticker,
+          before: Number(holding.quantity),
+          after: dto.quantity,
+        }),
+      );
       holding.quantity = dto.quantity;
     }
     if (dto.currentPrice !== undefined) {

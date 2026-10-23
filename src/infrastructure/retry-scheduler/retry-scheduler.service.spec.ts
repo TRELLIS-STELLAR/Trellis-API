@@ -24,7 +24,7 @@ describe("RetrySchedulerService", () => {
   }
 
   const mockRepository = {
-    create: jest.fn((dto) => ({ ...dto, id: "test-uuid" })),
+    create: jest.fn((dto) => ({ ...dto, id: `uuid-${dto.operationId}` })),
     save: jest.fn((entity) => {
       const stored = cloneOp(entity);
       const idx = mockOperations.findIndex(
@@ -48,7 +48,22 @@ describe("RetrySchedulerService", () => {
       });
       return Promise.resolve(match ? cloneOp(match) : null);
     }),
-    find: jest.fn(() => Promise.resolve(mockOperations.map(cloneOp))),
+    find: jest.fn((options?: any) => {
+      const where = options?.where ?? {};
+      const matches = mockOperations.filter((o) =>
+        Object.entries(where).every(
+          ([key, value]) => typeof value !== "string" || o[key] === value,
+        ),
+      );
+      return Promise.resolve(
+        matches.slice(0, options?.take ?? matches.length).map(cloneOp),
+      );
+    }),
+    update: jest.fn(({ id, status }, patch) => {
+      const op = mockOperations.find((o) => o.id === id && o.status === status);
+      if (op) Object.assign(op, cloneOp(patch));
+      return Promise.resolve({ affected: op ? 1 : 0 });
+    }),
     findAndCount: jest.fn(({ where }) => {
       const filtered = mockOperations.filter(
         (o) => o.status === where.status,
@@ -275,6 +290,13 @@ describe("RetrySchedulerService", () => {
       expect(total).toBeGreaterThanOrEqual(1);
       expect(items.every((o) => o.status === RetryOperationStatus.DEAD_LETTER)).toBe(true);
     });
+
+    it("bounds the page size and offset", async () => {
+      await service.getDeadLetters("5000" as any, "-3" as any);
+      expect(mockRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 100, skip: 0 }),
+      );
+    });
   });
 
   describe("retryDeadLetter", () => {
@@ -304,6 +326,123 @@ describe("RetrySchedulerService", () => {
 
       const result = await service.retryDeadLetter("op-dl-retry-2");
       expect(result).toBeNull();
+    });
+
+    const deadLetter = async (operationId: string, retryable = true) => {
+      await service.schedule({
+        operationType: "webhook.delivery",
+        operationId,
+        payload: {},
+        maxAttempts: 1,
+      });
+      await service.markFailed(operationId, "boom", retryable);
+    };
+
+    it("records who retried, why, and the failure it replaced", async () => {
+      await deadLetter("op-audit");
+      const retried = await service.retryDeadLetter("op-audit", undefined, {
+        actor: "admin-1",
+        reason: "endpoint fixed",
+      });
+      expect(retried!.metadata.deadLetterRetries).toEqual([
+        expect.objectContaining({
+          by: "admin-1",
+          reason: "endpoint fixed",
+          forced: false,
+          previousAttempts: 1,
+          previousError: "boom",
+        }),
+      ]);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        "retry.dead_letter_retried",
+        expect.objectContaining({ operationId: "op-audit", by: "admin-1" }),
+      );
+    });
+
+    it("refuses a non-retryable failure unless forced", async () => {
+      await deadLetter("op-fatal", false);
+      await expect(service.retryDeadLetter("op-fatal")).rejects.toThrow(
+        "non-retryable",
+      );
+      const forced = await service.retryDeadLetter("op-fatal", undefined, {
+        force: true,
+      });
+      expect(forced!.status).toBe(RetryOperationStatus.PENDING);
+      expect(forced!.metadata.deadLetterRetries[0].forced).toBe(true);
+    });
+
+    it("lets only one of two concurrent retries win", async () => {
+      await deadLetter("op-race");
+      const [a, b] = await Promise.all([
+        service.retryDeadLetter("op-race"),
+        service.retryDeadLetter("op-race"),
+      ]);
+      expect([a, b].filter(Boolean)).toHaveLength(1);
+    });
+
+    it("keeps the retry audit trail bounded", async () => {
+      await deadLetter("op-many");
+      for (let i = 0; i < 12; i++) {
+        await service.retryDeadLetter("op-many", undefined, { reason: `r${i}` });
+        await service.markFailed("op-many", "boom");
+      }
+      const trail = (await service.getOperationStatus("op-many"))!.metadata
+        .deadLetterRetries;
+      expect(trail).toHaveLength(10);
+      expect(trail[9].reason).toBe("r11");
+    });
+  });
+
+  describe("retryDeadLetters", () => {
+    const deadLetter = async (
+      operationId: string,
+      operationType: string,
+      retryable = true,
+    ) => {
+      await service.schedule({
+        operationType,
+        operationId,
+        payload: {},
+        maxAttempts: 1,
+      });
+      await service.markFailed(operationId, "boom", retryable);
+    };
+
+    it("re-queues retryable dead letters and reports skipped ones", async () => {
+      await deadLetter("bulk-1", "webhook.delivery");
+      await deadLetter("bulk-2", "webhook.delivery", false);
+      await deadLetter("bulk-3", "email.send");
+
+      const result = await service.retryDeadLetters(
+        { operationType: "webhook.delivery" },
+        { actor: "admin-1", reason: "provider recovered" },
+      );
+      expect(result).toEqual({
+        requested: 2,
+        requeued: 1,
+        results: [
+          { operationId: "bulk-1", status: "requeued" },
+          { operationId: "bulk-2", status: "skipped_non_retryable" },
+        ],
+      });
+      expect((await service.getOperationStatus("bulk-3"))!.status).toBe(
+        RetryOperationStatus.DEAD_LETTER,
+      );
+    });
+
+    it("reports a dead letter retried concurrently as already_retried", async () => {
+      await deadLetter("bulk-race", "webhook.delivery");
+      mockRepository.update.mockResolvedValueOnce({ affected: 0 });
+      expect((await service.retryDeadLetters({})).results).toEqual([
+        { operationId: "bulk-race", status: "already_retried" },
+      ]);
+    });
+
+    it("caps one bulk retry at 100 operations", async () => {
+      await service.retryDeadLetters({ limit: 5000 });
+      expect(mockRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 100 }),
+      );
     });
   });
 

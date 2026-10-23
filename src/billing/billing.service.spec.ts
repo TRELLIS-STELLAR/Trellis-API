@@ -1,5 +1,6 @@
 import { register } from "../config/metrics";
 import { BillingService } from "./billing.service";
+import * as proration from "./billing-proration";
 
 describe("BillingService", () => {
   let service: BillingService;
@@ -502,6 +503,46 @@ describe("BillingService plan proration (#82)", () => {
       const beforeValue = line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
       const afterValue = Number(updated.slice(updated.lastIndexOf(" ") + 1));
       expect(afterValue - beforeValue).toBe(4129);
+    });
+  });
+  describe("entitlement transition invariants", () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    const corruptCredit = () => {
+      const quote = proration.quotePlanChange;
+      jest
+        .spyOn(proration, "quotePlanChange")
+        .mockImplementation((input) => ({
+          ...quote(input),
+          netAmountCents: -0.5,
+        }));
+    };
+
+    it("rolls back an existing account when the credit would not be whole cents", () => {
+      service.setPlan("acct-inv", "growth");
+      const before = {
+        plan: service.getPlan("acct-inv"),
+        cycle: service.getBillingCycle("acct-inv"),
+        credit: service.getCreditBalanceCents("acct-inv"),
+        history: service.getProrationHistory("acct-inv").length,
+      };
+      corruptCredit();
+      expect(() => service.setPlan("acct-inv", "starter")).toThrow(
+        "whole number of minor units",
+      );
+      expect({
+        plan: service.getPlan("acct-inv"),
+        cycle: service.getBillingCycle("acct-inv"),
+        credit: service.getCreditBalanceCents("acct-inv"),
+        history: service.getProrationHistory("acct-inv").length,
+      }).toEqual(before);
+    });
+
+    it("leaves no subscription behind when a first activation is rejected", () => {
+      corruptCredit();
+      expect(() => service.setPlan("acct-new", "starter")).toThrow();
+      expect(service.getBillingCycle("acct-new")).toBeNull();
+      expect(service.getPlan("acct-new").id).toBe("free");
     });
   });
 });

@@ -23,6 +23,13 @@ pre-rollout invariant is not restored, the guard rejects with
 `RolloutRecoveryError` and `rolledBack: false`; this is an operator escalation,
 not a successful rollback.
 
+The guard retries the rollback invariant check up to three times by default,
+with a short increasing delay. Set `rollbackVerificationAttempts` (1-5) and
+`rollbackVerificationBackoffMs` (0-10000 ms) when a subsystem needs a different
+bounded window. Both a `false` result and a thrown check are retried. Exhausting
+the attempts still raises `RolloutRecoveryError`; a transient verification
+failure must never be interpreted as a verified rollback.
+
 ```ts
 const result = await rolloutGuard.run({
   scopeId: "example-change-canary",
@@ -62,6 +69,9 @@ distributed control plane for fleet-wide changes.
   rollout, contain the affected scope, inspect the original and recovery causes,
   and run the subsystem's reconciliation or repair procedure. Do not report the
   rollout as rolled back until the invariant is checked manually.
+- If the rollback check remains false or unavailable after its bounded retries,
+  the rollout is not considered restored. Keep the affected scope contained and
+  follow the subsystem's recovery procedure before retrying the release.
 - If execution fails before returning a result, rollback receives
   `undefined`. The compensator must still inspect scope state and undo partial
   effects; it must not assume `execute` was atomic.

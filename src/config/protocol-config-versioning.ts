@@ -54,6 +54,21 @@ export interface ProtocolValidationResult {
   warning?: string;
 }
 
+export type ProtocolEnvironment = 'development' | 'staging' | 'production';
+
+export interface ProtocolEnvironmentValidationResult {
+  environment: ProtocolEnvironment;
+  version?: string;
+  compatible: boolean;
+  error?: string;
+}
+
+export interface CrossEnvironmentProtocolValidationResult {
+  compatible: boolean;
+  versionsAligned: boolean;
+  environments: ProtocolEnvironmentValidationResult[];
+}
+
 /**
  * Validates protocol configuration compatibility against system constraints.
  */
@@ -113,4 +128,59 @@ export function assertProtocolCompatibility(
   config: ProtocolConfigMetadata = DEFAULT_PROTOCOL_CONFIG,
 ): void {
   validateProtocolConfig(incomingVersion, config);
+}
+
+/**
+ * Checks that each deployment environment has a supported protocol version and
+ * that all environments are aligned before promoting configuration changes.
+ */
+export function validateProtocolConfigsAcrossEnvironments(
+  configs: Partial<Record<ProtocolEnvironment, ProtocolConfigMetadata>>,
+): CrossEnvironmentProtocolValidationResult {
+  const environments: ProtocolEnvironment[] = [
+    'development',
+    'staging',
+    'production',
+  ];
+  const results = environments.map((environment) => {
+    const config = configs[environment];
+    if (!config) {
+      return {
+        environment,
+        compatible: false,
+        error: `Protocol configuration is missing for ${environment}.`,
+      };
+    }
+
+    try {
+      const validation = validateProtocolConfig(config.configVersion, config);
+      return {
+        environment,
+        version: validation.version,
+        compatible: true,
+      };
+    } catch (error) {
+      if (!(error instanceof IncompatibleProtocolVersionError)) throw error;
+      return {
+        environment,
+        version: config.configVersion,
+        compatible: false,
+        error: error.message,
+      };
+    }
+  });
+
+  const versions = results
+    .filter((result) => result.compatible)
+    .map((result) => result.version);
+  const versionsAligned =
+    versions.length === environments.length &&
+    versions.every((version) => version === versions[0]);
+
+  return {
+    compatible:
+      versionsAligned && results.every((result) => result.compatible),
+    versionsAligned,
+    environments: results,
+  };
 }
