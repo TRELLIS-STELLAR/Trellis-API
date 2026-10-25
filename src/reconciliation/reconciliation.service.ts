@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
@@ -20,6 +20,7 @@ import {
   StellarTransactionStatus,
 } from "./entities/stellar-transaction.entity";
 import { telemetryService } from "../observability/telemetry.service";
+import { VarianceAnomalyService } from "./variance-anomaly.service";
 
 const SCALE = 7n;
 const SCALE_FACTOR = 10n ** SCALE;
@@ -36,7 +37,8 @@ export class ReconciliationService {
     private readonly transactionRepo: Repository<StellarTransaction>,
     @InjectRepository(ReconciliationAudit)
     private readonly auditRepo: Repository<ReconciliationAudit>,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    @Optional() private readonly varianceAnomalyService?: VarianceAnomalyService,
   ) {}
 
   async createInvoice(
@@ -344,6 +346,15 @@ export class ReconciliationService {
         assetCode: invoice.assetCode,
       },
     });
+    // A partial payment is an expected intermediate state, not balance drift.
+    // Evaluate only once the invoice is fully settled (including overpayment).
+    if (isPaid) {
+      this.varianceAnomalyService?.evaluate(
+        invoice.invoiceId,
+        invoice.expectedAmount,
+        invoice.paidAmount,
+      );
+    }
 
     endTelemetry("success", undefined, {
       invoiceId: invoice.invoiceId,

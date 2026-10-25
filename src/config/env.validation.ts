@@ -269,6 +269,16 @@ export class EnvironmentVariables {
   @Transform(({ value }) => value === "true")
   RECONCILIATION_HORIZON_POLLING?: boolean = false;
 
+  /** Absolute drift that emits reconciliation.variance.alert. */
+  @IsOptional()
+  @IsString()
+  RECONCILIATION_VARIANCE_ALERT_THRESHOLD?: string = "0.0100000";
+
+  /** Maximum absolute drift eligible for an authorized auto-reimbursement worker. */
+  @IsOptional()
+  @IsString()
+  AUTO_REIMBURSEMENT_MAX_LIMIT?: string = "1.0000000";
+
   // Blockchain configuration
   @IsNumber()
   @Transform(({ value }) => parseInt(value, 10) || 1)
