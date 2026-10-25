@@ -1,4 +1,4 @@
-import type { TradeSide, TradingPolicy } from "./policy.types";
+import type { TradeSide, TradingPolicy } from "./policy-shared.types";
 
 /**
  * Policy domains supported by the policy simulation preview engine.

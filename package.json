@@ -6,7 +6,8 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "prebuild": "rimraf dist",
+    "prebuild": "rimraf dist && npm run check:circular",
+    "check:circular": "node scripts/check-circular-dependencies.js",
     "build:tsc": "tsc -p tsconfig.build.json",
     "build:plain-tsc": "tsc --project tsconfig.json --pretty --listEmittedFiles",
     "build": "nest build",

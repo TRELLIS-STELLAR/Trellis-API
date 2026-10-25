@@ -15,9 +15,7 @@ import { FeatureFlagRolloutGuard } from "../config/feature-flag-rollout.guard";
 
 import { AuthModule } from "../core/auth/auth.module";
 import { UserModule } from "../core/user/user.module";
-
-import { AuthModule } from "../core/auth/auth.module";
-import { UserModule } from "../core/user/user.module";
+import { VarianceAnomalyService } from "./variance-anomaly.service";
 
 @Module({
   imports: [
@@ -39,12 +37,14 @@ import { UserModule } from "../core/user/user.module";
     TransactionDetailsService,
     FeatureFlagsService,
     FeatureFlagRolloutGuard,
+    VarianceAnomalyService,
   ],
   exports: [
     ReconciliationService,
     DryRunReconciliationService,
     TransactionDetailsService,
     FeatureFlagRolloutGuard,
+    VarianceAnomalyService,
   ],
 })
 export class ReconciliationModule {}
