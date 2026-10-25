@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check circular module dependencies
+        run: npm run check:circular
+
       - name: Generate GraphQL TypeScript types
         run: |
           npm run graphql:codegen

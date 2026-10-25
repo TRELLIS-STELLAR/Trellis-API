@@ -1,4 +1,5 @@
-export type TradeSide = "buy" | "sell";
+export type { TradeSide, TradingPolicy } from "./policy-shared.types";
+import type { TradeSide, TradingPolicy } from "./policy-shared.types";
 
 /** The input required to make a business-policy decision about a trade. */
 export interface TradePolicyInput {
@@ -25,13 +26,6 @@ export interface PolicyViolation {
 export type PolicyDecision =
   | { allowed: true }
   | { allowed: false; violation: PolicyViolation };
-
-export interface TradingPolicy {
-  enabled: boolean;
-  maxOrderAmount: number;
-  allowedAssets?: string[];
-  allowedSides: TradeSide[];
-}
 
 export * from "./policy-simulation.types";
 
