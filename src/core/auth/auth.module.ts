@@ -41,6 +41,8 @@ import { RefreshToken, TwoFactorAuth } from "./entities/auth.entity";
 import { ImpersonationService } from "./impersonation.service";
 import { ImpersonationController } from "./impersonation.controller";
 import { ImpersonationGuard } from "./guards/impersonation.guard";
+import { CapabilityTokenService } from "./capability-tokens/capability-token.service";
+import { CapabilityTokenGuard } from "./capability-tokens/capability-token.guard";
 import { NotificationModule } from "../../notifications/notification.module";
 
 import { BullModule } from "@nestjs/bull";
@@ -149,6 +151,8 @@ import { ReferralFraudService } from "src/growth/referral/referral-fraud.service
     GrantfoxOAuthService,
     ImpersonationService,
     ImpersonationGuard,
+    CapabilityTokenService,
+    CapabilityTokenGuard,
   ],
   exports: [
     // Legacy exports
@@ -175,6 +179,8 @@ import { ReferralFraudService } from "src/growth/referral/referral-fraud.service
     GrantfoxOAuthService,
     ImpersonationService,
     ImpersonationGuard,
+    CapabilityTokenService,
+    CapabilityTokenGuard,
     TypeOrmModule,
   ],
 })
