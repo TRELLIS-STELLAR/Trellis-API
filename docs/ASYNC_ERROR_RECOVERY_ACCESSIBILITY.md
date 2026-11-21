@@ -48,7 +48,9 @@ stateDiagram-v2
 1. **Rollback Safety**:
    - Operations marked `rollbackOnAbort: true` or `rollbackSafe: true` (e.g. uncommitted portfolio rebalances, staged DEX orders, unsent notifications) automatically trigger compensating reversals on abort.
    - Irreversible actions (e.g. on-chain submitted Soroban transactions) emit explicit guidance that manual dispute or support contact is required.
-2. **Focus Containment & Restoration**:
+2. **No stale error state**:
+   - Re-entering `Submitting` or `Retrying` clears `errorRecovery`, so assistive technology never reads the previous failure's summary and recovery steps while a new attempt is in flight. `Succeeded` and `resolveRecovery()` clear it as before.
+3. **Focus Containment & Restoration**:
    - Focus must never reset to `document.body` on error or after re-authentication.
    - When `resolveRecovery()` is invoked, focus is returned to `returnFocusTargetAfterAuth` or the original trigger field.
 

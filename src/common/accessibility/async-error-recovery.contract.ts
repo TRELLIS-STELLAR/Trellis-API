@@ -105,6 +105,7 @@ export function transitionToSubmitting(
   return {
     ...contract,
     asyncStatus: updatedStatus,
+    errorRecovery: undefined,
     activeFocusTarget: updatedStatus.focusManagement.pendingFocusTarget,
     lastAnnouncement: updatedStatus.statusAnnouncement,
   };
@@ -247,6 +248,7 @@ export function transitionToRetry(
   return {
     ...contract,
     asyncStatus: updatedStatus,
+    errorRecovery: undefined,
     activeFocusTarget: updatedStatus.focusManagement.pendingFocusTarget,
     lastAnnouncement: updatedStatus.statusAnnouncement,
   };

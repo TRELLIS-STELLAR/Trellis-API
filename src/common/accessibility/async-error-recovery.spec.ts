@@ -10,6 +10,7 @@ import {
   transitionToAborted,
   resolveRecovery,
 } from "./async-error-recovery.contract";
+import { assertAsyncStatusInvariants } from "./accessibility.contract";
 
 describe("Accessibility Coverage for Async Error Recovery", () => {
   const baseOptions = {
@@ -170,6 +171,153 @@ describe("Accessibility Coverage for Async Error Recovery", () => {
       expect(contract.lastAnnouncement.politeness).toBe("assertive");
       expect(contract.lastAnnouncement.message).toContain("safely rolled back");
       expect(contract.activeFocusTarget).toBe("swap-cancel-button");
+    });
+  });
+
+  describe("Recovery edge cases from the documented state machine", () => {
+    it("clears stale error details when a failed operation is retried (Failed -> Retrying)", () => {
+      let contract = buildAsyncErrorRecoveryContract(baseOptions);
+      contract = transitionToFailure(contract, {
+        errorCode: "RPC_UNAVAILABLE",
+        errorTitle: "RPC Unavailable",
+        errorMessage: "Horizon did not respond.",
+      });
+      expect(contract.errorRecovery).toBeDefined();
+
+      contract = transitionToRetry(contract, { attempt: 1 });
+      expect(contract.asyncStatus.currentPhase).toBe("retrying");
+      expect(contract.errorRecovery).toBeUndefined();
+      expect(contract.activeFocusTarget).toBe("swap-progress-spinner");
+
+      contract = transitionToSucceeded(contract);
+      expect(contract.errorRecovery).toBeUndefined();
+      expect(contract.activeFocusTarget).toBe("swap-success-summary");
+    });
+
+    it("clears the authorization-era error state when re-authentication resumes submission (Unauthorized -> Submitting)", () => {
+      let contract = buildAsyncErrorRecoveryContract(baseOptions);
+      contract = transitionToFailure(contract, {
+        errorCode: "SESSION_EXPIRED",
+        errorTitle: "Session Expired",
+        errorMessage: "Token rejected.",
+      });
+      contract = transitionToUnauthorized(contract);
+      contract = resolveRecovery(contract);
+      contract = transitionToSubmitting(contract);
+
+      expect(contract.asyncStatus.currentPhase).toBe("submitting");
+      expect(contract.errorRecovery).toBeUndefined();
+      expect(contract.activeFocusTarget).toBe("swap-progress-spinner");
+    });
+
+    it("enables the unauthorized phase even when the contract was built with authRequired=false", () => {
+      let contract = buildAsyncErrorRecoveryContract({
+        ...baseOptions,
+        authRequired: false,
+        authScope: undefined,
+      });
+      expect(contract.asyncStatus.authorizationState?.authRequired).toBe(false);
+
+      contract = transitionToUnauthorized(contract);
+      expect(contract.asyncStatus.authorizationState?.authRequired).toBe(true);
+      expect(() =>
+        assertAsyncStatusInvariants(contract.asyncStatus),
+      ).not.toThrow();
+    });
+
+    it("falls back to the pending focus target for re-auth return when none is supplied", () => {
+      let contract = buildAsyncErrorRecoveryContract(baseOptions);
+      contract = transitionToUnauthorized(contract);
+      expect(
+        contract.asyncStatus.authorizationState?.returnFocusTargetAfterAuth,
+      ).toBe("swap-progress-spinner");
+      contract = resolveRecovery(contract, "swap-amount-input");
+      expect(contract.activeFocusTarget).toBe("swap-amount-input");
+    });
+
+    it("warns that manual compensation may be required when aborting a non-rollback-safe operation", () => {
+      let contract = buildAsyncErrorRecoveryContract({
+        ...baseOptions,
+        rollbackOnAbort: false,
+      });
+      contract = transitionToSubmitting(contract);
+      contract = transitionToAborted(contract);
+
+      expect(contract.isRollbackSafe).toBe(false);
+      expect(contract.lastAnnouncement.message).toContain(
+        "Manual compensation may be required",
+      );
+      expect(contract.lastAnnouncement.message).not.toContain(
+        "safely rolled back",
+      );
+      expect(contract.activeFocusTarget).toBe("swap-cancel-button");
+    });
+
+    it("keeps retry exhaustion free of rollback steps for a non-rollback-safe operation", () => {
+      let contract = buildAsyncErrorRecoveryContract({
+        ...baseOptions,
+        rollbackOnAbort: false,
+      });
+      contract = transitionToRetry(contract, { attempt: 3 });
+
+      expect(contract.asyncStatus.currentPhase).toBe("failed");
+      expect(contract.errorRecovery?.errorCode).toBe("RETRY_LIMIT_EXHAUSTED");
+      expect(contract.errorRecovery?.rollbackSafe).toBe(false);
+      expect(
+        contract.errorRecovery?.recoverySteps.some(
+          (s) => s.actionType === "rollback",
+        ),
+      ).toBe(false);
+    });
+
+    it("honours a per-call maxAttempts override when deciding retry exhaustion", () => {
+      let contract = buildAsyncErrorRecoveryContract(baseOptions); // contract max is 3
+      contract = transitionToRetry(contract, { attempt: 2, maxAttempts: 2 });
+      expect(contract.asyncStatus.currentPhase).toBe("failed");
+      expect(contract.errorRecovery?.errorCode).toBe("RETRY_LIMIT_EXHAUSTED");
+    });
+
+    it("derives default focus targets from the operation id when none are given", () => {
+      const contract = buildAsyncErrorRecoveryContract({
+        operationId: "op-default",
+        operationLabel: "Default Targets",
+      });
+      const failed = transitionToFailure(contract, {
+        errorCode: "E",
+        errorTitle: "T",
+        errorMessage: "M",
+      });
+      expect(contract.activeFocusTarget).toBe("op-default-progress");
+      expect(failed.activeFocusTarget).toBe("op-default-error-alert");
+      expect(transitionToUnauthorized(contract).activeFocusTarget).toBe(
+        "op-default-auth-modal",
+      );
+      expect(transitionToAborted(contract).activeFocusTarget).toBe(
+        "op-default-trigger",
+      );
+    });
+
+    it("recovers from a timeout via retry and keeps every phase within the async status invariants", () => {
+      let contract = buildAsyncErrorRecoveryContract(baseOptions);
+      const check = () => assertAsyncStatusInvariants(contract.asyncStatus);
+
+      contract = transitionToSubmitting(contract);
+      check();
+      contract = transitionToTimeout(contract);
+      check();
+      expect(contract.lastAnnouncement.message).toContain("KeyR");
+      contract = transitionToRetry(contract, { attempt: 1 });
+      check();
+      contract = transitionToUnauthorized(contract);
+      check();
+      contract = transitionToFailure(contract, {
+        errorCode: "E",
+        errorTitle: "T",
+        errorMessage: "M",
+      });
+      check();
+      contract = transitionToAborted(contract);
+      check();
     });
   });
 });

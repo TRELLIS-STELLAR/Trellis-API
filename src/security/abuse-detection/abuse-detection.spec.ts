@@ -1,4 +1,8 @@
-import { ExecutionContext } from "@nestjs/common";
+import {
+  BadRequestException,
+  ExecutionContext,
+  NotFoundException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Reflector } from "@nestjs/core";
 import { EventEmitter2 } from "@nestjs/event-emitter";
@@ -543,6 +547,250 @@ describe("Risk-Scored Abuse Detection (#abuse-detection)", () => {
 
       expect(maskIdentifier("abc")).toBe("***");
       expect(maskIdentifier(null)).toBeNull();
+    });
+  });
+
+  describe("7. Review rejection, token binding, expiry, and recovery edge cases", () => {
+    const heldOperation = {
+      kind: "treasury_withdrawal" as const,
+      amount: 75_000,
+      historicalAverageAmount: 5_000,
+      asset: "USDC",
+      destination: "GNEWEXTERNALVAULT888",
+      asOf: fixedAsOf,
+    };
+    const heldActor = {
+      actorId: "user-edge-review",
+      verifiedDestinations: ["GMAINVAULT001"],
+    };
+    const reason = "Reviewed against the treasury change ticket.";
+
+    it("rejecting a review issues no approval token, cannot be resolved twice, and keeps the operation held", () => {
+      const held = service.evaluateOperation(heldOperation, heldActor);
+      expect(held.disposition).toBe("manual_review");
+
+      const rejected = service.resolveReview(
+        held.reviewId!,
+        "rejected",
+        "admin-1",
+        reason,
+        fixedAsOf,
+      );
+      expect(rejected.status).toBe("rejected");
+      expect(rejected.approvalToken).toBeUndefined();
+
+      expect(() =>
+        service.resolveReview(
+          held.reviewId!,
+          "approved",
+          "admin-2",
+          reason,
+          fixedAsOf,
+        ),
+      ).toThrow(BadRequestException);
+      expect(() =>
+        service.resolveReview(
+          "rv:missing",
+          "approved",
+          "admin-1",
+          reason,
+          fixedAsOf,
+        ),
+      ).toThrow(NotFoundException);
+
+      const retry = service.evaluateOperation(heldOperation, heldActor);
+      expect(retry.disposition).toBe("manual_review");
+      expect(retry.allowed).toBe(false);
+    });
+
+    it("rejects an approval token presented by another actor or for an altered operation, without consuming it", () => {
+      const held = service.evaluateOperation(heldOperation, heldActor);
+      const approved = service.resolveReview(
+        held.reviewId!,
+        "approved",
+        "admin-1",
+        reason,
+        fixedAsOf,
+      );
+      const token = approved.approvalToken;
+
+      const otherActor = service.evaluateOperation(heldOperation, {
+        ...heldActor,
+        actorId: "user-someone-else",
+        reviewApprovalToken: token,
+      });
+      expect(otherActor.disposition).toBe("manual_review");
+
+      const alteredAmount = service.evaluateOperation(
+        { ...heldOperation, amount: 76_000 },
+        { ...heldActor, reviewApprovalToken: token },
+      );
+      expect(alteredAmount.disposition).toBe("manual_review");
+
+      const alteredDestination = service.evaluateOperation(
+        { ...heldOperation, destination: "GATTACKERVAULT999" },
+        { ...heldActor, reviewApprovalToken: token },
+      );
+      expect(alteredDestination.disposition).toBe("manual_review");
+
+      // The failed attempts above must not burn the legitimate token.
+      const legitimate = service.evaluateOperation(heldOperation, {
+        ...heldActor,
+        reviewApprovalToken: token,
+      });
+      expect(legitimate.disposition).toBe("allow_after_review");
+    });
+
+    it("expires a pending review and an unused approval token after the 24h review TTL", () => {
+      const held = service.evaluateOperation(heldOperation, heldActor);
+      const dayAndAnHour = "2026-10-17T11:00:00.000Z";
+
+      expect(
+        service.listReviews({ status: "pending", asOf: dayAndAnHour }),
+      ).toHaveLength(0);
+      expect(service.getReview(held.reviewId!, dayAndAnHour).status).toBe(
+        "expired",
+      );
+      expect(() =>
+        service.resolveReview(
+          held.reviewId!,
+          "approved",
+          "admin-1",
+          reason,
+          dayAndAnHour,
+        ),
+      ).toThrow(BadRequestException);
+
+      // A token approved in time but replayed after the TTL is refused.
+      const fresh = service.evaluateOperation(heldOperation, heldActor);
+      const approved = service.resolveReview(
+        fresh.reviewId!,
+        "approved",
+        "admin-1",
+        reason,
+        fixedAsOf,
+      );
+      const late = service.evaluateOperation(
+        { ...heldOperation, asOf: dayAndAnHour },
+        { ...heldActor, reviewApprovalToken: approved.approvalToken },
+      );
+      expect(late.disposition).toBe("manual_review");
+      expect(late.allowed).toBe(false);
+    });
+
+    it("caps tracked actor windows at 5,000 by evicting the oldest actor", () => {
+      for (let i = 0; i < 5_001; i++) {
+        service.recordFailedAttempt(`flood-actor-${i}`, fixedAsOf);
+      }
+      const now = Date.parse(fixedAsOf);
+      expect(
+        service.getBehavioralWindowState("flood-actor-0", 300, now)
+          .recentFailedAttempts,
+      ).toBe(0);
+      expect(
+        service.getBehavioralWindowState("flood-actor-1", 300, now)
+          .recentFailedAttempts,
+      ).toBe(1);
+      expect(
+        service.getBehavioralWindowState("flood-actor-5000", 300, now)
+          .recentFailedAttempts,
+      ).toBe(1);
+    });
+
+    describe("AbuseDetectionGuard dispositions", () => {
+      const buildGuard = (metadata: unknown) => {
+        const reflector = {
+          getAllAndOverride: jest.fn().mockReturnValue(metadata),
+        } as unknown as Reflector;
+        const headersOut: Record<string, string> = {};
+        const request: any = {
+          user: { id: "guard-actor" },
+          headers: {},
+          body: {},
+          params: {},
+        };
+        const context = {
+          getHandler: () => ({}),
+          getClass: () => ({}),
+          switchToHttp: () => ({
+            getRequest: () => request,
+            getResponse: () => ({
+              setHeader: (k: string, v: string) => {
+                headersOut[k] = v;
+              },
+            }),
+          }),
+        } as unknown as ExecutionContext;
+        return {
+          guard: new AbuseDetectionGuard(reflector, service),
+          context,
+          request,
+          headersOut,
+        };
+      };
+
+      it("passes through routes without @HighImpactOperation metadata", async () => {
+        const { guard, context, headersOut } = buildGuard(undefined);
+        await expect(guard.canActivate(context)).resolves.toBe(true);
+        expect(headersOut).toEqual({});
+      });
+
+      it("raises the manual-review exception and sets headers for a high-risk request", async () => {
+        const { guard, context, request, headersOut } = buildGuard({
+          kind: "treasury_withdrawal",
+        });
+        request.user.verifiedDestinations = ["GMAINVAULT001"];
+        request.body = {
+          amount: 75_000,
+          historicalAverageAmount: 5_000,
+          destination: "GNEWEXTERNALVAULT888",
+        };
+
+        await expect(guard.canActivate(context)).rejects.toThrow(
+          AbuseManualReviewRequiredException,
+        );
+        expect(headersOut[ABUSE_RESPONSE_HEADERS.DISPOSITION]).toBe(
+          "manual_review",
+        );
+        expect(headersOut[ABUSE_RESPONSE_HEADERS.REQUIRED_ACTION]).toBe(
+          "await_operator_review",
+        );
+      });
+
+      it("blocks a flagged counterparty even when a step-up header is supplied", async () => {
+        const { guard, context, request, headersOut } = buildGuard({
+          kind: "treasury_withdrawal",
+        });
+        request.headers["x-totp-token"] = "123456";
+        request.body = {
+          amount: 10,
+          destination: "GFLAGGED1",
+          counterpartyFlagged: true,
+        };
+
+        await expect(guard.canActivate(context)).rejects.toThrow(
+          AbuseOperationBlockedException,
+        );
+        expect(headersOut[ABUSE_RESPONSE_HEADERS.DISPOSITION]).toBe("block");
+        expect(headersOut[ABUSE_RESPONSE_HEADERS.REQUIRED_ACTION]).toBe(
+          "contact_security",
+        );
+      });
+
+      it("lets a blocked request through in shadow mode but still reports the real disposition", async () => {
+        configValues.ABUSE_DETECTION_MODE = "shadow";
+        const { guard, context, request, headersOut } = buildGuard({
+          kind: "treasury_withdrawal",
+        });
+        request.body = {
+          amount: 10,
+          destination: "GFLAGGED1",
+          counterpartyFlagged: true,
+        };
+
+        await expect(guard.canActivate(context)).resolves.toBe(true);
+        expect(headersOut[ABUSE_RESPONSE_HEADERS.DISPOSITION]).toBe("block");
+      });
     });
   });
 });
