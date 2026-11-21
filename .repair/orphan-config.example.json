@@ -1,0 +1,27 @@
+{
+  "relationships": [
+    {
+      "table": "transactions",
+      "fk": "portfolio_id",
+      "references": "portfolios",
+      "referencedColumn": "id"
+    },
+    {
+      "table": "portfolio_assets",
+      "fk": "portfolio_id",
+      "references": "portfolios"
+    },
+    {
+      "table": "defi_positions",
+      "fk": "user_id",
+      "references": "users",
+      "referencedColumn": "id"
+    },
+    {
+      "table": "webhook_deliveries",
+      "fk": "subscription_id",
+      "references": "webhook_subscriptions"
+    }
+  ],
+  "strategy": "set_null"
+}
