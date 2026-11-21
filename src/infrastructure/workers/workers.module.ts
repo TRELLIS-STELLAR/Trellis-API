@@ -1,8 +1,10 @@
 import { Module } from "@nestjs/common";
 import { BackgroundWorkerController } from "./background-worker.controller";
 import { BackgroundWorkerService } from "./background-worker.service";
+import { ConcurrencyLimiterService } from "./concurrency-limiter.service";
 import { BullModule } from "@nestjs/bull";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { EventEmitterModule } from "@nestjs/event-emitter";
 
 @Module({
   imports: [
@@ -23,9 +25,10 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
         },
       }),
     }),
+    EventEmitterModule.forRoot(),
   ],
   controllers: [BackgroundWorkerController],
-  providers: [BackgroundWorkerService],
-  exports: [BackgroundWorkerService],
+  providers: [BackgroundWorkerService, ConcurrencyLimiterService],
+  exports: [BackgroundWorkerService, ConcurrencyLimiterService],
 })
 export class WorkersModule {}
