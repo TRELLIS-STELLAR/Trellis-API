@@ -185,6 +185,7 @@ import { SubmissionVerifierService } from "./blockchain/oracle/submission-verifi
 import { SearchModule } from "./search/search.module";
 import { SearchRecord } from "./search/entities/search-record.entity";
 import { LoggingMiddleware } from "./common/middleware/logging.middleware";
+import { CorrelationIdMiddleware } from "./common/correlation/correlation-id.middleware";
 import { ProfilingMiddleware } from "./profiling/profiling.middleware";
 import { GraphqlGatewayModule } from "./graphql/graphql.module";
 import { ModuleRegistryModule } from "./modules/registry/module-registry.module";
@@ -463,10 +464,12 @@ export class AppModule implements NestModule, OnModuleInit {
   ) {}
 
   configure(consumer: MiddlewareConsumer) {
-    // Create LoggingMiddleware instance manually to fix dependency injection issue
+    // Create middleware instances manually to fix dependency injection issue
+    const correlationMiddleware = new CorrelationIdMiddleware();
     const loggingMiddleware = new LoggingMiddleware();
     consumer
       .apply(
+        (req, res, next) => correlationMiddleware.use(req, res, next),
         (req, res, next) => loggingMiddleware.use(req, res, next),
         ProfilingMiddleware,
         ApiDeprecationMiddleware,
