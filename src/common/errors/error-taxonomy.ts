@@ -360,91 +360,199 @@ export const ERROR_TAXONOMY: Record<ErrorCode, ErrorTaxonomyEntry> = {
       "The request conflicts with the current state of the resource. Refresh and retry.",
     userSafe: true,
   },
-
-  // Import Pipeline
-  [ErrorCode.IMPORT_VALIDATION_FAILED]: {
-    domain: ErrorDomain.VALIDATION,
+  [ErrorCode.RESOURCE_NOT_FOUND]: {
+    domain: ErrorDomain.SYSTEM,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Import validation failed",
+    defaultMessage: "Target resource not found",
     recoveryGuidance:
-      "Review the quarantined rows and correct the invalid fields before re-uploading.",
+      "Verify resource identifier, tenancy context, or projection synchronization.",
     userSafe: true,
   },
-  [ErrorCode.IMPORT_QUARANTINED]: {
-    domain: ErrorDomain.VALIDATION,
+  [ErrorCode.DUPLICATE_ENTRY]: {
+    domain: ErrorDomain.SYSTEM,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Import rows quarantined",
+    defaultMessage: "Duplicate entry already exists",
     recoveryGuidance:
-      "Some rows were quarantined due to unsafe or invalid content. Review the quarantine report and resolve issues.",
+      "The resource or unique key already exists. Ensure uniqueness or perform an update.",
+    userSafe: true,
+  },
+
+  // Import Pipeline
+  [ErrorCode.IMPORT_NOT_FOUND]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import job not found",
+    recoveryGuidance: "Verify the import job ID and ensure it belongs to your account.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_PREVIEW_EXPIRED]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import preview has expired",
+    recoveryGuidance: "Generate a new import preview before committing the dataset.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_PREVIEW_NOT_FOUND]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import preview not found",
+    recoveryGuidance: "Run an import preview dry-run before attempting to commit.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_PREVIEW_ALREADY_COMMITTED]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import preview already committed",
+    recoveryGuidance: "This preview batch has already been committed and cannot be re-applied.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_ROWS_QUARANTINED]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Import rows quarantined due to validation errors",
+    recoveryGuidance: "Review quarantined rows in the preview report and correct invalid entries.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_ROW_INVALID]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Invalid data row in import batch",
+    recoveryGuidance: "Ensure all row fields conform to expected column types and constraints.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_ROW_DUPLICATE]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Duplicate row detected in import dataset",
+    recoveryGuidance: "Remove or deduplicate redundant rows before committing the import.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_ROW_UNSAFE]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Unsafe or malicious content detected in import payload",
+    recoveryGuidance: "Sanitize row content to remove disallowed scripts, tags, or unescaped characters.",
     userSafe: true,
   },
   [ErrorCode.IMPORT_COMMIT_FAILED]: {
-    domain: ErrorDomain.SYSTEM,
+    domain: ErrorDomain.IMPORT,
     retryable: true,
-    retyAfterSeconds: 5,
+    retryAfterSeconds: 5,
     retryStrategy: "exponential_backoff",
     defaultMessage: "Import commit failed",
-    recoveryGuidance:
-      "The import commit could not be completed. Retry the commit or initiate a rollback using the import job ID.",
+    recoveryGuidance: "The commit operation encountered a transient failure. Retry the commit or initiate a rollback.",
     userSafe: true,
   },
   [ErrorCode.IMPORT_ROLLBACK_FAILED]: {
-    domain: ErrorDomain.SYSTEM,
+    domain: ErrorDomain.IMPORT,
     retryable: true,
     retryAfterSeconds: 10,
     retryStrategy: "exponential_backoff",
     defaultMessage: "Import rollback failed",
-    recoveryGuidance:
-      "Rollback could not be completed. Retry the rollback or contact support with the import job ID and correlationId.",
+    recoveryGuidance: "Rollback could not be completed. Retry the rollback or contact support with the import job ID and correlationId.",
     userSafe: true,
   },
-  [ErrorCode.IMPORT_NOT_FOUND]: {
-    domain: ErrorDomain.SYSTEM,
+  [ErrorCode.IMPORT_ROLLBACK_NOT_POSSIBLE]: {
+    domain: ErrorDomain.IMPORT,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Import job not found",
-    recoveryGuidance: "Verify the import job ID and that it belongs to your account.",
+    defaultMessage: "Import rollback is not possible in the current state",
+    recoveryGuidance: "Only committed imports within the retention window can be rolled back.",
     userSafe: true,
   },
-  [ErrorCode.IMPORT_INVALID_STATE]: {
-    domain: ErrorDomain.VALIDATION,
-    retryable: false,
-    retryStrategy: "none",
-    defaultMessage: "Import job is in an invalid state for this operation",
-    recoveryGuidance:
-      "Check the import job status before retrying. Only previewed jobs can be committed and only committed jobs can be rolled back.",
+  [ErrorCode.IMPORT_RETRY_FAILED]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: true,
+    retryAfterSeconds: 15,
+    retryStrategy: "exponential_backoff",
+    defaultMessage: "Import retry attempt failed",
+    recoveryGuidance: "The retried operation did not succeed. Check upstream service status and try again.",
     userSafe: true,
   },
-  [ErrorCode.IMPORT_DUPLICATE]: {
-    domain: ErrorDomain.VALIDATION,
+  [ErrorCode.IMPORT_IDEMPOTENCY_KEY_REQUIRED]: {
+    domain: ErrorDomain.IMPORT,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Duplicate import row detected",
-    recoveryGuidance:
-      "Remove or update duplicate rows identified in the quarantine report and re-preview the import.",
+    defaultMessage: "Idempotency key required for import mutation",
+    recoveryGuidance: "Supply an Idempotency-Key header with a unique request UUID.",
     userSafe: true,
   },
-  [ErrorCode.IMPORT_SCHEMA_INVALID]: {
-    domain: ErrorDomain.VALIDATION,
+  [ErrorCode.IMPORT_IDEMPOTENCY_CONFLICT]: {
+    domain: ErrorDomain.IMPORT,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Import payload does not match the expected schema",
-    recoveryGuidance:
-      "Ensure the import payload contains the required headers and row structure defined by the import schema.",
+    defaultMessage: "Conflicting request payload with identical idempotency key",
+    recoveryGuidance: "Use a fresh idempotency key for new payloads or reuse identical payload to fetch cached result.",
     userSafe: true,
   },
-  [ErrorCode.IMPORT_SIZE_EXCEEDED]: {
-    domain: ErrorDomain.VALIDATION,
+  [ErrorCode.IMPORT_LIMIT_EXCEEDED]: {
+    domain: ErrorDomain.IMPORT,
     retryable: false,
     retryStrategy: "none",
-    defaultMessage: "Import payload exceeds the maximum allowed size",
-    recoveryGuidance:
-      "Split the import into smaller batches and resubmit each batch.",
+    defaultMessage: "Import batch size or row limit exceeded",
+    recoveryGuidance: "Reduce batch size below maximum threshold (e.g. 10,000 rows) and resubmit in chunks.",
+    userSafe: true,
+  },
+  [ErrorCode.IMPORT_FORMAT_UNSUPPORTED]: {
+    domain: ErrorDomain.IMPORT,
+    retryable: false,
+    retryStrategy: "none",
+    defaultMessage: "Unsupported import file format",
+    recoveryGuidance: "Provide data in supported formats: CSV, JSON, or Parquet.",
     userSafe: true,
   },
 };
+
+export interface ProblemDetailsPayload {
+  type: string;
+  title: string;
+  status: number;
+  detail: string | object;
+  instance: string;
+  remediation: string;
+  errorCode: ErrorCode;
+  domain: ErrorDomain;
+  retryable: boolean;
+  retryAfterSeconds?: number;
+  correlationId?: string;
+  timestamp: string;
+}
+
+export function createProblemDetailsResponse(options: {
+  errorCode: ErrorCode;
+  status: number;
+  detail?: string | object;
+  instance?: string;
+  correlationId?: string;
+}): ProblemDetailsPayload {
+  const taxonomy = getErrorTaxonomy(options.errorCode);
+  return {
+    type: getProblemType(options.errorCode),
+    title: taxonomy.defaultMessage,
+    status: options.status,
+    detail: options.detail ?? taxonomy.defaultMessage,
+    instance: options.instance ?? "/api",
+    remediation: taxonomy.recoveryGuidance,
+    errorCode: options.errorCode,
+    domain: taxonomy.domain,
+    retryable: taxonomy.retryable,
+    ...(taxonomy.retryAfterSeconds !== undefined && {
+      retryAfterSeconds: taxonomy.retryAfterSeconds,
+    }),
+    ...(options.correlationId && { correlationId: options.correlationId }),
+    timestamp: new Date().toISOString(),
+  };
+}
 
 export function getErrorTaxonomy(code: ErrorCode): ErrorTaxonomyEntry {
   return (

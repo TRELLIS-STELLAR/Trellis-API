@@ -1,4 +1,5 @@
-import { Logger } from "@nestjs/common";
+import { Logger, BadRequestException, ForbiddenException } from "@nestjs/common";
+import { randomUUID } from "crypto";
 
 export type CacheEntryStatus = "fresh" | "stale" | "expired";
 
@@ -38,6 +39,68 @@ export interface BoundedCacheStats {
   evictions: number;
   invalidations: number;
   hitRate: number;
+}
+
+export interface StaleEntryInspection<T = unknown> {
+  key: string;
+  status: CacheEntryStatus;
+  ageMs: number;
+  freshTtlRemainingMs: number;
+  staleTtlRemainingMs: number;
+  version: number;
+  tags: string[];
+}
+
+export interface StaleDetectionReport<T = unknown> {
+  timestamp: string;
+  totalEntries: number;
+  freshCount: number;
+  staleCount: number;
+  expiredCount: number;
+  entries: StaleEntryInspection<T>[];
+  recommendations: string[];
+}
+
+export interface InvalidateBoundedOptions {
+  key?: string;
+  prefix?: string;
+  tag?: string;
+  minVersion?: number;
+  maxKeysToInvalidate?: number;
+  actor?: {
+    id: string;
+    roles: string[];
+  };
+}
+
+export interface InvalidationSnapshot<T = unknown> {
+  snapshotId: string;
+  timestamp: string;
+  entries: CacheEntry<T>[];
+}
+
+export interface BoundedInvalidationReceipt<T = unknown> {
+  receiptId: string;
+  timestamp: string;
+  invalidatedCount: number;
+  invalidatedKeys: string[];
+  snapshot: InvalidationSnapshot<T>;
+}
+
+export interface GetOrRevalidateWithRetryOptions {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  ttlMs?: number;
+  staleTtlMs?: number;
+  tags?: string[];
+  version?: number;
+}
+
+export interface GetOrRevalidateWithRetryResult<T = unknown> {
+  value: T;
+  degraded: boolean;
+  fromCache: boolean;
+  error?: string;
 }
 
 /**
@@ -341,6 +404,276 @@ export class BoundedCache<T = unknown> {
       invalidations: this.invalidations,
       hitRate: Math.round(hitRate * 1000) / 1000,
     };
+  }
+
+  /**
+   * Stale detection & health inspection (#486).
+   * Analyzes active cache entries to identify fresh, stale, and expired items,
+   * calculating age, TTL remaining, and actionable maintenance recommendations.
+   */
+  detectStaleEntries(now: number = Date.now()): StaleDetectionReport<T> {
+    const inspections: StaleEntryInspection<T>[] = [];
+    let freshCount = 0;
+    let staleCount = 0;
+    let expiredCount = 0;
+
+    for (const [key, entry] of this.entries.entries()) {
+      const isExpired = now >= entry.staleUntil;
+      const isStale = !isExpired && now >= entry.freshUntil;
+
+      let status: CacheEntryStatus = "fresh";
+      if (isExpired) {
+        status = "expired";
+        expiredCount++;
+      } else if (isStale) {
+        status = "stale";
+        staleCount++;
+      } else {
+        freshCount++;
+      }
+
+      inspections.push({
+        key,
+        status,
+        ageMs: Math.max(0, now - entry.createdAt),
+        freshTtlRemainingMs: Math.max(0, entry.freshUntil - now),
+        staleTtlRemainingMs: Math.max(0, entry.staleUntil - now),
+        version: entry.version,
+        tags: Array.from(entry.tags),
+      });
+    }
+
+    const recommendations: string[] = [];
+    if (staleCount > 0) {
+      recommendations.push(
+        `Found ${staleCount} stale entries eligible for background revalidation`,
+      );
+    }
+    if (expiredCount > 0) {
+      recommendations.push(
+        `Found ${expiredCount} expired entries recommended for immediate bounded eviction`,
+      );
+    }
+    const stats = this.getStats();
+    if (stats.hitRate < 0.5 && stats.misses > 10) {
+      recommendations.push(
+        "Low cache hit rate (<50%) detected; consider pre-warming hot keys or lengthening TTL",
+      );
+    }
+
+    return {
+      timestamp: new Date(now).toISOString(),
+      totalEntries: this.entries.size,
+      freshCount,
+      staleCount,
+      expiredCount,
+      entries: inspections,
+      recommendations,
+    };
+  }
+
+  /**
+   * Bounded cache invalidation with caller authorization, safety caps,
+   * and atomic rollback snapshot generation (#486).
+   */
+  invalidateBounded(options: InvalidateBoundedOptions): BoundedInvalidationReceipt<T> {
+    // 1. Authorization Path
+    if (options.actor) {
+      const roles = (options.actor.roles ?? []).map((r) => r.toUpperCase());
+      const isAuthorized = roles.includes("ADMIN") || roles.includes("MAINTAINER");
+      if (!isAuthorized) {
+        throw new ForbiddenException(
+          "Insufficient privileges: cache invalidation requires ADMIN or MAINTAINER role",
+        );
+      }
+    }
+
+    // 2. Failure Path: Validate at least one criteria is specified
+    const hasCriteria =
+      options.key !== undefined ||
+      options.prefix !== undefined ||
+      options.tag !== undefined ||
+      options.minVersion !== undefined;
+
+    if (!hasCriteria) {
+      throw new BadRequestException(
+        "At least one invalidation criteria (key, prefix, tag, minVersion) must be specified",
+      );
+    }
+
+    const matchingKeys = new Set<string>();
+
+    if (options.key) {
+      if (this.entries.has(options.key)) {
+        matchingKeys.add(options.key);
+      }
+    }
+
+    if (options.prefix) {
+      if (options.prefix.trim() === "") {
+        throw new BadRequestException("Invalidation prefix must not be empty");
+      }
+      for (const k of this.entries.keys()) {
+        if (k.startsWith(options.prefix)) {
+          matchingKeys.add(k);
+        }
+      }
+    }
+
+    if (options.tag) {
+      if (options.tag.trim() === "") {
+        throw new BadRequestException("Invalidation tag must not be empty");
+      }
+      const taggedKeys = this.tagMap.get(options.tag);
+      if (taggedKeys) {
+        for (const k of taggedKeys) {
+          matchingKeys.add(k);
+        }
+      }
+    }
+
+    if (options.minVersion !== undefined) {
+      for (const [k, entry] of this.entries.entries()) {
+        if (entry.version < options.minVersion) {
+          matchingKeys.add(k);
+        }
+      }
+    }
+
+    // Safety limit check
+    const maxKeys = options.maxKeysToInvalidate ?? 5000;
+    if (matchingKeys.size > maxKeys) {
+      throw new BadRequestException(
+        `Invalidation target count (${matchingKeys.size}) exceeds safety bound (${maxKeys})`,
+      );
+    }
+
+    // Capture rollback snapshot
+    const snapshotEntries: CacheEntry<T>[] = [];
+    for (const key of matchingKeys) {
+      const entry = this.entries.get(key);
+      if (entry) {
+        snapshotEntries.push({
+          ...entry,
+          tags: new Set(entry.tags),
+        });
+      }
+    }
+
+    const snapshot: InvalidationSnapshot<T> = {
+      snapshotId: randomUUID(),
+      timestamp: new Date().toISOString(),
+      entries: snapshotEntries,
+    };
+
+    // Evict matching keys
+    const invalidatedKeys: string[] = [];
+    for (const key of matchingKeys) {
+      if (this.invalidate(key)) {
+        invalidatedKeys.push(key);
+      }
+    }
+
+    return {
+      receiptId: randomUUID(),
+      timestamp: new Date().toISOString(),
+      invalidatedCount: invalidatedKeys.length,
+      invalidatedKeys,
+      snapshot,
+    };
+  }
+
+  /**
+   * Restores cache entries from an invalidation snapshot for rollback recovery (#486).
+   */
+  rollbackInvalidation(
+    snapshot: InvalidationSnapshot<T>,
+    actor?: { id: string; roles: string[] },
+  ): { restoredCount: number; restoredKeys: string[] } {
+    if (actor) {
+      const roles = (actor.roles ?? []).map((r) => r.toUpperCase());
+      const isAuthorized = roles.includes("ADMIN") || roles.includes("MAINTAINER");
+      if (!isAuthorized) {
+        throw new ForbiddenException(
+          "Insufficient privileges: cache rollback requires ADMIN or MAINTAINER role",
+        );
+      }
+    }
+
+    if (!snapshot || !Array.isArray(snapshot.entries)) {
+      throw new BadRequestException("Invalid snapshot: entries array required");
+    }
+
+    const restoredKeys: string[] = [];
+    for (const entry of snapshot.entries) {
+      this.entries.set(entry.key, {
+        ...entry,
+        tags: new Set(entry.tags),
+      });
+      this.addKeyToTags(entry.key, entry.tags);
+      restoredKeys.push(entry.key);
+    }
+
+    return {
+      restoredCount: restoredKeys.length,
+      restoredKeys,
+    };
+  }
+
+  /**
+   * Resilient revalidation with retry and graceful degraded stale fallback (#486).
+   * If downstream fetcher fails transiently, retries with exponential backoff.
+   * If all retries fail but stale entry is available, serves stale data in degraded mode.
+   */
+  async getOrRevalidateWithRetry(
+    key: string,
+    fetchFn: () => Promise<T>,
+    options?: GetOrRevalidateWithRetryOptions,
+  ): Promise<GetOrRevalidateWithRetryResult<T>> {
+    const now = Date.now();
+    const cached = this.get(key, now);
+
+    if (cached && !cached.isStale) {
+      return { value: cached.value, degraded: false, fromCache: true };
+    }
+
+    const maxRetries = options?.maxRetries ?? 3;
+    const initialDelay = options?.initialDelayMs ?? 10;
+
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const freshValue = await fetchFn();
+        this.set(key, freshValue, {
+          ttlMs: options?.ttlMs,
+          staleTtlMs: options?.staleTtlMs,
+          tags: options?.tags,
+          version: options?.version,
+        });
+        return { value: freshValue, degraded: false, fromCache: false };
+      } catch (err: any) {
+        lastError = err;
+        if (attempt < maxRetries) {
+          const delay = initialDelay * Math.pow(2, attempt - 1);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    // Retries exhausted -> evaluate graceful degraded mode
+    if (cached) {
+      this.logger.warn(
+        `Revalidation failed after ${maxRetries} attempts for key '${key}'. Serving degraded stale entry. Error: ${lastError?.message}`,
+      );
+      return {
+        value: cached.value,
+        degraded: true,
+        fromCache: true,
+        error: lastError?.message,
+      };
+    }
+
+    throw lastError ?? new Error(`Failed to revalidate cache key '${key}'`);
   }
 
   private evict(key: string, reason: "capacity" | "expired" | "explicit"): void {

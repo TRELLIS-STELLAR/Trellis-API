@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException } from "@nestjs/common";
+import { Injectable, BadRequestException, ForbiddenException, Logger } from "@nestjs/common";
+import { createHash } from "crypto";
 import { Role, Permission, getRolePermissions, normalizeRole } from "./roles.enum";
 import {
   PERMISSION_MATRIX,
@@ -46,6 +47,49 @@ export interface PolicyDiffReport {
   generatedAt: string;
 }
 
+export interface PolicyChangePreviewOptions {
+  actor?: {
+    id: string;
+    roles: string[];
+  };
+  currentMatrix?: PermissionMatrixEntry[];
+  proposedMatrix: PermissionMatrixEntry[];
+}
+
+export interface PolicyChangePreviewResult {
+  dryRun: boolean;
+  canProceed: boolean;
+  requiresAdminConfirmation: boolean;
+  addedActions: string[];
+  removedActions: string[];
+  modifiedActions: Array<{
+    action: string;
+    addedRoles: Role[];
+    removedRoles: Role[];
+    addedPermissions: Permission[];
+    removedPermissions: Permission[];
+  }>;
+  affectedRoles: Role[];
+  unlockedActionsPerRole: Record<string, string[]>;
+  revokedActionsPerRole: Record<string, string[]>;
+  riskAssessment: {
+    riskLevel: RiskLevel;
+    sensitiveActionsGained: string[];
+    isPrivilegeEscalation: boolean;
+    warnings: string[];
+  };
+  breakingChange: boolean;
+  rollbackPlan: {
+    reversible: boolean;
+    snapshotStateDigest: string;
+    previousEntriesCount: number;
+    restorationInstructions: string;
+    snapshotMatrix: PermissionMatrixEntry[];
+  };
+  previewToken: string;
+  generatedAt: string;
+}
+
 const CRITICAL_PERMISSIONS: Set<Permission> = new Set([
   Permission.USER_MANAGE,
   Permission.ROLE_ASSIGN,
@@ -69,12 +113,14 @@ export class PermissionDiffService {
     const role = normalizeRole(roleInput);
     const currentPermissions = getRolePermissions(role);
 
+    const isCurrentAdmin = role === Role.ADMIN;
     return this.calculateDiff(
       "role",
       role,
       currentPermissions,
       proposedPermissions,
-      role === Role.ADMIN,
+      isCurrentAdmin,
+      isCurrentAdmin,
     );
   }
 
@@ -114,8 +160,172 @@ export class PermissionDiffService {
       userId,
       currentPermissions,
       proposedPermissions,
-      wasAdmin || isAdmin,
+      wasAdmin,
+      isAdmin,
     );
+  }
+
+  /**
+   * Preview permission diff and security impact before committing policy changes.
+   * Enforces RBAC authorization, input schema validation, privilege escalation detection,
+   * breaking change warnings, and produces a rollback plan with deterministic preview token.
+   */
+  previewPolicyChanges(
+    options: PolicyChangePreviewOptions,
+  ): PolicyChangePreviewResult {
+    // 1. Authorization check: ADMIN or MAINTAINER required
+    if (options.actor) {
+      const roles = (options.actor.roles ?? []).map((r) => normalizeRole(r));
+      const isAuthorized = roles.includes(Role.ADMIN) || roles.includes(Role.MAINTAINER);
+      if (!isAuthorized) {
+        throw new ForbiddenException(
+          "Insufficient permissions: previewing policy changes requires ADMIN or MAINTAINER role",
+        );
+      }
+    }
+
+    // 2. Input validation: fail-fast on malformed policy
+    const proposed = options.proposedMatrix;
+    if (!proposed || !Array.isArray(proposed)) {
+      throw new BadRequestException("proposedMatrix must be an array of PermissionMatrixEntry");
+    }
+
+    const seenActions = new Set<string>();
+    for (const entry of proposed) {
+      if (!entry || typeof entry.action !== "string" || entry.action.trim() === "") {
+        throw new BadRequestException("Each proposed policy entry must specify a non-empty action identifier");
+      }
+      if (seenActions.has(entry.action)) {
+        throw new BadRequestException(`Duplicate action '${entry.action}' in proposed policy matrix`);
+      }
+      seenActions.add(entry.action);
+
+      if (!Array.isArray(entry.allowedRoles) || !Array.isArray(entry.requiredPermissions)) {
+        throw new BadRequestException(`Action '${entry.action}' must define allowedRoles and requiredPermissions arrays`);
+      }
+    }
+
+    const current = options.currentMatrix ?? PERMISSION_MATRIX;
+    const baseDiff = this.generatePolicyDiff(current, proposed);
+
+    // 3. Evaluate per-role impact
+    const allRoles = Object.values(Role);
+    const unlockedActionsPerRole: Record<string, string[]> = {};
+    const revokedActionsPerRole: Record<string, string[]> = {};
+    const affectedRolesSet = new Set<Role>();
+
+    for (const role of allRoles) {
+      const currentRoleActions = current
+        .filter((e) => e.allowedRoles.includes(role))
+        .map((e) => e.action);
+      const proposedRoleActions = proposed
+        .filter((e) => e.allowedRoles.includes(role))
+        .map((e) => e.action);
+
+      const curSet = new Set(currentRoleActions);
+      const propSet = new Set(proposedRoleActions);
+
+      const unlocked = proposedRoleActions.filter((a) => !curSet.has(a));
+      const revoked = currentRoleActions.filter((a) => !propSet.has(a));
+
+      if (unlocked.length > 0) {
+        unlockedActionsPerRole[role] = unlocked;
+        affectedRolesSet.add(role);
+      }
+      if (revoked.length > 0) {
+        revokedActionsPerRole[role] = revoked;
+        affectedRolesSet.add(role);
+      }
+    }
+
+    // 4. Sensitive action analysis
+    const sensitiveGained: string[] = [];
+    const matrixMap = new Map(proposed.map((e) => [e.action, e]));
+    for (const [action, entry] of matrixMap) {
+      if (entry.sensitive && (baseDiff.addedActions.includes(action) || entry.allowedRoles.includes(Role.USER))) {
+        sensitiveGained.push(action);
+      }
+    }
+
+    const isPrivilegeEscalation =
+      sensitiveGained.length > 0 ||
+      baseDiff.riskAssessment.riskLevel === "HIGH" ||
+      baseDiff.riskAssessment.riskLevel === "CRITICAL";
+
+    const breakingChange =
+      baseDiff.removedActions.length > 0 ||
+      Object.keys(revokedActionsPerRole).length > 0;
+
+    const warnings = [...baseDiff.riskAssessment.warnings];
+    if (breakingChange) {
+      warnings.push(`Breaking change: actions revoked across ${Object.keys(revokedActionsPerRole).length} role(s)`);
+    }
+
+    // 5. Deterministic snapshot digest & preview token
+    const currentJson = JSON.stringify(current);
+    const proposedJson = JSON.stringify(proposed);
+    const snapshotStateDigest = createHash("sha256").update(currentJson).digest("hex");
+    const previewToken = createHash("sha256").update(`${currentJson}:${proposedJson}`).digest("hex");
+
+    return {
+      dryRun: true,
+      canProceed: true,
+      requiresAdminConfirmation: isPrivilegeEscalation || breakingChange,
+      addedActions: baseDiff.addedActions,
+      removedActions: baseDiff.removedActions,
+      modifiedActions: baseDiff.modifiedActions,
+      affectedRoles: Array.from(affectedRolesSet),
+      unlockedActionsPerRole,
+      revokedActionsPerRole,
+      riskAssessment: {
+        riskLevel: baseDiff.riskAssessment.riskLevel,
+        sensitiveActionsGained: sensitiveGained,
+        isPrivilegeEscalation,
+        warnings,
+      },
+      breakingChange,
+      rollbackPlan: {
+        reversible: true,
+        snapshotStateDigest,
+        previousEntriesCount: current.length,
+        restorationInstructions: `Restore ${current.length} policy matrix entries using snapshotStateDigest ${snapshotStateDigest.substring(0, 12)}`,
+        snapshotMatrix: current,
+      },
+      previewToken,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Preview policy changes with transient retry support when fetching policy from external store.
+   */
+  async previewPolicyChangesWithRetry(
+    fetcher: () => Promise<PermissionMatrixEntry[]>,
+    proposedMatrix: PermissionMatrixEntry[],
+    actor?: { id: string; roles: string[] },
+    maxRetries = 3,
+  ): Promise<PolicyChangePreviewResult> {
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const currentMatrix = await fetcher();
+        return this.previewPolicyChanges({
+          actor,
+          currentMatrix,
+          proposedMatrix,
+        });
+      } catch (err: any) {
+        lastError = err;
+        if (err instanceof ForbiddenException || err instanceof BadRequestException) {
+          throw err;
+        }
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt - 1) * 20;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+    throw lastError ?? new Error("Failed to retrieve current policy after retries");
   }
 
   /**
@@ -207,7 +417,8 @@ export class PermissionDiffService {
     targetId: string,
     currentPermissions: Permission[],
     proposedPermissions: Permission[],
-    isAdminContext: boolean,
+    isCurrentAdmin: boolean,
+    isProposedAdmin: boolean = isCurrentAdmin,
   ): PermissionDiffReport {
     const currentSet = new Set(currentPermissions);
     const proposedSet = new Set(proposedPermissions);
@@ -217,8 +428,8 @@ export class PermissionDiffService {
     const unchangedPermissions = currentPermissions.filter((p) => proposedSet.has(p));
 
     // Determine affected actions from PERMISSION_MATRIX
-    const currentActions = this.resolveAllowedActions(currentPermissions, isAdminContext);
-    const proposedActions = this.resolveAllowedActions(proposedPermissions, isAdminContext);
+    const currentActions = this.resolveAllowedActions(currentPermissions, isCurrentAdmin);
+    const proposedActions = this.resolveAllowedActions(proposedPermissions, isProposedAdmin);
 
     const currentActionSet = new Set(currentActions);
     const proposedActionSet = new Set(proposedActions);
@@ -246,7 +457,11 @@ export class PermissionDiffService {
     let isPrivilegeEscalation = false;
     let riskLevel: RiskLevel = "LOW";
 
-    if (criticalPermsGained.length > 0 || sensitiveActionsGained.length > 0) {
+    if (
+      criticalPermsGained.length > 0 ||
+      sensitiveActionsGained.length > 0 ||
+      (!isCurrentAdmin && isProposedAdmin)
+    ) {
       isPrivilegeEscalation = true;
       riskLevel = "HIGH";
       warnings.push(
@@ -254,12 +469,17 @@ export class PermissionDiffService {
       );
     }
 
-    if (sensitiveActionsGained.includes("user.manage") || sensitiveActionsGained.includes("role.assign")) {
+    if (
+      sensitiveActionsGained.includes("user.manage") ||
+      sensitiveActionsGained.includes("role.assign") ||
+      (!isCurrentAdmin && isProposedAdmin)
+    ) {
       riskLevel = "CRITICAL";
       warnings.push("CRITICAL: Administrative identity/role management capability granted.");
     }
 
-    if (removedPermissions.length > 0) {
+    const isDemotedFromAdmin = isCurrentAdmin && !isProposedAdmin;
+    if (removedPermissions.length > 0 || revokedActions.length > 0 || isDemotedFromAdmin) {
       warnings.push(
         `Breaking change: ${removedPermissions.length} permissions will be revoked, locking ${revokedActions.length} actions.`,
       );
@@ -282,7 +502,8 @@ export class PermissionDiffService {
         isPrivilegeEscalation,
         warnings,
       },
-      breakingChange: removedPermissions.length > 0 || revokedActions.length > 0,
+      breakingChange:
+        removedPermissions.length > 0 || revokedActions.length > 0 || isDemotedFromAdmin,
       generatedAt: new Date().toISOString(),
     };
   }

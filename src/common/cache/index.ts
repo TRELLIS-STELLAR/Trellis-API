@@ -14,7 +14,7 @@ export type {
   InvalidationRule,
 } from "./cache-invalidation.service";
 
-// Bounded Cache & Stale Detection (#294)
+// Bounded Cache & Stale Detection (#294, #486)
 export { BoundedCache } from "./bounded-cache";
 export type {
   BoundedCacheOptions,
@@ -22,6 +22,13 @@ export type {
   BoundedCacheStats,
   CacheEntry,
   CacheEntryStatus,
+  StaleEntryInspection,
+  StaleDetectionReport,
+  InvalidateBoundedOptions,
+  InvalidationSnapshot,
+  BoundedInvalidationReceipt,
+  GetOrRevalidateWithRetryOptions,
+  GetOrRevalidateWithRetryResult,
 } from "./bounded-cache";
 
 // Decorators

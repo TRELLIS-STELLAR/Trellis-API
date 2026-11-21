@@ -28,14 +28,18 @@ import { normalizeRole, getRolePermissions, Permission } from "./roles.enum";
 import {
   PermissionDiffService,
   PermissionDiffReport,
+  PolicyChangePreviewResult,
+  PolicyDiffReport,
 } from "./permission-diff.service";
 
 export class PermissionDiffDto {
-  targetType: "role" | "user";
-  targetId: string;
+  targetType: "role" | "user" | "policy";
+  targetId?: string;
   currentRoles?: string[];
   proposedRoles?: string[];
   proposedPermissions?: Permission[];
+  currentMatrix?: PermissionMatrixEntry[];
+  proposedMatrix?: PermissionMatrixEntry[];
 }
 
 @ApiTags("Permissions")
@@ -79,9 +83,9 @@ export class PermissionMatrixController {
   @ApiOperation({ summary: "Generate a permission-diff report before applying role or policy changes" })
   @ApiBody({ type: PermissionDiffDto })
   @ApiResponse({ status: 200, description: "Permission diff report" })
-  generateDiff(@Body() dto: PermissionDiffDto): PermissionDiffReport {
-    if (!dto || !dto.targetType || !dto.targetId) {
-      throw new BadRequestException("targetType ('role' | 'user') and targetId are required.");
+  generateDiff(@Body() dto: PermissionDiffDto): PermissionDiffReport | PolicyDiffReport {
+    if (!dto || !dto.targetType || (dto.targetType !== "policy" && !dto.targetId)) {
+      throw new BadRequestException("targetType ('role' | 'user' | 'policy') and targetId (for role/user) are required.");
     }
 
     if (dto.targetType === "role") {
@@ -89,7 +93,7 @@ export class PermissionMatrixController {
         throw new BadRequestException("proposedPermissions array is required for role diff.");
       }
       return this.permissionDiffService.generateRoleDiff(
-        dto.targetId,
+        dto.targetId!,
         dto.proposedPermissions,
       );
     }
@@ -99,13 +103,44 @@ export class PermissionMatrixController {
         throw new BadRequestException("proposedRoles array is required for user diff.");
       }
       return this.permissionDiffService.generateUserRoleDiff(
-        dto.targetId,
+        dto.targetId!,
         dto.currentRoles ?? [Role.USER],
         dto.proposedRoles,
       );
     }
 
-    throw new BadRequestException(`Invalid targetType '${dto.targetType}'. Must be 'role' or 'user'.`);
+    if (dto.targetType === "policy") {
+      if (!dto.proposedMatrix || !Array.isArray(dto.proposedMatrix)) {
+        throw new BadRequestException("proposedMatrix array is required for policy diff.");
+      }
+      return this.permissionDiffService.generatePolicyDiff(
+        dto.currentMatrix ?? PERMISSION_MATRIX,
+        dto.proposedMatrix,
+      );
+    }
+
+    throw new BadRequestException(`Invalid targetType '${dto.targetType}'. Must be 'role', 'user', or 'policy'.`);
+  }
+
+  @Post("policy/preview")
+  @Roles(Role.ADMIN, Role.MAINTAINER)
+  @ApiOperation({ summary: "Preview permission-diff and impact assessment before committing policy changes" })
+  @ApiBody({ type: PermissionDiffDto })
+  @ApiResponse({ status: 200, description: "Detailed policy change preview and rollback plan" })
+  previewPolicyChange(@Body() dto: PermissionDiffDto, @Req() req: any): PolicyChangePreviewResult {
+    const user = req?.user;
+    const actor = user
+      ? {
+          id: user.id ?? user.sub ?? "unknown",
+          roles: user.roles ?? (user.role ? [user.role] : [Role.USER]),
+        }
+      : undefined;
+
+    return this.permissionDiffService.previewPolicyChanges({
+      actor,
+      currentMatrix: dto.currentMatrix,
+      proposedMatrix: dto.proposedMatrix ?? [],
+    });
   }
 
   @Get("my-permissions")

@@ -110,12 +110,11 @@ export class FeatureRolloutService {
     reason: string,
     metadata: Record<string, unknown> = {},
   ): Promise<FeatureDefinition> {
-    const existing = this.features.get(key);
-    if (!existing) {
-      throw new NotFoundException(`Feature '${key}' not registered`);
-    }
-
     const applyChange = async () => {
+      const existing = this.features.get(key);
+      if (!existing) {
+        throw new NotFoundException(`Feature '${key}' not registered`);
+      }
       const updated: FeatureDefinition = {
         ...existing,
         ...patch,
@@ -179,7 +178,13 @@ export class FeatureRolloutService {
     }
 
     // 5. Percentage Rollout with Deterministic Hash
-    if (feature.rolloutPercentage > 0 && context?.userId) {
+    if (context?.userId && feature.rolloutPercentage !== undefined) {
+      if (feature.rolloutPercentage === 100) {
+        return { enabled: true, reason: "percentage_rollout_included" };
+      }
+      if (feature.rolloutPercentage === 0) {
+        return { enabled: false, reason: "percentage_rollout_excluded" };
+      }
       const hash = this.computeRolloutHash(feature.key, context.userId);
       if (hash < feature.rolloutPercentage) {
         return { enabled: true, reason: "percentage_rollout_included" };
@@ -223,12 +228,11 @@ export class FeatureRolloutService {
     actor: AdminConfigActor,
     metadata: Record<string, unknown> = {},
   ): Promise<FeatureDefinition> {
-    const feature = this.features.get(key);
-    if (!feature) {
-      throw new NotFoundException(`Feature '${key}' not registered`);
-    }
-
     const applyChange = async () => {
+      const feature = this.features.get(key);
+      if (!feature) {
+        throw new NotFoundException(`Feature '${key}' not registered`);
+      }
       this.emergencyDisable(key, reason, actor.id);
       return this.features.get(key)!;
     };
@@ -285,12 +289,11 @@ export class FeatureRolloutService {
     reason = "Lift emergency disable",
     metadata: Record<string, unknown> = {},
   ): Promise<FeatureDefinition> {
-    const feature = this.features.get(key);
-    if (!feature) {
-      throw new NotFoundException(`Feature '${key}' not registered`);
-    }
-
     const applyChange = async () => {
+      const feature = this.features.get(key);
+      if (!feature) {
+        throw new NotFoundException(`Feature '${key}' not registered`);
+      }
       this.liftEmergencyDisable(key, actor.id, canaryPercentage);
       return this.features.get(key)!;
     };

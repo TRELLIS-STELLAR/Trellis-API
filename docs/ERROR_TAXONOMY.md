@@ -92,6 +92,25 @@ assertion in `src/common/errors/error-taxonomy.spec.ts` together.
 | **Quota** | `QUOTA_EXCEEDED` | 429 | No | `none` | Review usage and quota limits; wait for reset or request an increase. |
 | **System** | `INTERNAL_ERROR` | 500 | No | `none` | Quote `correlationId` when contacting support. |
 | | `SERVICE_UNAVAILABLE` | 503 | **Yes** | `exponential_backoff` | Service degraded or under maintenance. Retry shortly. |
+| | `CONFLICT` | 409 | No | `none` | Resource conflict with current state. Refresh and retry. |
+| | `RESOURCE_NOT_FOUND` | 404 | No | `none` | Target resource not found. Verify identifier or projection. |
+| | `DUPLICATE_ENTRY` | 409 | No | `none` | Resource or unique key already exists. Ensure uniqueness or update. |
+| **Import Pipeline** | `IMPORT_NOT_FOUND` | 404 | No | `none` | Verify import job ID and ensure it belongs to your account. |
+| | `IMPORT_PREVIEW_EXPIRED` | 410 | No | `none` | Generate a new import preview before committing the dataset. |
+| | `IMPORT_PREVIEW_NOT_FOUND` | 404 | No | `none` | Run an import preview dry-run before attempting to commit. |
+| | `IMPORT_PREVIEW_ALREADY_COMMITTED` | 409 | No | `none` | Preview batch has already been committed and cannot be re-applied. |
+| | `IMPORT_ROWS_QUARANTINED` | 422 | No | `none` | Review quarantined rows in preview report and correct invalid entries. |
+| | `IMPORT_ROW_INVALID` | 422 | No | `none` | Ensure row fields conform to expected column types and constraints. |
+| | `IMPORT_ROW_DUPLICATE` | 409 | No | `none` | Remove or deduplicate redundant rows before committing the import. |
+| | `IMPORT_ROW_UNSAFE` | 400 | No | `none` | Sanitize row content to remove disallowed scripts or unescaped characters. |
+| | `IMPORT_COMMIT_FAILED` | 500 | **Yes** | `exponential_backoff` | Commit failed; retry the commit or initiate a rollback. |
+| | `IMPORT_ROLLBACK_FAILED` | 500 | **Yes** | `exponential_backoff` | Rollback failed; retry rollback or contact support with import ID. |
+| | `IMPORT_ROLLBACK_NOT_POSSIBLE` | 409 | No | `none` | Only committed imports within retention window can be rolled back. |
+| | `IMPORT_RETRY_FAILED` | 502 | **Yes** | `exponential_backoff` | Retried operation failed; check upstream service status and retry. |
+| | `IMPORT_IDEMPOTENCY_KEY_REQUIRED` | 400 | No | `none` | Supply an Idempotency-Key header with a unique request UUID. |
+| | `IMPORT_IDEMPOTENCY_CONFLICT` | 409 | No | `none` | Use a fresh idempotency key for new payloads or reuse identical payload. |
+| | `IMPORT_LIMIT_EXCEEDED` | 413 | No | `none` | Reduce batch size below maximum threshold and resubmit in chunks. |
+| | `IMPORT_FORMAT_UNSUPPORTED` | 415 | No | `none` | Provide data in supported formats: CSV, JSON, or Parquet. |
 
 ---
 

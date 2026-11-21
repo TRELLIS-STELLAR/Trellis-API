@@ -146,4 +146,167 @@ describe("PermissionDiffService", () => {
       expect(report.riskAssessment.warnings.some((w) => w.includes("New sensitive action"))).toBe(true);
     });
   });
+
+  describe("Permission-Diff Preview Before Policy Changes (#482)", () => {
+    const baseCurrentMatrix: PermissionMatrixEntry[] = [
+      {
+        action: "orders.create",
+        description: "Submit trade order",
+        requiredPermissions: [Permission.TRADE_EXECUTE],
+        allowedRoles: [Role.USER, Role.OPERATOR],
+        scope: "own",
+        sensitive: false,
+        auditRequired: false,
+      },
+      {
+        action: "system.maintenance",
+        description: "Execute system maintenance",
+        requiredPermissions: [Permission.SYSTEM_MAINTENANCE],
+        allowedRoles: [Role.ADMIN],
+        scope: "global",
+        sensitive: true,
+        auditRequired: true,
+      },
+    ];
+
+    it("Normal Path: previews added, removed, modified actions and rollback plan", () => {
+      const proposedMatrix: PermissionMatrixEntry[] = [
+        {
+          action: "orders.create",
+          description: "Submit trade order",
+          requiredPermissions: [Permission.TRADE_EXECUTE],
+          allowedRoles: [Role.USER], // removed OPERATOR
+          scope: "own",
+          sensitive: false,
+          auditRequired: false,
+        },
+        {
+          action: "audit.export",
+          description: "Export audit logs",
+          requiredPermissions: [Permission.AUDIT_READ],
+          allowedRoles: [Role.MAINTAINER, Role.ADMIN],
+          scope: "global",
+          sensitive: true,
+          auditRequired: true,
+        },
+      ]; // removed system.maintenance
+
+      const result = service.previewPolicyChanges({
+        actor: { id: "admin-1", roles: ["ADMIN"] },
+        currentMatrix: baseCurrentMatrix,
+        proposedMatrix,
+      });
+
+      expect(result.dryRun).toBe(true);
+      expect(result.canProceed).toBe(true);
+      expect(result.addedActions).toEqual(["audit.export"]);
+      expect(result.removedActions).toEqual(["system.maintenance"]);
+      expect(result.breakingChange).toBe(true);
+      expect(result.requiresAdminConfirmation).toBe(true);
+      expect(result.affectedRoles).toContain(Role.OPERATOR);
+      expect(result.revokedActionsPerRole[Role.OPERATOR]).toContain("orders.create");
+      expect(result.previewToken).toBeDefined();
+      expect(result.rollbackPlan.reversible).toBe(true);
+      expect(result.rollbackPlan.snapshotMatrix).toEqual(baseCurrentMatrix);
+    });
+
+    it("Failure Path: rejects malformed policy entries and duplicate actions", () => {
+      expect(() =>
+        service.previewPolicyChanges({
+          actor: { id: "admin-1", roles: ["ADMIN"] },
+          proposedMatrix: null as any,
+        }),
+      ).toThrow("proposedMatrix must be an array");
+
+      expect(() =>
+        service.previewPolicyChanges({
+          actor: { id: "admin-1", roles: ["ADMIN"] },
+          proposedMatrix: [
+            {
+              action: "",
+              description: "bad",
+              requiredPermissions: [],
+              allowedRoles: [],
+              scope: "own",
+            } as any,
+          ],
+        }),
+      ).toThrow("must specify a non-empty action identifier");
+
+      expect(() =>
+        service.previewPolicyChanges({
+          actor: { id: "admin-1", roles: ["ADMIN"] },
+          proposedMatrix: [
+            {
+              action: "dup.action",
+              description: "first",
+              requiredPermissions: [],
+              allowedRoles: [],
+              scope: "own",
+            } as any,
+            {
+              action: "dup.action",
+              description: "second",
+              requiredPermissions: [],
+              allowedRoles: [],
+              scope: "own",
+            } as any,
+          ],
+        }),
+      ).toThrow("Duplicate action 'dup.action'");
+    });
+
+    it("Authorization Path: permits ADMIN and MAINTAINER, rejects unauthorized roles", () => {
+      const validProposed = [...baseCurrentMatrix];
+
+      // Admin authorized
+      expect(() =>
+        service.previewPolicyChanges({
+          actor: { id: "admin-1", roles: ["ADMIN"] },
+          currentMatrix: baseCurrentMatrix,
+          proposedMatrix: validProposed,
+        }),
+      ).not.toThrow();
+
+      // Maintainer authorized
+      expect(() =>
+        service.previewPolicyChanges({
+          actor: { id: "maint-1", roles: ["MAINTAINER"] },
+          currentMatrix: baseCurrentMatrix,
+          proposedMatrix: validProposed,
+        }),
+      ).not.toThrow();
+
+      // Standard user rejected
+      expect(() =>
+        service.previewPolicyChanges({
+          actor: { id: "user-1", roles: ["USER"] },
+          currentMatrix: baseCurrentMatrix,
+          proposedMatrix: validProposed,
+        }),
+      ).toThrow("requires ADMIN or MAINTAINER role");
+    });
+
+    it("Retry Path: retries transient policy retrieval errors and succeeds", async () => {
+      let attempts = 0;
+      const transientFetcher = async () => {
+        attempts++;
+        if (attempts < 3) {
+          throw new Error("Transient database read failure");
+        }
+        return baseCurrentMatrix;
+      };
+
+      const result = await service.previewPolicyChangesWithRetry(
+        transientFetcher,
+        baseCurrentMatrix,
+        { id: "admin-1", roles: ["ADMIN"] },
+        3,
+      );
+
+      expect(attempts).toBe(3);
+      expect(result.dryRun).toBe(true);
+      expect(result.canProceed).toBe(true);
+    });
+  });
 });

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Permission-diff preview before policy changes with dry-run simulation, per-role impact assessment, privilege escalation warnings, and atomic rollback snapshots ([#482](docs/PERMISSION_DIFF_PREVIEW.md))
+- Complete RFC 7807 problem details error taxonomy mapping for all 54 error codes, including the import pipeline catalog and structured remediation guidance ([#483](docs/ERROR_TAXONOMY.md))
+- Bounded cache invalidation with safety caps, SWR stale detection inspection, resilient exponential backoff retry, and degraded-mode stale serving ([#486](docs/BOUNDED_CACHE_INVALIDATION.md))
+- Feature rollout guard with deterministic canary hashing, 0% rollout exclusion semantics, fail-closed audit evidence capture, and emergency disablement recovery ([#489](docs/operational-rollout-guardrails.md))
 - Recovery-evidence gate in the release gate (restore drill, RPO/RTO targets and
   post-restore invariant report) ([#493](docs/RELEASE_READINESS.md))
 - `--json`, `--only` and `--help` options for the contributor diagnostics

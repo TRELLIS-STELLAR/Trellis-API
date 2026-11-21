@@ -67,18 +67,25 @@ This document outlines the operational specifications, safety guardrails, and ro
 
 ---
 
-## 4. Feature Rollout Guardrails with Emergency Disablement (Issue #297)
+## 4. Feature Rollout Guardrails with Emergency Disablement (Issues #297, #489)
 
 ### Overview
 `FeatureRolloutService` and `FeatureRolloutGuard` govern canary releases, progressive rollouts, allowlists, and immediate emergency mitigation.
 
 ### Rollout Mechanics
-- **Deterministic Canary Hashing**: Uses SHA-256 hash of `featureKey:userId` modulo 100 to deterministically evaluate percentages (0–100%). Ensures consistent user experience across sessions.
-- **User & Role Allowlists**: VIP users and internal roles (e.g., `ADMIN`, `BETA_TESTER`) can access features ahead of general rollout.
+- **Deterministic Canary Hashing**: Uses SHA-256 hash of `featureKey:userId` modulo 100 to deterministically evaluate percentages (0–100%). Ensures consistent user experience across sessions. A configured `rolloutPercentage: 0` explicitly evaluates callers with a `userId` and reports reason `percentage_rollout_excluded`.
+- **User & Role Allowlists**: VIP users and internal roles (e.g., `ADMIN`, `BETA_TESTER`) can access features ahead of general rollout even when rollout percentage is 0%.
+- **Fail-Closed Audit Evidence**: All feature registration, patch updates, emergency disablements, and restorations are recorded via `AdminConfigAuditService` with `apply_failed` outcome capture on non-existent feature updates.
 - **Automated Circuit Breaking**:
   - Automatically counts consecutive errors per feature via `recordError(key, error)`.
   - Trips kill switch when `consecutiveErrors >= maxErrorThreshold` (default: 5).
   - Resets on successful executions via `recordSuccess(key)`.
+
+### Executable Verification
+Verify feature rollout guard and emergency disablement invariants with:
+```bash
+node scripts/verify-feature-rollout-guard.js
+```
 
 ### Emergency Operations & Runbook
 
