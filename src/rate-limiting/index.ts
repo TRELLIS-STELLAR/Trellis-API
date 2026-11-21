@@ -1,6 +1,8 @@
 export { RateLimitingModule } from "./rate-limiting.module";
 export { RateLimiterService } from "./rate-limiter.service";
 export type { RateLimitConfig } from "./rate-limiter.service";
+export { AdaptiveTokenBucketService } from "./adaptive-token-bucket.service";
+export type { TenantBurstQuota } from "./adaptive-token-bucket.service";
 export { DistributedRateLimitGuard } from "./rate-limiting.guard";
 export { RateLimitMiddleware } from "./rate-limit.middleware";
 export { RateLimitingController } from "./rate-limiting.controller";
