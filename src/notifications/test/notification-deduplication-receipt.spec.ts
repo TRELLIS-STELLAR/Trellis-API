@@ -270,6 +270,39 @@ describe("Notification Deduplication with Delivery Receipts (#436)", () => {
       expect(receipt1.receiptSignature).toBe(receipt2.receiptSignature);
       expect(receipt1.receiptId).toBe(receipt2.receiptId);
     });
+
+    it("should cryptographically verify untampered delivery receipts and reject tampered receipts", async () => {
+      const notif = {
+        id: "notif-verify-1",
+        userId: "user-verify",
+        deduplicationKey: "key-verify-1",
+        status: NotificationStatus.SENT,
+        createdAt: new Date("2026-11-19T14:00:00.000Z"),
+        metadata: {},
+      } as unknown as Notification;
+
+      mockDeliveryLogRepo.find.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, status: DeliveryStatus.DELIVERED },
+      ]);
+
+      const receipt = await service.generateReceipt(notif, false);
+      expect(service.verifyReceiptSignature(receipt)).toBe(true);
+
+      // Tampered payload status
+      const tamperedStatusReceipt = { ...receipt, deliveryStatus: ReceiptOverallStatus.FAILED };
+      expect(service.verifyReceiptSignature(tamperedStatusReceipt)).toBe(false);
+
+      // Tampered user ID
+      const tamperedUserReceipt = { ...receipt, userId: "malicious-user" };
+      expect(service.verifyReceiptSignature(tamperedUserReceipt)).toBe(false);
+
+      // Tampered signature
+      const tamperedSigReceipt = { ...receipt, receiptSignature: "00112233445566778899aabbccddeeff" };
+      expect(service.verifyReceiptSignature(tamperedSigReceipt)).toBe(false);
+
+      // Null or invalid receipt
+      expect(service.verifyReceiptSignature(null as any)).toBe(false);
+    });
   });
 });
 

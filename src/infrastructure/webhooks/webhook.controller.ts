@@ -13,6 +13,8 @@ import {
   Req,
   RawBodyRequest,
   ParseUUIDPipe,
+  BadRequestException,
+  HttpException,
 } from "@nestjs/common";
 import { Request } from "express";
 import {
@@ -165,15 +167,18 @@ export class WebhookController {
     @Req() request: RawBodyRequest<Request>,
   ) {
     try {
-      return this.inboundService.accept(
+      return await this.inboundService.accept(
         subscriptionId,
         request.rawBody,
         request.headers,
       );
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       this.logger.error(
         `Failed to process inbound webhook for subscription ${subscriptionId}`,
-        error.message,
+        (error as Error).message,
       );
       throw new BadRequestException(
         "Malformed or invalidly signed webhook event",

@@ -6,6 +6,7 @@ import {
   IsDateString,
   IsInt,
   IsIP,
+  IsArray,
   Min,
   Max,
 } from "class-validator";
@@ -86,4 +87,15 @@ export class ExportAuditLogDto {
   @Min(1)
   @Max(100000)
   limit?: number = 10000;
+}
+
+export class VerifyDeletionDto {
+  @ApiPropertyOptional({
+    description: "Array of audit log IDs to verify permanent deletion of",
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  ids?: string[];
 }

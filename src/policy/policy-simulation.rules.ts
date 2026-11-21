@@ -916,23 +916,25 @@ function evaluateTradingPolicyImpact(
       proposed,
     );
 
-    if (wasAllowed.allowed && !nowAllowed.allowed) {
-      rejectedTradeCount++;
-      affectedRecords.push({
-        recordId: trade.tradeId,
-        recordType: "pending_trade",
-        ownerId: maskIdentifier(trade.userId),
-        impactType: "blocked",
-        reversible: false,
-        reason: nowAllowed.reason,
-        beforeState: { status: "eligible", asset, amount: trade.amount, side },
-        afterState: {
-          status: "rejected",
-          violationCode: nowAllowed.code,
-          asset,
-          amount: trade.amount,
-        },
-      });
+    if (!nowAllowed.allowed) {
+      if (wasAllowed.allowed) {
+        rejectedTradeCount++;
+        affectedRecords.push({
+          recordId: trade.tradeId,
+          recordType: "pending_trade",
+          ownerId: maskIdentifier(trade.userId),
+          impactType: "blocked",
+          reversible: false,
+          reason: nowAllowed.reason,
+          beforeState: { status: "eligible", asset, amount: trade.amount, side },
+          afterState: {
+            status: "rejected",
+            violationCode: nowAllowed.code,
+            asset,
+            amount: trade.amount,
+          },
+        });
+      }
     }
   }
 

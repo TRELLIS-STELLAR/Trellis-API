@@ -30,27 +30,39 @@ Compliance officers can query and trigger retention workflows on demand via the 
 GET /audit-logs/retention/preview
 Authorization: Bearer <COMPLIANCE_OFFICER_TOKEN>
 
-# Manual execution of retention cleanup
+# Manual execution of retention cleanup with automated deletion verification
 POST /audit-logs/retention/enforce
 Authorization: Bearer <COMPLIANCE_OFFICER_TOKEN>
+
+# Explicit verification of permanent record deletion
+POST /audit-logs/retention/verify
+Authorization: Bearer <COMPLIANCE_OFFICER_TOKEN>
+Content-Type: application/json
+
+{
+  "ids": ["log-uuid-1", "log-uuid-2"]
+}
 ```
 
 #### Operational Path Guarantees
 1. **Normal Path**:
    - The scheduled job runs daily at 3:00 AM UTC (`@Cron(CronExpression.EVERY_DAY_AT_3AM)`) under distributed lock `audit:enforce-retention` (30m TTL).
    - Records older than 7 years (`RETENTION_YEARS = 7`) without active holds are selected and permanently deleted using `repo.remove()`.
+   - Post-purge deletion verification (`verifyDeletion`) immediately queries the repository to confirm zero remaining records for the purged IDs, reporting `verificationPassed: true`, `verifiedDeletedCount`, and empty `unverifiedIds: []`.
    - Records containing active legal/dispute holds (`retentionHold: true`, `activeDisputeId`, `auditCaseId`, or `settlementId`) are strictly preserved.
    - `GET /audit-logs/retention/preview` returns `{ cutoff, scanned, eligible, protected, affectedIds, protectedIds }` with zero deletions.
 2. **Failure Path**:
    - If `repo.remove()` or the database fails, the transaction aborts cleanly without partial writes. Protected rows are never deleted.
+   - If records are partially deleted or linger in storage after deletion, `verifyDeletion` flags `verificationPassed: false` and lists all `unverifiedIds` in the `RetentionReport` without misreporting success.
    - Malformed metadata (null, non-object, missing keys) fails safe: records without active hold keys are eligible for deletion, and malformed entries never crash the retention scanner.
 3. **Retry Path**:
    - Retention enforcement is completely idempotent: if an execution fails midway, rerunning `enforceRetention()` picks up remaining eligible records.
-   - Running retention back-to-back produces `{ scanned: N, eligible: 0, protected: P, affectedIds: [] }` on the second run.
+   - Running retention back-to-back produces `{ scanned: N, eligible: 0, protected: P, affectedIds: [], verifiedDeletedCount: 0 }` on the second run.
+   - `verifyDeletionWithRetry` retries transient verification queries with exponential backoff (up to 3 attempts).
    - Distributed lock ensures cluster nodes do not run concurrent retention tasks.
 4. **Authorization Path**:
    - Guarded by `JwtAuthGuard` and `ComplianceOfficerGuard`.
-   - Access is restricted to `Role.ADMIN` and `Role.KYC_OPERATOR` (compliance officers).
+   - Access to `preview`, `enforce`, and `verify` endpoints is restricted to `Role.ADMIN` and `Role.KYC_OPERATOR` (compliance officers).
    - Standard users and operators receive 403 Forbidden; unauthenticated callers receive 401 Unauthorized.
 5. **Rollback & Edge-Case Recovery**:
    - **Emergency Hold**: If records must be urgently protected from purge, apply an active dispute ID or set `retentionHold: true` in metadata via evidence bundle generation.

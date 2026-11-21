@@ -219,6 +219,13 @@ export class NotificationService {
   }
 
   /**
+   * Cryptographically verifies the signature of a delivery receipt.
+   */
+  verifyReceiptSignature(receipt: DeliveryReceiptDto): boolean {
+    return this.deduplicationService.verifyReceiptSignature(receipt);
+  }
+
+  /**
    * Send notifications to multiple recipients.
    */
   async sendBulk(dto: SendBulkNotificationDto): Promise<Notification[]> {

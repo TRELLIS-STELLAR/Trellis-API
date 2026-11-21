@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { LessThan, Repository } from "typeorm";
+import { In, LessThan, Repository } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { AuditLog, AuditLogVisibility } from "./entities/audit-log.entity";
 import { QueryAuditLogDto, ExportAuditLogDto } from "./dto/query-audit-log.dto";
@@ -246,15 +246,22 @@ export class AuditLogService {
       .execute();
   }
 
-  // Permanently deletes unprotected logs past the 7-year retention period.
+  private readonly logger = new Logger(AuditLogService.name);
+
+  // Permanently deletes unprotected logs past the 7-year retention period and verifies deletion.
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   @DistributedLock("audit:enforce-retention", 30 * 60_000)
   async enforceRetention(cutoff = this.retentionCutoff()): Promise<RetentionReport> {
     const candidates = await this.repo.find({ where: { createdAt: LessThan(cutoff) } });
     const protectedRecords = candidates.filter((record) => this.isProtected(record));
     const eligibleRecords = candidates.filter((record) => !this.isProtected(record));
-    if (eligibleRecords.length) await this.repo.remove(eligibleRecords);
-    return this.createRetentionReport(cutoff, candidates, eligibleRecords, protectedRecords);
+    let verification: DeletionVerificationResult | undefined;
+    if (eligibleRecords.length) {
+      await this.repo.remove(eligibleRecords);
+      const eligibleIds = eligibleRecords.map((r) => r.id);
+      verification = await this.verifyDeletion(eligibleIds);
+    }
+    return this.createRetentionReport(cutoff, candidates, eligibleRecords, protectedRecords, verification);
   }
 
   async previewRetention(cutoff = this.retentionCutoff()): Promise<RetentionReport> {
@@ -262,6 +269,69 @@ export class AuditLogService {
     const protectedRecords = candidates.filter((record) => this.isProtected(record));
     const eligibleRecords = candidates.filter((record) => !this.isProtected(record));
     return this.createRetentionReport(cutoff, candidates, eligibleRecords, protectedRecords);
+  }
+
+  /**
+   * Verifies that the specified audit log IDs have been permanently removed and no longer exist in the repository.
+   */
+  async verifyDeletion(ids: string[]): Promise<DeletionVerificationResult> {
+    if (!ids || ids.length === 0) {
+      return {
+        verified: true,
+        scannedCount: 0,
+        verifiedDeletedCount: 0,
+        remainingIds: [],
+        verificationPassed: true,
+      };
+    }
+
+    const remaining = await this.repo.find({
+      where: { id: In(ids) },
+    });
+
+    const remainingIds = (remaining || []).map((record) => record.id);
+    const verifiedDeletedCount = ids.length - remainingIds.length;
+    const verificationPassed = remainingIds.length === 0;
+
+    if (!verificationPassed) {
+      this.logger.error(
+        `Retention deletion verification failed: ${remainingIds.length} records still exist after delete. Remaining IDs: ${remainingIds.join(", ")}`,
+      );
+    } else {
+      this.logger.log(
+        `Retention deletion verified: all ${ids.length} records successfully confirmed deleted.`,
+      );
+    }
+
+    return {
+      verified: verificationPassed,
+      scannedCount: ids.length,
+      verifiedDeletedCount,
+      remainingIds,
+      verificationPassed,
+    };
+  }
+
+  /**
+   * Retries deletion verification with exponential backoff for transient database anomalies.
+   */
+  async verifyDeletionWithRetry(
+    ids: string[],
+    maxRetries = 3,
+    backoffMs = 50,
+  ): Promise<DeletionVerificationResult> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.verifyDeletion(ids);
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs * Math.pow(2, attempt - 1)));
+        }
+      }
+    }
+    throw lastError;
   }
 
   private retentionCutoff(): Date {
@@ -275,6 +345,7 @@ export class AuditLogService {
     candidates: AuditLog[],
     eligibleRecords: AuditLog[],
     protectedRecords: AuditLog[],
+    verification?: DeletionVerificationResult,
   ): RetentionReport {
     return {
       cutoff,
@@ -283,6 +354,9 @@ export class AuditLogService {
       protected: protectedRecords.length,
       affectedIds: eligibleRecords.map((record) => record.id),
       protectedIds: protectedRecords.map((record) => record.id),
+      verifiedDeletedCount: verification ? verification.verifiedDeletedCount : (eligibleRecords.length === 0 ? 0 : undefined),
+      unverifiedIds: verification ? verification.remainingIds : [],
+      verificationPassed: verification ? verification.verificationPassed : true,
     };
   }
 
@@ -293,6 +367,14 @@ export class AuditLogService {
   }
 }
 
+export interface DeletionVerificationResult {
+  verified: boolean;
+  scannedCount: number;
+  verifiedDeletedCount: number;
+  remainingIds: string[];
+  verificationPassed: boolean;
+}
+
 export interface RetentionReport {
   cutoff: Date;
   scanned: number;
@@ -300,4 +382,7 @@ export interface RetentionReport {
   protected: number;
   affectedIds: string[];
   protectedIds: string[];
+  verifiedDeletedCount?: number;
+  unverifiedIds?: string[];
+  verificationPassed?: boolean;
 }

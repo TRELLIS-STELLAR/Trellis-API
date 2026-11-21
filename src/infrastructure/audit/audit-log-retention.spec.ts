@@ -261,7 +261,7 @@ describe("AuditLog Retention Enforcement for Sensitive Metadata", () => {
       expect(() => guard.canActivate(createMockContext(undefined))).toThrow(ForbiddenException);
     });
 
-    it("exposes preview and enforce retention endpoints on AuditLogController", async () => {
+    it("exposes preview, enforce, and verify retention endpoints on AuditLogController", async () => {
       const expectedReport: RetentionReport = {
         cutoff: RETENTION_CUTOFF,
         scanned: 1,
@@ -269,11 +269,23 @@ describe("AuditLog Retention Enforcement for Sensitive Metadata", () => {
         protected: 0,
         affectedIds: ["log-1"],
         protectedIds: [],
+        verifiedDeletedCount: 1,
+        unverifiedIds: [],
+        verificationPassed: true,
+      };
+
+      const expectedVerification = {
+        verified: true,
+        scannedCount: 1,
+        verifiedDeletedCount: 1,
+        remainingIds: [],
+        verificationPassed: true,
       };
 
       const mockService = {
         previewRetention: jest.fn().mockResolvedValue(expectedReport),
         enforceRetention: jest.fn().mockResolvedValue(expectedReport),
+        verifyDeletion: jest.fn().mockResolvedValue(expectedVerification),
       };
 
       const controller = new AuditLogController(mockService as any);
@@ -285,6 +297,87 @@ describe("AuditLog Retention Enforcement for Sensitive Metadata", () => {
       const enforcement = await controller.enforceRetention();
       expect(enforcement).toEqual(expectedReport);
       expect(mockService.enforceRetention).toHaveBeenCalledTimes(1);
+
+      const verification = await controller.verifyDeletion({ ids: ["log-1"] });
+      expect(verification).toEqual(expectedVerification);
+      expect(mockService.verifyDeletion).toHaveBeenCalledWith(["log-1"]);
+    });
+  });
+
+  describe("Deletion Verification Path", () => {
+    it("confirms all eligible records are verified deleted and reports verificationPassed = true", async () => {
+      const oldDate = new Date("2010-01-01");
+      const eligible1 = { id: "log-del-1", createdAt: oldDate, metadata: null };
+      const eligible2 = { id: "log-del-2", createdAt: oldDate, metadata: null };
+      const protectedItem = {
+        id: "log-del-protected",
+        createdAt: oldDate,
+        metadata: { retentionHold: true },
+      };
+
+      let activeRecords = [eligible1, eligible2, protectedItem];
+      const repo = {
+        find: jest.fn().mockImplementation((query) => {
+          if (query?.where?.id) {
+            // Verification query: return only records in activeRecords that match query
+            return Promise.resolve(activeRecords.filter((r) => r.id === "log-del-1" || r.id === "log-del-2"));
+          }
+          return Promise.resolve([...activeRecords]);
+        }),
+        remove: jest.fn().mockImplementation(async (toRemove: any[]) => {
+          activeRecords = activeRecords.filter((r) => !toRemove.some((rem) => rem.id === r.id));
+        }),
+      };
+      const service = new AuditLogService(repo as any, {} as any, {} as any);
+
+      const report = await service.enforceRetention(RETENTION_CUTOFF);
+      expect(report.scanned).toBe(3);
+      expect(report.eligible).toBe(2);
+      expect(report.protected).toBe(1);
+      expect(report.affectedIds).toEqual(["log-del-1", "log-del-2"]);
+      expect(report.verifiedDeletedCount).toBe(2);
+      expect(report.unverifiedIds).toEqual([]);
+      expect(report.verificationPassed).toBe(true);
+    });
+
+    it("detects unverified records when database silently fails to delete records", async () => {
+      const remainingRecord = { id: "stuck-record-1", createdAt: new Date("2010-01-01"), metadata: null };
+      const repo = {
+        find: jest.fn().mockResolvedValue([remainingRecord]),
+      };
+      const service = new AuditLogService(repo as any, {} as any, {} as any);
+
+      const result = await service.verifyDeletion(["stuck-record-1", "deleted-record-2"]);
+      expect(result.verified).toBe(false);
+      expect(result.verificationPassed).toBe(false);
+      expect(result.scannedCount).toBe(2);
+      expect(result.verifiedDeletedCount).toBe(1);
+      expect(result.remainingIds).toEqual(["stuck-record-1"]);
+    });
+
+    it("retries deletion verification transient errors with exponential backoff and succeeds", async () => {
+      const repo = {
+        find: jest
+          .fn()
+          .mockRejectedValueOnce(new Error("Transient connection timeout"))
+          .mockResolvedValueOnce([]),
+      };
+      const service = new AuditLogService(repo as any, {} as any, {} as any);
+
+      const result = await service.verifyDeletionWithRetry(["verified-1"], 3, 10);
+      expect(result.verified).toBe(true);
+      expect(result.verificationPassed).toBe(true);
+      expect(result.verifiedDeletedCount).toBe(1);
+      expect(repo.find).toHaveBeenCalledTimes(2);
+    });
+
+    it("returns verified = true with zero count when empty ID list is passed", async () => {
+      const service = new AuditLogService({} as any, {} as any, {} as any);
+      const result = await service.verifyDeletion([]);
+      expect(result.verified).toBe(true);
+      expect(result.scannedCount).toBe(0);
+      expect(result.verifiedDeletedCount).toBe(0);
+      expect(result.remainingIds).toEqual([]);
     });
   });
 });

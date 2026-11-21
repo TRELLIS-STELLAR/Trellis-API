@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Body,
   Param,
   Query,
   UseGuards,
@@ -17,7 +18,11 @@ import {
   ApiBearerAuth,
 } from "@nestjs/swagger";
 import { AuditLogService } from "./audit-log.service";
-import { QueryAuditLogDto, ExportAuditLogDto } from "./dto/query-audit-log.dto";
+import {
+  QueryAuditLogDto,
+  ExportAuditLogDto,
+  VerifyDeletionDto,
+} from "./dto/query-audit-log.dto";
 import {
   AuditLogResponseDto,
   AuditLogListResponseDto,
@@ -67,6 +72,18 @@ export class AuditLogController {
   @ApiResponse({ status: 403, description: "Forbidden - Compliance Officer required" })
   async enforceRetention() {
     return this.auditLogService.enforceRetention();
+  }
+
+  @Post("retention/verify")
+  @ApiOperation({
+    summary: "Verify deletion of purged audit records",
+    description:
+      "Verifies that specified audit log IDs no longer exist in the repository.",
+  })
+  @ApiResponse({ status: 200, description: "Deletion verification result" })
+  @ApiResponse({ status: 403, description: "Forbidden - Compliance Officer required" })
+  async verifyDeletion(@Body() dto?: VerifyDeletionDto) {
+    return this.auditLogService.verifyDeletion(dto?.ids ?? []);
   }
 
   @Get(":id")

@@ -146,6 +146,33 @@ export class NotificationDeduplicationService {
   }
 
   /**
+   * Cryptographically verifies the signature of a delivery receipt.
+   * Ensures tamper detection across receiptId, notificationId, userId, deduplicationKey,
+   * originalSubmittedAt, and deliveryStatus.
+   */
+  verifyReceiptSignature(receipt: DeliveryReceiptDto): boolean {
+    if (!receipt || !receipt.receiptSignature) return false;
+
+    const signaturePayload = `${receipt.receiptId}:${receipt.notificationId}:${receipt.userId}:${
+      receipt.deduplicationKey || "none"
+    }:${receipt.originalSubmittedAt}:${receipt.deliveryStatus}`;
+
+    const expectedSignature = crypto
+      .createHmac("sha256", this.hmacSecret)
+      .update(signaturePayload)
+      .digest("hex");
+
+    try {
+      const a = Buffer.from(receipt.receiptSignature, "hex");
+      const b = Buffer.from(expectedSignature, "hex");
+      if (a.length !== b.length) return false;
+      return crypto.timingSafeEqual(a, b);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Retrieves the delivery receipt for a specific notification ID with authorization check.
    */
   async getReceiptByNotificationId(
