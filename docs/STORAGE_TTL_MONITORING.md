@@ -72,3 +72,24 @@ failure propagates so monitoring can alert instead of reporting "healthy".
   real Soroban RPC gateway is a separate step behind `LedgerTtlGateway`.
 
 Verify with `npx jest src/storage-ttl`.
+
+
+---
+
+## Proactive Archival Hook (#521)
+
+`StorageTtlExpirationScanner` proactively identifies on-chain storage entries nearing
+expiration and invokes `IProactiveArchivalHook` to back up state to cold storage
+(e.g., S3, IPFS, or off-chain vault) before eviction occurs.
+
+### 1. Temporary Entry Preservation
+Temporary Soroban storage entries cannot be restored once expired. The scanner flags
+live temporary entries approaching expiration with `temporary_entry_preservation` urgency,
+triggering proactive export before ledger eviction destroys the data.
+
+### 2. Proactive Archival Lifecycle & Invariants
+1. **Candidate Discovery**: Live entries with `remainingLedgers <= proactiveArchivalThresholdLedgers` (default: `criticalBelowLedgers + 5000`) are flagged as archival candidates.
+2. **Hook Execution & Integrity Check**: Invokes `archivalHook.archive(context)`. If the hook provides a `verify(location, digest)` method, post-archival checksum verification is performed.
+3. **Rollback Safety**: If integrity verification fails, the scanner calls `archivalHook.rollback(key, location)` to purge corrupted archives and logs a failure outcome without terminating the remaining batch.
+4. **Transient Retries**: Hook failures marked `transient: true` are retried up to `maxAttempts` (default 3) using exponential backoff.
+5. **Authorization**: Read-only scanning is open to any monitor, but `executeProactiveArchival` requires `ADMIN` or `SYSTEM_OPERATOR` roles.

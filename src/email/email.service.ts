@@ -20,6 +20,11 @@ import {
 import { EmailQueueService } from "./services/email-queue.service";
 import { TemplateEngineService } from "./services/template-engine.service";
 import { User, parseUserLocale } from "../core/user/entities/user.entity";
+import {
+  BounceSuppressionService,
+  BounceReason,
+} from "./services/bounce-suppression.service";
+import { LocaleFallbackResolver } from "./templates/locale-fallback-resolver";
 
 @Injectable()
 export class EmailService {
@@ -34,6 +39,10 @@ export class EmailService {
     @Optional()
     @InjectRepository(User)
     private readonly userRepository?: Repository<User>,
+    @Optional()
+    private readonly bounceSuppressionService?: BounceSuppressionService,
+    @Optional()
+    private readonly localeResolver?: LocaleFallbackResolver,
   ) {}
 
   /**
@@ -44,13 +53,27 @@ export class EmailService {
     return parseUserLocale(user);
   }
 
+  getBounceSuppressionService(): BounceSuppressionService | undefined {
+    return this.bounceSuppressionService;
+  }
+
+  getLocaleResolver(): LocaleFallbackResolver | undefined {
+    return this.localeResolver;
+  }
+
   async sendEmail(dto: SendEmailDto): Promise<EmailLog> {
     const provider = this.resolveProvider();
 
     // Determine user preferred locale: from dto.locale, dto.user, or optional user repository lookup
     let locale = "en";
+    let resolvedLocaleMeta: {
+      resolvedLocale?: string;
+      fallbackUsed?: boolean;
+      chain?: string[];
+    } = {};
+
     if (dto.locale) {
-      locale = this.parseUserLocale({ locale: dto.locale });
+      locale = dto.locale;
     } else if (dto.user) {
       locale = this.parseUserLocale(dto.user);
     } else if (this.userRepository && dto.to.length === 1) {
@@ -63,6 +86,26 @@ export class EmailService {
         }
       } catch {
         // Fall back gracefully to English
+      }
+    }
+
+    // If advanced locale fallback resolver is available, use it for chain resolution
+    if (this.localeResolver && dto.templateName) {
+      try {
+        const res = this.localeResolver.resolveTemplate(
+          dto.templateName,
+          locale,
+        );
+        locale = res.resolvedLocale;
+        resolvedLocaleMeta = {
+          resolvedLocale: res.resolvedLocale,
+          fallbackUsed: res.fallbackUsed,
+          chain: res.chainTraversed,
+        };
+      } catch (err) {
+        this.logger.warn(
+          `Locale fallback resolver: ${err instanceof Error ? err.message : String(err)} -- falling back to standard engine`,
+        );
       }
     }
 
@@ -93,6 +136,42 @@ export class EmailService {
       this.configService.get<string>("EMAIL_FROM") || "noreply@trellis.example";
     const emailLogs: EmailLog[] = [];
     for (const recipient of dto.to) {
+      // Check bounce suppression list before dispatching
+      if (this.bounceSuppressionService) {
+        const suppression =
+          await this.bounceSuppressionService.isSuppressed(recipient);
+        if (suppression.suppressed) {
+          this.logger.warn(
+            `Email to ${recipient} suppressed (reason: ${suppression.reason || "bounce_suppression"})`,
+          );
+          const suppressedLog = this.emailLogRepository.create({
+            recipientEmail: recipient,
+            senderEmail,
+            subject,
+            templateName: dto.templateName,
+            templateVars: dto.templateVars,
+            provider,
+            status: EmailStatus.FAILED,
+            errorMessage: `Recipient is in bounce suppression list: ${suppression.reason || "suppressed"}`,
+            maxAttempts: 0,
+            attempts: 0,
+            metadata: {
+              html,
+              text,
+              locale,
+              suppressed: true,
+              suppressionReason: suppression.reason,
+              priority: dto.priority || "normal",
+              ...resolvedLocaleMeta,
+            },
+          });
+          const savedSuppressed =
+            await this.emailLogRepository.save(suppressedLog);
+          emailLogs.push(savedSuppressed);
+          continue;
+        }
+      }
+
       const emailLog = this.emailLogRepository.create({
         recipientEmail: recipient,
         senderEmail,
@@ -108,6 +187,7 @@ export class EmailService {
           locale,
           attachments: dto.attachments,
           priority: dto.priority || "normal",
+          ...resolvedLocaleMeta,
         },
       });
       const saved = await this.emailLogRepository.save(emailLog);
@@ -147,6 +227,19 @@ export class EmailService {
         `Email ${id} is not in failed status (current: ${log.status})`,
       );
     }
+
+    // If recipient is on bounce suppression list, reject retry
+    if (this.bounceSuppressionService) {
+      const suppression = await this.bounceSuppressionService.isSuppressed(
+        log.recipientEmail,
+      );
+      if (suppression.suppressed) {
+        throw new Error(
+          `Cannot retry email ${id}: recipient "${log.recipientEmail}" is currently suppressed (${suppression.reason})`,
+        );
+      }
+    }
+
     await this.emailLogRepository.update(id, {
       status: EmailStatus.QUEUED,
       attempts: 0,
@@ -162,6 +255,16 @@ export class EmailService {
       { recipientEmail: email },
       { unsubscribed: true },
     );
+
+    if (this.bounceSuppressionService) {
+      await this.bounceSuppressionService.recordBounce(
+        email,
+        BounceReason.UNSUBSCRIBE,
+        "User opted out via unsubscribe",
+        "api",
+      );
+    }
+
     this.logger.log(`Unsubscribed ${email}`);
     return { unsubscribed: true };
   }

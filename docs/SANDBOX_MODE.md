@@ -141,3 +141,24 @@ full lifecycle, every failure scenario, and that the adapter works with **only**
 
 No adapter code changes are needed — the adapter is a thin interpreter over the
 fixture table.
+
+
+---
+
+## Scenario State Snapshotter and Deterministic Seed Reset (#520)
+
+`SandboxSnapshotService` provides state capture, snapshot export/import, tamper detection,
+and deterministic seed resets for scenario testing.
+
+### 1. Snapshotting & State Rollback
+- **Capture**: `createSnapshot(label, actor)` captures active scenario, seed, sequence counter, and all recorded workflow steps. Generates a cryptographic SHA-256 state checksum.
+- **Restore & Rollback**: `restoreSnapshot(snapshotId, actor)` verifies the state checksum before applying. If checksum verification fails or restore throws, active state is automatically rolled back to prior values.
+- **Export/Import**: Snapshots can be serialized to JSON and re-imported with structural and checksum verification.
+
+### 2. Deterministic Seed Reset
+- `resetSeed(newSeed, actor)` resets the runtime seed, zeros out the sequence counter, and purges recorded action logs.
+- Guarantees byte-for-byte identical payment IDs, XDR payloads, and transaction hashes when running identical workflows across resets.
+
+### 3. Role-Based Access Control
+- Snapshot creation, restore, import, and seed resets require `ADMIN` or `TESTER` roles.
+- All operations fail closed if `SANDBOX_MODE` is disabled or process runs in production.

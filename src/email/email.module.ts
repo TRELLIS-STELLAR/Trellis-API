@@ -12,6 +12,8 @@ import { TemplateEngineService } from "./services/template-engine.service";
 import { SmtpEmailProvider } from "./providers/smtp-email.provider";
 import { SendgridEmailProvider } from "./providers/sendgrid-email.provider";
 import { SesEmailProvider } from "./providers/ses-email.provider";
+import { BounceSuppressionService } from "./services/bounce-suppression.service";
+import { LocaleFallbackResolver } from "./templates/locale-fallback-resolver";
 
 @Module({
   imports: [
@@ -37,10 +39,17 @@ import { SesEmailProvider } from "./providers/ses-email.provider";
     EmailQueueService,
     EmailProcessor,
     TemplateEngineService,
+    BounceSuppressionService,
+    LocaleFallbackResolver,
     SmtpEmailProvider,
     SendgridEmailProvider,
     SesEmailProvider,
   ],
-  exports: [EmailService, TemplateEngineService],
+  exports: [
+    EmailService,
+    TemplateEngineService,
+    BounceSuppressionService,
+    LocaleFallbackResolver,
+  ],
 })
 export class EmailModule {}

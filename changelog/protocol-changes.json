@@ -36,8 +36,12 @@
         "steps": [],
         "notes": "No migration. Callers that do not send ?details= receive the unchanged legacy payload, so the change is additive."
       },
-      "relatedIssues": [125],
-      "docs": ["docs/transaction-details.md"]
+      "relatedIssues": [
+        125
+      ],
+      "docs": [
+        "docs/transaction-details.md"
+      ]
     },
     {
       "version": "0.2.0",
@@ -71,8 +75,12 @@
         "steps": [],
         "notes": "No migration. New environment variables are optional and default to the previous behaviour."
       },
-      "relatedIssues": [124],
-      "docs": ["docs/dependency-health.md"]
+      "relatedIssues": [
+        124
+      ],
+      "docs": [
+        "docs/dependency-health.md"
+      ]
     },
     {
       "version": "0.2.0",
@@ -105,8 +113,13 @@
         "steps": [],
         "notes": "No migration. Consumers that need upgrade warnings can poll the endpoint from the version they run. The reload() API allows hot-swapping the changelog without a restart; on failure the previous document is preserved."
       },
-      "relatedIssues": [126, 352],
-      "docs": ["docs/protocol-changelog.md"]
+      "relatedIssues": [
+        126,
+        352
+      ],
+      "docs": [
+        "docs/protocol-changelog.md"
+      ]
     },
     {
       "version": "0.2.0",
@@ -133,8 +146,50 @@
         "steps": [],
         "notes": "No migration. Test-only harness; nothing is added to the production bundle."
       },
-      "relatedIssues": [127],
-      "docs": ["docs/fault-injection.md"]
+      "relatedIssues": [
+        127
+      ],
+      "docs": [
+        "docs/fault-injection.md"
+      ]
+    },
+    {
+      "version": "0.3.0",
+      "date": "2026-11-22",
+      "status": "unreleased",
+      "impact": "compatible",
+      "title": "Email locale fallback, bounce suppression, referral attribution, storage TTL scanner, and sandbox snapshotter",
+      "summary": "Adds email template locale fallback resolver with progressive RFC 5646 chain traversal, bounce suppression list with TTL auto-expiration, growth referral attribution and qualification window verifiers with idempotent clawback guards, storage TTL expiration scanner with proactive off-chain archival hooks, and sandbox scenario state snapshotter with deterministic seed resets.",
+      "protocolSurfaces": [
+        {
+          "kind": "cli",
+          "path": "node scripts/verify-issues-519-520-521-522.js",
+          "description": "Runs comprehensive executable verification for locale fallbacks, bounce suppression, referral attribution windows, TTL expiration scanning, and sandbox state snapshotting."
+        },
+        {
+          "kind": "config",
+          "key": "SANDBOX_SEED",
+          "description": "Deterministic seed for reproducible sandbox scenario replay and state snapshotting."
+        }
+      ],
+      "migration": {
+        "required": false,
+        "automated": true,
+        "steps": [],
+        "notes": "Non-breaking additive release. Existing public API signatures and storage structures remain backward-compatible."
+      },
+      "relatedIssues": [
+        519,
+        520,
+        521,
+        522
+      ],
+      "docs": [
+        "docs/EMAIL_LOCALE_SUPPRESSION.md",
+        "docs/referral-attribution.md",
+        "docs/STORAGE_TTL_MONITORING.md",
+        "docs/SANDBOX_MODE.md"
+      ]
     }
   ]
 }

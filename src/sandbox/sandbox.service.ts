@@ -1,10 +1,17 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { PaymentRequest } from "src/payments/interfaces/payment-processor.interface";
 import { SandboxPaymentAdapter } from "src/sandbox/adapters/sandbox-payment.adapter";
 import { SandboxConfigService } from "src/sandbox/sandbox.config";
 import { SANDBOX_PROCESSOR_NAME } from "src/sandbox/sandbox.constants";
 import { SandboxScenario } from "src/sandbox/sandbox.scenarios";
 import { listSandboxFixtures } from "src/sandbox/fixtures/sandbox.fixtures";
+import {
+  SandboxSnapshotService,
+  SandboxSnapshot,
+  SnapshotRestoreResult,
+  DeterministicResetResult,
+  SandboxActorContext,
+} from "./sandbox-snapshot.service";
 
 /** Input for {@link SandboxService.runPrimaryWorkflow}. All fields optional. */
 export interface SandboxWorkflowInput {
@@ -42,7 +49,7 @@ export const SANDBOX_LIMITATIONS: string[] = [
 /**
  * Contributor-facing facade over sandbox mode.
  *
- * `runPrimaryWorkflow` drives the full create → sign → submit → status → refund
+ * `runPrimaryWorkflow` drives the full create -> sign -> submit -> status -> refund
  * lifecycle through the sandbox adapter with no credentials, no network and no
  * database, which is what makes the primary workflow runnable locally.
  * `describe` exposes the active configuration, fixtures and limitations.
@@ -54,6 +61,8 @@ export class SandboxService {
   constructor(
     private readonly sandboxConfig: SandboxConfigService,
     private readonly paymentAdapter: SandboxPaymentAdapter,
+    @Optional()
+    private readonly snapshotService?: SandboxSnapshotService,
   ) {}
 
   /** True when sandbox mode is on and the process is not in production. */
@@ -61,17 +70,59 @@ export class SandboxService {
     return this.sandboxConfig.isEnabled();
   }
 
-  /** Active configuration, fixtures and documented limitations. */
+  getSnapshotService(): SandboxSnapshotService | undefined {
+    return this.snapshotService;
+  }
+
+  /** Active configuration, fixtures, snapshots count and documented limitations. */
   describe(): Record<string, unknown> {
     const config = this.sandboxConfig.get();
     return {
       enabled: this.isEnabled(),
       processor: SANDBOX_PROCESSOR_NAME,
       scenario: config.scenario,
-      seed: config.seed,
+      seed: this.snapshotService
+        ? this.snapshotService.getActiveSeed()
+        : config.seed,
       scenarios: listSandboxFixtures(),
+      snapshotsCount: this.snapshotService
+        ? this.snapshotService.listSnapshots().length
+        : 0,
       limitations: SANDBOX_LIMITATIONS,
     };
+  }
+
+  /** Captures the current sandbox scenario state into a named snapshot. */
+  async createSnapshot(
+    label: string,
+    actor: SandboxActorContext,
+  ): Promise<SandboxSnapshot> {
+    if (!this.snapshotService) {
+      throw new Error("SandboxSnapshotService is not registered");
+    }
+    return this.snapshotService.createSnapshot(label, actor);
+  }
+
+  /** Restores the sandbox scenario state from a named snapshot. */
+  async restoreSnapshot(
+    snapshotId: string,
+    actor: SandboxActorContext,
+  ): Promise<SnapshotRestoreResult> {
+    if (!this.snapshotService) {
+      throw new Error("SandboxSnapshotService is not registered");
+    }
+    return this.snapshotService.restoreSnapshot(snapshotId, actor);
+  }
+
+  /** Resets the deterministic seed and sequence counters for scenario testing. */
+  async resetSeed(
+    newSeed?: string,
+    actor?: SandboxActorContext,
+  ): Promise<DeterministicResetResult> {
+    if (!this.snapshotService) {
+      throw new Error("SandboxSnapshotService is not registered");
+    }
+    return this.snapshotService.resetSeed(newSeed, actor);
   }
 
   /**
@@ -105,6 +156,9 @@ export class SandboxService {
         step: "create",
         detail: { paymentId: created.paymentId, status: created.status },
       });
+      this.snapshotService?.recordAction("create", created.paymentId, {
+        status: created.status,
+      });
 
       const signed = await this.paymentAdapter.signTransaction(created);
       steps.push({
@@ -114,6 +168,9 @@ export class SandboxService {
           signerAddress: signed.signerAddress,
         },
       });
+      this.snapshotService?.recordAction("sign", signed.paymentId, {
+        signerAddress: signed.signerAddress,
+      });
 
       const submitted = await this.paymentAdapter.submitTransaction(signed);
       steps.push({
@@ -122,6 +179,9 @@ export class SandboxService {
           transactionHash: submitted.transactionHash,
           status: submitted.status,
         },
+      });
+      this.snapshotService?.recordAction("submit", submitted.transactionHash, {
+        status: submitted.status,
       });
 
       const status = await this.paymentAdapter.getStatus(
@@ -133,6 +193,10 @@ export class SandboxService {
           status: status.status,
           confirmedAmount: status.confirmedAmount,
         },
+      });
+      this.snapshotService?.recordAction("status", submitted.transactionHash, {
+        status: status.status,
+        confirmedAmount: status.confirmedAmount,
       });
 
       const refund = await this.paymentAdapter.refund({
@@ -146,6 +210,10 @@ export class SandboxService {
           status: refund.status,
           refundedAmount: refund.refundedAmount,
         },
+      });
+      this.snapshotService?.recordAction("refund", refund.refundId, {
+        status: refund.status,
+        refundedAmount: refund.refundedAmount,
       });
 
       return { sandbox: true, scenario, ok: true, steps };
