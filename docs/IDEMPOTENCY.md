@@ -52,6 +52,16 @@ Failures are recorded as `failed` and are **not** cached — the marker is
 dropped on the next attempt so a client retry can make progress. Only completed
 responses are replayed, and only for `ttlSeconds`.
 
+Only an error thrown by the handler marks a record `failed`. If the handler
+succeeds but storing its response fails (for example the database connection
+drops), the original caller still gets the handler's response, and the record
+keeps its `in progress` claim. Duplicates of that request get **409** instead of
+running the side effect a second time. Recovery needs no operator action: the
+claim expires at its `expiresAt` (the route's TTL), after which the key behaves
+like any expired key. Do not delete the row early, because the next duplicate
+would then run the side effect again. The only contract change is that this
+caller now gets the handler's result instead of a 500.
+
 ### Concurrency
 
 `(scope, idempotencyKey)` is a unique index. Two racing requests with the same

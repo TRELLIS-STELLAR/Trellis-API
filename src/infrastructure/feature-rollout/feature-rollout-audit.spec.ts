@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   NotFoundException,
   ServiceUnavailableException,
@@ -344,6 +345,130 @@ describe("FeatureRolloutService - Audit Evidence Integration (#425)", () => {
       // Verify reverted to snapshot (10%, not 100%)
       const current = service.getFeature("stable-flag");
       expect(current?.rolloutPercentage).toBe(10);
+    });
+  });
+
+  describe("Emergency disablement guard (#565)", () => {
+    const key = "instant-settlement";
+    const register = (actor = adminActor) =>
+      service.registerFeatureWithEvidence(
+        {
+          key,
+          description: "Instant settlement",
+          enabled: true,
+          rolloutPercentage: 100,
+        },
+        actor,
+        "Full rollout",
+      );
+    const disable = () =>
+      service.emergencyDisableWithEvidence(key, "Horizon errors", adminActor);
+
+    it("normal path: re-registering an emergency-disabled feature keeps the kill switch until it is lifted", async () => {
+      await register();
+      await disable();
+
+      const reRegistered = await register(maintainerActor);
+
+      expect(reRegistered).toMatchObject({
+        enabled: false,
+        emergencyDisabled: true,
+        emergencyReason: "Horizon errors",
+        emergencyDisabledBy: "admin-425",
+        rolloutPercentage: 100,
+      });
+      expect(service.isEnabled(key, { userId: "u-1" }).reason).toBe(
+        "emergency_disabled",
+      );
+
+      const lifted = await service.liftEmergencyDisableWithEvidence(
+        key,
+        adminActor,
+        5,
+        "Patched",
+      );
+      expect(lifted).toMatchObject({
+        enabled: true,
+        emergencyDisabled: false,
+        rolloutPercentage: 5,
+      });
+    });
+
+    it("failure path: lifting a feature that is not emergency-disabled is refused, audited and changes nothing", async () => {
+      await service.registerFeatureWithEvidence(
+        {
+          key: "dormant",
+          description: "Staged",
+          enabled: false,
+          rolloutPercentage: 0,
+        },
+        adminActor,
+        "Staged off",
+      );
+
+      await expect(
+        service.liftEmergencyDisableWithEvidence(
+          "dormant",
+          adminActor,
+          5,
+          "Wrong flag",
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(service.getFeature("dormant")).toMatchObject({
+        enabled: false,
+        rolloutPercentage: 0,
+      });
+      expect(harness.events[harness.events.length - 1]).toMatchObject({
+        status: SensitiveActionStatus.FAILED,
+        metadata: { outcome: "apply_failed", error: "ConflictException" },
+      });
+    });
+
+    it("retry path: a retried lift does not reset a widened rollout back to the canary percentage", async () => {
+      await register();
+      await disable();
+      await service.liftEmergencyDisableWithEvidence(
+        key,
+        adminActor,
+        5,
+        "Patched",
+      );
+      await service.updateFeatureWithEvidence(
+        key,
+        { rolloutPercentage: 25 },
+        adminActor,
+        "Widen canary",
+      );
+
+      await expect(
+        service.liftEmergencyDisableWithEvidence(key, adminActor, 5, "Patched"),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(service.getFeature(key)).toMatchObject({
+        enabled: true,
+        rolloutPercentage: 25,
+      });
+    });
+
+    it("authorization path: an unauthorized actor can neither lift nor re-register away the kill switch", async () => {
+      await register();
+      await disable();
+
+      await expect(
+        service.liftEmergencyDisableWithEvidence(
+          key,
+          unauthorizedActor,
+          100,
+          "Let me in",
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(register(unauthorizedActor)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+
+      expect(service.isEnabled(key, { userId: "u-1" }).reason).toBe(
+        "emergency_disabled",
+      );
     });
   });
 });

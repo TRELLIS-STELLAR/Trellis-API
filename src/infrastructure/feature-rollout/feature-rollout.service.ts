@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -57,12 +58,23 @@ export class FeatureRolloutService {
    * Register or update a feature configuration in memory directly.
    */
   registerFeature(feature: FeatureDefinition): void {
+    const existing = this.features.get(feature.key);
     this.features.set(feature.key, {
       ...feature,
       rolloutPercentage: Math.min(100, Math.max(0, feature.rolloutPercentage)),
       allowlistedUsers: feature.allowlistedUsers ?? [],
       allowlistedRoles: feature.allowlistedRoles ?? [],
       emergencyDisabled: feature.emergencyDisabled ?? false,
+      // Re-registering must not clear an active kill switch; only the lift path does.
+      ...(existing?.emergencyDisabled
+        ? {
+            enabled: false,
+            emergencyDisabled: true,
+            emergencyReason: existing.emergencyReason,
+            emergencyDisabledBy: existing.emergencyDisabledBy,
+            emergencyDisabledAt: existing.emergencyDisabledAt,
+          }
+        : {}),
     });
     this.consecutiveErrors.set(feature.key, 0);
   }
@@ -266,6 +278,11 @@ export class FeatureRolloutService {
     const feature = this.features.get(key);
     if (!feature) {
       throw new NotFoundException(`Feature '${key}' not registered`);
+    }
+    // Otherwise a retried lift resets the rollout to canary and a globally
+    // disabled feature would be switched on.
+    if (!feature.emergencyDisabled) {
+      throw new ConflictException(`Feature '${key}' is not emergency-disabled`);
     }
 
     feature.emergencyDisabled = false;

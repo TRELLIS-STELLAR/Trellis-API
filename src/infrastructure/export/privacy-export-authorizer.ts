@@ -36,8 +36,8 @@ const RESTRICTED_PII_PATTERNS = [
   /phone/i,
   /full_?name/i,
   /fullName/i,
-  /firstName/i,
-  /lastName/i,
+  /first_?name/i,
+  /last_?name/i,
   /address_?line/i,
   /ip_?address/i,
   /ipAddress/i,
@@ -45,6 +45,7 @@ const RESTRICTED_PII_PATTERNS = [
   /ssn/i,
   /dob/i,
   /birth_?date/i,
+  /date_?of_?birth/i,
 ];
 
 const CONFIDENTIAL_FINANCIAL_PATTERNS = [
@@ -116,7 +117,7 @@ export class PrivacyExportAuthorizer {
           if (canViewPii) {
             sanitized[key] = this.sanitizeNode(value, context);
           } else {
-            sanitized[key] = this.maskPiiValue(key, value);
+            sanitized[key] = this.maskPiiNode(key, value);
           }
           continue;
         }
@@ -151,6 +152,16 @@ export class PrivacyExportAuthorizer {
     }
 
     return node;
+  }
+
+  /**
+   * Masks each element of a multi-value PII field; stringifying the whole
+   * array would mask only the first value and leak the rest.
+   */
+  private maskPiiNode(key: string, value: unknown): unknown {
+    return Array.isArray(value)
+      ? value.map((item) => this.maskPiiNode(key, item))
+      : this.maskPiiValue(key, value);
   }
 
   /**

@@ -65,6 +65,13 @@ This document outlines the operational specifications, safety guardrails, and ro
 | `COMPLIANCE_OFFICER` | Plaintext | Plaintext | Masked / Redacted | Stripped |
 | `ADMIN` | Plaintext | Plaintext | Plaintext | Stripped |
 
+### Edge Cases & Recovery (#564)
+- Field keys match case-insensitively with or without underscores: `first_name` / `firstName`, `last_name` / `lastName` and `date_of_birth` / `dateOfBirth` are all `RESTRICTED_PII`.
+- Multi-value PII fields (e.g. `emails: [...]`) are masked element by element, including nested arrays, and stay arrays. Before this, the whole array was masked as one string, which for e-mail lists exposed every address after the first.
+- Keys that match no pattern default to `PUBLIC`, so a new PII column needs a pattern before it is exported.
+- Masking runs on the raw record each time an export is generated, so a retried `processExport` masks from source again and produces the same output.
+- Migration: a consumer that read a masked array field as a string now receives an array of masked strings. The current extractors emit no array-valued PII, so existing exports are unaffected. Rollback is a code revert; exports generated in the meantime keep their masking until they expire.
+
 ---
 
 ## 4. Feature Rollout Guardrails with Emergency Disablement (Issues #297, #489)
@@ -113,3 +120,9 @@ featureRolloutService.liftEmergencyDisable(
 - Clears the emergency disabled flag.
 - Resets consecutive error counters to 0.
 - Re-enables allowlisted users for verification before increasing percentage.
+
+#### 3. Kill-Switch Edge Cases (#565)
+- Lifting is the only way to clear an emergency disablement. Re-registering the key (`POST /admin/features`) keeps `emergencyDisabled`, `enabled: false` and the original reason, actor and timestamp. The submitted description, allowlists and error threshold are stored; the rollout percentage is replaced by the canary percentage when the feature is lifted.
+- Lifting a feature that is not emergency-disabled returns `409 Conflict`, is audited as `apply_failed` and changes nothing. A retried or duplicate lift therefore cannot reset a widened rollout back to the canary percentage, and it cannot switch on a feature that was turned off with `enabled: false`.
+- Only `ADMIN` and `MAINTAINER` can lift or re-register. Other roles get `403` and the kill switch stays active.
+- Migration: callers that used `lift-emergency-disable` to set a canary percentage on a healthy feature must use `PATCH /admin/features/:key` with `rolloutPercentage` instead.

@@ -357,4 +357,116 @@ describe("IdempotencyService concurrency (harness)", () => {
       expect(attempts).toBe(2);
     });
   });
+
+  describe("response write fails after the handler succeeded (#563)", () => {
+    // The COMPLETED update never reaches the database, so the stored row keeps
+    // its IN_PROGRESS claim, as a dropped connection would leave it.
+    class LostCompletionRepository extends RacingIdempotencyRepository {
+      failCompletion = true;
+
+      async save(record: IdempotencyRecord): Promise<IdempotencyRecord> {
+        if (
+          this.failCompletion &&
+          record.status === IdempotencyRecordStatus.COMPLETED
+        ) {
+          await tick();
+          record.status = IdempotencyRecordStatus.IN_PROGRESS;
+          throw new Error("connection reset while storing the response");
+        }
+        return super.save(record);
+      }
+    }
+
+    function buildLossyService() {
+      const repo = new LostCompletionRepository();
+      return { repo, service: new IdempotencyService(repo as never) };
+    }
+
+    const request = { key: KEY, scope: SCOPE, requestHash: "hash-v1" };
+
+    it("failure path: serves the original caller and keeps the claim in progress", async () => {
+      const { repo, service } = buildLossyService();
+      const handler = jest.fn(async () => successfulHandler());
+
+      const first = await service.execute({ ...request, handler });
+
+      expect(first).toEqual({
+        replayed: false,
+        statusCode: 201,
+        body: { id: "payment-1" },
+        key: KEY,
+      });
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(repo.rows).toHaveLength(1);
+      expect(repo.rows[0].status).toBe(IdempotencyRecordStatus.IN_PROGRESS);
+    });
+
+    it("retry path: duplicate submissions get 409 instead of re-running the side effect", async () => {
+      const { service } = buildLossyService();
+      const handler = jest.fn(async () => successfulHandler());
+      await service.execute({ ...request, handler });
+
+      const storm = await retryStorm(4, () =>
+        service.execute({ ...request, handler }),
+      );
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(storm.successes).toHaveLength(0);
+      expect(storm.rejections).toHaveLength(4);
+      for (const kind of rejectionSummary(storm)) {
+        expect(kind.status).toBe(409);
+        expect(kind.message).toContain("already in progress");
+      }
+    });
+
+    it("normal path after recovery: once the claim expires one duplicate reclaims it and the rest replay", async () => {
+      const { repo, service } = buildLossyService();
+      const handler = jest.fn(async () => successfulHandler());
+      await service.execute({ ...request, handler });
+
+      repo.failCompletion = false;
+      repo.rows[0].expiresAt = new Date(Date.now() - 1000);
+
+      const report = await duplicateSubmissions(3, () =>
+        service.execute({ ...request, handler }),
+      );
+
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(
+        report.successes.filter((outcome) => outcome.value?.replayed === false),
+      ).toHaveLength(1);
+      for (const kind of rejectionSummary(report)) {
+        expect(kind.status).toBe(409);
+      }
+
+      const replay = await service.execute({ ...request, handler });
+      expect(replay.replayed).toBe(true);
+      expect(replay.body).toEqual({ id: "payment-1" });
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it("authorization path: a stuck claim does not block or leak into another actor's scope", async () => {
+      const { repo, service } = buildLossyService();
+      await service.execute({
+        ...request,
+        handler: async () => successfulHandler(),
+      });
+      repo.failCompletion = false;
+
+      const bobHandler = jest.fn(async () => ({
+        statusCode: 201,
+        body: { id: "payment-bob" },
+      }));
+      const bob = await service.execute({
+        ...request,
+        scope: "POST:/payments:user-2",
+        handler: bobHandler,
+      });
+
+      expect(bob.replayed).toBe(false);
+      expect(bob.body).toEqual({ id: "payment-bob" });
+      expect(bobHandler).toHaveBeenCalledTimes(1);
+      expect(repo.rows[0].status).toBe(IdempotencyRecordStatus.IN_PROGRESS);
+    });
+  });
 });

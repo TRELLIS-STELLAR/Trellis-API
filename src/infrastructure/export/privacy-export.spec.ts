@@ -158,4 +158,86 @@ describe("PrivacyExportAuthorizer (#296)", () => {
       expect(sanitized.users[0].secrets).toBeUndefined();
     });
   });
+
+  describe("snake_case and multi-value PII fields (#564)", () => {
+    const profile = {
+      id: "usr_9",
+      first_name: "Alice",
+      last_name: "Smith",
+      date_of_birth: "1990-04-12",
+      dateOfBirth: "1990-04-12",
+      emails: ["alice@example.com", "bob@stellar.org"],
+      phoneNumbers: ["+15551234567", null],
+    };
+
+    it("classifies snake_case name and birth-date keys as restricted PII", () => {
+      for (const key of [
+        "first_name",
+        "last_name",
+        "firstName",
+        "lastName",
+        "date_of_birth",
+        "dateOfBirth",
+      ]) {
+        expect(authorizer.classifyField(key)).toBe(
+          FieldSensitivity.RESTRICTED_PII,
+        );
+      }
+    });
+
+    it("authorization path: masks them for roles without PII access", () => {
+      for (const context of [
+        { role: "user" as const, isOwner: false },
+        { role: "user" as const, isOwner: true, includePiiConsent: false },
+        { role: "auditor" as const, isOwner: false },
+      ]) {
+        const sanitized = authorizer.filterRecord(profile, context) as any;
+        expect(sanitized.first_name).toBe("A***e");
+        expect(sanitized.last_name).toBe("S***h");
+        expect(sanitized.date_of_birth).toBe("1***2");
+        expect(sanitized.dateOfBirth).toBe("1***2");
+        expect(sanitized.id).toBe("usr_9");
+      }
+    });
+
+    it("authorization path: shows them in plaintext to PII-authorized roles", () => {
+      for (const context of [
+        { role: "user" as const, isOwner: true, includePiiConsent: true },
+        { role: "compliance_officer" as const, isOwner: false },
+        { role: "admin" as const, isOwner: false },
+      ]) {
+        const sanitized = authorizer.filterRecord(profile, context) as any;
+        expect(sanitized.first_name).toBe("Alice");
+        expect(sanitized.date_of_birth).toBe("1990-04-12");
+        expect(sanitized.emails).toEqual(profile.emails);
+      }
+    });
+
+    it("failure path: masks every value of a multi-value field instead of leaking the tail", () => {
+      const sanitized = authorizer.filterRecord(
+        { ...profile, emails: [...profile.emails, ["carol@example.com"]] },
+        { role: "user", isOwner: false },
+      ) as any;
+
+      expect(sanitized.emails).toEqual([
+        "a***e@example.com",
+        "b***b@stellar.org",
+        ["c***l@example.com"],
+      ]);
+      expect(JSON.stringify(sanitized)).not.toContain("bob@");
+      expect(JSON.stringify(sanitized)).not.toContain("carol@");
+      expect(sanitized.phoneNumbers).toEqual(["***-***-4567", ""]);
+    });
+
+    it("retry path: re-filtering the same raw record gives the same output and leaves it unmodified", () => {
+      const raw = JSON.parse(JSON.stringify(profile));
+      const context = { role: "user" as const, isOwner: false };
+
+      const first = authorizer.filterRecord(raw, context);
+      const second = authorizer.filterRecord(raw, context);
+
+      expect(second).toEqual(first);
+      expect(raw).toEqual(profile);
+    });
+  });
 });

@@ -53,7 +53,13 @@ stateDiagram-v2
 3. **Focus Containment & Restoration**:
    - Focus must never reset to `document.body` on error or after re-authentication.
    - When `resolveRecovery()` is invoked, focus is returned to `returnFocusTargetAfterAuth` or the original trigger field.
+4. **No dead retry shortcut after exhaustion**:
+   - When `transitionToRetry()` reaches `maxAttempts`, the `RETRY_LIMIT_EXHAUSTED` failure announces `Press Escape to abort.` in `lastAnnouncement`, `errorRecovery.announcement` and `asyncStatus.statusAnnouncement`, and its recovery steps are review (and rollback when `rollbackSafe`), numbered without gaps. `KeyR` is not offered, because pressing it would only fail again.
+   - This also applies when the exhausted attempt follows a re-authentication: focus goes to `failureFocusTarget`, and `authorizationState` (including `Alt+A`) is kept.
+   - Recovery from exhaustion is abort (`Escape`), then a new submission, which goes through `Submitting` and clears the error state (invariant 2).
 
 ## Contract Preservation & Migration
 
 The `AsyncErrorRecoveryContract` is built on top of `AsyncStatusAccessibilityContract` and `ErrorRecoveryAccessibilityContract`. No existing schemas or API response contracts are broken.
+
+`ErrorTransitionOptions.retryable` is optional and defaults to `true`, so existing `transitionToFailure()` callers get the same announcement and steps as before. Only the retry-exhausted failure changes, as invariant 4 describes.

@@ -186,13 +186,9 @@ export class IdempotencyService {
       );
     }
 
+    let result: { statusCode: number; body: T };
     try {
-      const { statusCode, body } = await params.handler();
-      record.status = IdempotencyRecordStatus.COMPLETED;
-      record.responseCode = statusCode;
-      record.responseBody = { payload: body ?? null };
-      await this.repo.save(record);
-      return { replayed: false, statusCode, body, key };
+      result = await params.handler();
     } catch (error) {
       record.status = IdempotencyRecordStatus.FAILED;
       record.responseCode = null;
@@ -204,6 +200,25 @@ export class IdempotencyService {
       );
       throw error;
     }
+
+    const { statusCode, body } = result;
+    record.status = IdempotencyRecordStatus.COMPLETED;
+    record.responseCode = statusCode;
+    record.responseBody = { payload: body ?? null };
+    try {
+      await this.repo.save(record);
+    } catch (error) {
+      // The side effect already ran. Marking the record FAILED would let a
+      // duplicate re-run it, so the stored claim stays IN_PROGRESS and
+      // duplicates get 409 until it expires.
+      this.logger.error(
+        `Idempotent request succeeded but its response was not stored (scope=${scope}); ` +
+          `duplicates are rejected until the key expires: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+      );
+    }
+    return { replayed: false, statusCode, body, key };
   }
 
   /** Deletes records past their TTL. Safe to call from a scheduled job. */

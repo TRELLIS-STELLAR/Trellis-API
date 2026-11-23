@@ -45,6 +45,8 @@ export interface ErrorTransitionOptions {
   recoverySteps?: ErrorRecoveryStep[];
   rollbackSafe?: boolean;
   rollbackActionPrompt?: string;
+  /** False when no retry is possible (e.g. retries exhausted): KeyR is not offered. Defaults to true. */
+  retryable?: boolean;
 }
 
 export interface RetryTransitionOptions {
@@ -159,6 +161,7 @@ export function transitionToFailure(
   options: ErrorTransitionOptions,
 ): AsyncErrorRecoveryContract {
   const rollbackSafe = options.rollbackSafe ?? contract.isRollbackSafe;
+  const retryable = options.retryable ?? true;
 
   const defaultRecoverySteps: ErrorRecoveryStep[] = [
     {
@@ -168,18 +171,21 @@ export function transitionToFailure(
       actionTarget: contract.asyncStatus.focusManagement.failureFocusTarget,
       actionType: "review",
     },
-    {
+  ];
+
+  if (retryable) {
+    defaultRecoverySteps.push({
       step: 2,
       label: "Retry operation using keyboard shortcut KeyR",
       actionable: true,
       actionTarget: contract.asyncStatus.focusManagement.failureFocusTarget,
       actionType: "retry",
-    },
-  ];
+    });
+  }
 
   if (rollbackSafe) {
     defaultRecoverySteps.push({
-      step: 3,
+      step: defaultRecoverySteps.length + 1,
       label: "Rollback operation and restore previous state",
       actionable: true,
       actionTarget: contract.asyncStatus.focusManagement.abortFocusTarget,
@@ -194,7 +200,11 @@ export function transitionToFailure(
     errorTitle: options.errorTitle,
     plainLanguageSummary: options.errorMessage,
     politeness: "assertive",
-    announcement: `Error in ${contract.asyncStatus.operationLabel}: ${options.errorTitle}. ${options.errorMessage}. Use KeyR to retry or Escape to abort.`,
+    announcement: `Error in ${contract.asyncStatus.operationLabel}: ${options.errorTitle}. ${options.errorMessage}. ${
+      retryable
+        ? "Use KeyR to retry or Escape to abort."
+        : "Press Escape to abort."
+    }`,
     focusTargetId: contract.asyncStatus.focusManagement.failureFocusTarget,
     recoverySteps,
     rollbackSafe,
@@ -205,18 +215,23 @@ export function transitionToFailure(
     errorMessage: `${options.errorTitle}: ${options.errorMessage}`,
   });
 
+  const lastAnnouncement: AriaAnnouncement = {
+    politeness: "assertive",
+    message: errorRecovery.announcement,
+    interrupt: true,
+  };
+
   return {
     ...contract,
-    asyncStatus: updatedStatus,
+    // The status live region must not keep offering KeyR once retry is impossible.
+    asyncStatus: retryable
+      ? updatedStatus
+      : { ...updatedStatus, statusAnnouncement: lastAnnouncement },
     errorRecovery,
     activeFocusTarget: updatedStatus.focusManagement.failureFocusTarget,
     isRollbackSafe: rollbackSafe,
     rollbackActionPrompt: errorRecovery.rollbackActionPrompt,
-    lastAnnouncement: {
-      politeness: "assertive",
-      message: errorRecovery.announcement,
-      interrupt: true,
-    },
+    lastAnnouncement,
   };
 }
 
@@ -238,6 +253,7 @@ export function transitionToRetry(
       errorTitle: "Maximum Retries Reached",
       errorMessage: `Operation '${contract.asyncStatus.operationLabel}' failed after ${attempt} retry attempts. Please review logs or abort.`,
       rollbackSafe: contract.isRollbackSafe,
+      retryable: false,
     });
   }
 

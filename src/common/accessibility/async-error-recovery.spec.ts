@@ -320,4 +320,104 @@ describe("Accessibility Coverage for Async Error Recovery", () => {
       check();
     });
   });
+
+  describe("Keyboard affordances once retries are exhausted (#566)", () => {
+    const stepsOf = (
+      contract: ReturnType<typeof buildAsyncErrorRecoveryContract>,
+    ) =>
+      contract.errorRecovery?.recoverySteps.map((s) => [s.step, s.actionType]);
+    const announcementsOf = (
+      contract: ReturnType<typeof buildAsyncErrorRecoveryContract>,
+    ) => [
+      contract.lastAnnouncement.message,
+      contract.errorRecovery?.announcement,
+      contract.asyncStatus.statusAnnouncement.message,
+    ];
+
+    it("normal path: a retryable failure keeps the KeyR and Escape shortcuts and its step numbering", () => {
+      const contract = transitionToFailure(
+        buildAsyncErrorRecoveryContract(baseOptions),
+        { errorCode: "E", errorTitle: "T", errorMessage: "M" },
+      );
+
+      expect(contract.lastAnnouncement.message).toContain(
+        "Use KeyR to retry or Escape to abort.",
+      );
+      expect(stepsOf(contract)).toEqual([
+        [1, "review"],
+        [2, "retry"],
+        [3, "rollback"],
+      ]);
+    });
+
+    it("failure path: exhaustion announces only Escape and drops the retry step", () => {
+      let contract = buildAsyncErrorRecoveryContract(baseOptions);
+      contract = transitionToRetry(contract, { attempt: 1 });
+      contract = transitionToRetry(contract, { attempt: 3 });
+
+      for (const message of announcementsOf(contract)) {
+        expect(message).not.toContain("KeyR");
+        expect(message).toContain("Escape");
+      }
+      expect(contract.lastAnnouncement).toMatchObject({
+        politeness: "assertive",
+        interrupt: true,
+      });
+      expect(stepsOf(contract)).toEqual([
+        [1, "review"],
+        [2, "rollback"],
+      ]);
+      expect(contract.activeFocusTarget).toBe("swap-error-alert");
+      expect(() =>
+        assertAsyncStatusInvariants(contract.asyncStatus),
+      ).not.toThrow();
+    });
+
+    it("retry path: failures before the limit still offer the KeyR shortcut", () => {
+      let contract = buildAsyncErrorRecoveryContract(baseOptions);
+      contract = transitionToRetry(contract, { attempt: 1 });
+      contract = transitionToFailure(contract, {
+        errorCode: "RPC_UNAVAILABLE",
+        errorTitle: "RPC Unavailable",
+        errorMessage: "Horizon did not respond.",
+      });
+
+      expect(contract.lastAnnouncement.message).toContain("KeyR");
+      expect(stepsOf(contract)).toContainEqual([2, "retry"]);
+    });
+
+    it("rollback edge: exhausting a non-rollback-safe operation leaves review as the only step", () => {
+      const contract = transitionToRetry(
+        buildAsyncErrorRecoveryContract({
+          ...baseOptions,
+          rollbackOnAbort: false,
+        }),
+        { attempt: 3 },
+      );
+
+      expect(stepsOf(contract)).toEqual([[1, "review"]]);
+      expect(contract.lastAnnouncement.message).toContain(
+        "Press Escape to abort.",
+      );
+    });
+
+    it("authorization path: exhaustion after re-authentication focuses the error, not the auth modal", () => {
+      let contract = buildAsyncErrorRecoveryContract(baseOptions);
+      contract = transitionToUnauthorized(contract);
+      contract = resolveRecovery(contract);
+      contract = transitionToRetry(contract, { attempt: 3 });
+
+      expect(contract.activeFocusTarget).toBe("swap-error-alert");
+      for (const message of announcementsOf(contract)) {
+        expect(message).not.toContain("KeyR");
+      }
+      expect(contract.asyncStatus.authorizationState).toMatchObject({
+        authRequired: true,
+        reauthShortcut: "Alt+A",
+      });
+      expect(() =>
+        assertAsyncStatusInvariants(contract.asyncStatus),
+      ).not.toThrow();
+    });
+  });
 });
