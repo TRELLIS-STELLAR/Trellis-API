@@ -679,8 +679,85 @@ describe("AdaptiveTokenBucketService", () => {
     });
   });
 
-  describe("edge cases", () => {
-    it("handles zero failure rate gracefully", async () => {
+  describe("shared tenant budget enforcement", () => {
+    it("enforces shared tenant-wide budget across all requests", async () => {
+      const quota: TenantBurstQuota = {
+        tenantId: "tenant-budget",
+        maxBurstTokens: 100,
+        burstRefillRatePerSec: 10,
+        adaptiveWindow: 60_000,
+        failureThreshold: 20,
+      };
+
+      service.registerTenantQuota(quota);
+
+      const policy = {
+        limit: 100, // Per-request limit is high
+        windowMs: 60_000,
+        burst: 100,
+        strategy: RateLimitStrategy.TokenBucket,
+      };
+
+      // Shared budget is only 100 tokens total for tenant
+      // Make 150 requests to exceed budget
+      let allowedCount = 0;
+      for (let i = 0; i < 150; i++) {
+        const decision = await service.consumeAdaptive(
+          `tenant-budget:key-${i}:global:free`,
+          "tenant-budget",
+          policy,
+          `key-${i}`,
+          "global",
+          "free",
+        );
+
+        if (decision.allowed) {
+          allowedCount++;
+        }
+      }
+
+      // Should stop allowing after shared budget exhausted
+      expect(allowedCount).toBeLessThan(150);
+      expect(allowedCount).toBeLessThanOrEqual(110); // Some buffer for timing
+    });
+
+    it("prevents tenant-wide rate-limit bypass", async () => {
+      const quota: TenantBurstQuota = {
+        tenantId: "tenant-bypass-test",
+        maxBurstTokens: 50,
+        burstRefillRatePerSec: 5,
+        adaptiveWindow: 60_000,
+        failureThreshold: 20,
+      };
+
+      service.registerTenantQuota(quota);
+
+      const limitedPolicy = {
+        limit: 10,
+        windowMs: 60_000,
+        burst: 10,
+        strategy: RateLimitStrategy.TokenBucket,
+      };
+
+      // Try to bypass using different keys
+      const results = [];
+      for (let i = 0; i < 50; i++) {
+        const decision = await service.consumeAdaptive(
+          `tenant-bypass-test:bypass-key-${i}:global:free`,
+          "tenant-bypass-test",
+          limitedPolicy,
+          `bypass-key-${i}`,
+          "global",
+          "free",
+        );
+        results.push(decision.allowed);
+      }
+
+      // Not all should succeed - shared budget prevents bypass
+      const successCount = results.filter((r) => r).length;
+      expect(successCount).toBeLessThan(50);
+    });
+  });
       const quota: TenantBurstQuota = {
         tenantId: "tenant-zero-fail",
         maxBurstTokens: 100,
@@ -760,6 +837,148 @@ describe("AdaptiveTokenBucketService", () => {
       expect(finalState?.currentCapacity).toBeGreaterThanOrEqual(
         initialBase * 0.5,
       );
+
+      jest.useRealTimers();
+    });
+  });
+});
+
+  describe("recovery threshold bug fix", () => {
+    it("correctly triggers recovery when failure rate exceeds threshold (20%)", async () => {
+      jest.useFakeTimers();
+
+      const quota: TenantBurstQuota = {
+        tenantId: "tenant-threshold-fix",
+        maxBurstTokens: 100,
+        burstRefillRatePerSec: 10,
+        adaptiveWindow: 1000, // 1 second for testing
+        failureThreshold: 20, // 20% threshold
+      };
+
+      service.registerTenantQuota(quota);
+
+      const policy = {
+        limit: 1,
+        windowMs: 60_000,
+        burst: 1,
+        strategy: RateLimitStrategy.TokenBucket,
+      };
+
+      // Generate ~25% failure rate by exhausting tokens
+      let failureCount = 0;
+      for (let i = 0; i < 100; i++) {
+        const decision = await service.consumeAdaptive(
+          `tenant-threshold-fix:key:global:free`,
+          "tenant-threshold-fix",
+          policy,
+          "key",
+          "global",
+          "free",
+        );
+        if (!decision.allowed) failureCount++;
+      }
+
+      // Should have high failure rate (exceeding 20% threshold)
+      expect(failureCount).toBeGreaterThan(20);
+
+      // Advance past adaptation window
+      jest.advanceTimersByTime(2000);
+
+      const state = service.getAdaptiveStateSnapshot("tenant-threshold-fix");
+      // With failure rate > 20%, recovery should be scheduled
+      expect(state?.recoveryScheduled).toBe(true);
+      expect(state?.adaptiveLevel).toBeGreaterThan(0);
+
+      jest.useRealTimers();
+    });
+
+    it("correctly compares failure rate as decimal (threshold 15% = 0.15)", async () => {
+      jest.useFakeTimers();
+
+      const quota: TenantBurstQuota = {
+        tenantId: "tenant-decimal-fix",
+        maxBurstTokens: 100,
+        burstRefillRatePerSec: 10,
+        adaptiveWindow: 1000,
+        failureThreshold: 15, // 15% = 0.15 decimal
+      };
+
+      service.registerTenantQuota(quota);
+
+      const policy = {
+        limit: 1,
+        windowMs: 60_000,
+        burst: 1,
+        strategy: RateLimitStrategy.TokenBucket,
+      };
+
+      // Generate >15% failure rate
+      let failures = 0;
+      for (let i = 0; i < 100; i++) {
+        const decision = await service.consumeAdaptive(
+          `tenant-decimal-fix:key:global:free`,
+          "tenant-decimal-fix",
+          policy,
+          "key",
+          "global",
+          "free",
+        );
+        if (!decision.allowed) failures++;
+      }
+
+      // With threshold 15%, should need >15 failures
+      expect(failures).toBeGreaterThan(15);
+
+      // Advance past adaptation window to trigger evaluation
+      jest.advanceTimersByTime(2000);
+
+      const state = service.getAdaptiveStateSnapshot("tenant-decimal-fix");
+      // Recovery should be scheduled when failure rate exceeds threshold
+      expect(state?.recoveryScheduled).toBe(true);
+
+      jest.useRealTimers();
+    });
+
+    it("does not trigger recovery when failure rate is below threshold", async () => {
+      jest.useFakeTimers();
+
+      const quota: TenantBurstQuota = {
+        tenantId: "tenant-no-recovery",
+        maxBurstTokens: 100,
+        burstRefillRatePerSec: 10,
+        adaptiveWindow: 1000,
+        failureThreshold: 50, // 50% threshold
+      };
+
+      service.registerTenantQuota(quota);
+
+      const policy = {
+        limit: 100,
+        windowMs: 60_000,
+        burst: 100,
+        strategy: RateLimitStrategy.TokenBucket,
+      };
+
+      // All requests succeed - 0% failure rate (< 50% threshold)
+      for (let i = 0; i < 20; i++) {
+        const decision = await service.consumeAdaptive(
+          `tenant-no-recovery:key-${i}:global:free`,
+          "tenant-no-recovery",
+          policy,
+          `key-${i}`,
+          "global",
+          "free",
+        );
+        expect(decision.allowed).toBe(true);
+      }
+
+      // Advance past adaptation window
+      jest.advanceTimersByTime(2000);
+
+      const state = service.getAdaptiveStateSnapshot("tenant-no-recovery");
+      // No recovery should be scheduled
+      expect(state?.recoveryScheduled).toBe(false);
+      expect(state?.adaptiveLevel).toBe(0);
 
       jest.useRealTimers();
     });

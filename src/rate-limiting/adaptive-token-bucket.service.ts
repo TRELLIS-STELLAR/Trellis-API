@@ -26,6 +26,9 @@ interface AdaptiveState {
   lastAdaptationTime: number;
   adaptiveLevel: number; // 0-100, reflects system load
   recoveryScheduled: boolean;
+  // Shared tenant budget enforcement
+  sharedBudgetTokens: number;
+  lastBudgetRefillTime: number;
 }
 
 /**
@@ -79,6 +82,9 @@ export class AdaptiveTokenBucketService {
         lastAdaptationTime: Date.now(),
         adaptiveLevel: 0,
         recoveryScheduled: false,
+        // Shared tenant budget starts full
+        sharedBudgetTokens: baseCapacity,
+        lastBudgetRefillTime: Date.now(),
       });
     }
     return this.adaptiveStates.get(tenantId)!;
@@ -86,6 +92,7 @@ export class AdaptiveTokenBucketService {
 
   /**
    * Consume tokens with adaptive rate limiting and burst quota support
+   * Enforces shared tenant budget to prevent bypass
    *
    * Paths covered:
    * - Normal: Enough tokens, request allowed
@@ -136,6 +143,27 @@ export class AdaptiveTokenBucketService {
     // Check if we need to adapt based on recent failures
     this.evaluateAdaptation(state, quota);
 
+    // Refill shared tenant budget based on time elapsed
+    this.refillSharedBudget(state, quota);
+
+    // Check shared tenant budget FIRST (prevents bypass)
+    const sharedBudgetAllows = state.sharedBudgetTokens >= 1;
+    if (!sharedBudgetAllows) {
+      this.logger.warn(
+        `Shared tenant budget exhausted for ${tenantId}. Budget: ${state.sharedBudgetTokens}`,
+      );
+      state.failureCount++;
+      return {
+        allowed: false,
+        remaining: 0,
+        resetAt: Date.now() + (basePolicy.windowMs || 60_000),
+        retryAfterMs: 1000, // Retry after 1 second
+        adaptiveLevel: state.adaptiveLevel,
+        burstRemaining: state.sharedBudgetTokens,
+        reason: `Tenant-wide rate limit exhausted. Load level: ${state.adaptiveLevel}%`,
+      };
+    }
+
     // Create adaptive policy based on current state
     const adaptivePolicy = this.buildAdaptivePolicy(
       basePolicy,
@@ -156,15 +184,14 @@ export class AdaptiveTokenBucketService {
     // Track success/failure for adaptation
     if (decision.allowed) {
       state.successCount++;
+      // Deduct from shared budget on successful request
+      state.sharedBudgetTokens = Math.max(0, state.sharedBudgetTokens - 1);
     } else {
       state.failureCount++;
     }
 
     // Schedule recovery if failure rate is high
-    if (
-      !state.recoveryScheduled &&
-      this.getFailureRate(state) > quota.failureThreshold
-    ) {
+    if (!state.recoveryScheduled && this.shouldTriggerRecovery(state, quota)) {
       this.scheduleRecovery(state, quota);
     }
 
@@ -175,7 +202,7 @@ export class AdaptiveTokenBucketService {
       retryAfterMs: decision.retryAfterMs,
       adaptiveLevel: state.adaptiveLevel,
       burstUsed: adaptivePolicy.burst - state.burstCapacity,
-      burstRemaining: state.burstCapacity,
+      burstRemaining: state.sharedBudgetTokens,
       reason: !decision.allowed
         ? `Adaptive rate limit exceeded. Load level: ${state.adaptiveLevel}%`
         : undefined,
@@ -184,6 +211,7 @@ export class AdaptiveTokenBucketService {
 
   /**
    * Evaluate if adaptation is needed based on failure rates
+   * FIXED: Correct failure-rate comparison (failureThreshold is percentage 0-100, convert to decimal)
    */
   private evaluateAdaptation(
     state: AdaptiveState,
@@ -202,8 +230,12 @@ export class AdaptiveTokenBucketService {
       Math.max(0, failureRate * 5), // Scale to 0-100
     );
 
+    // FIX: Convert percentage threshold to decimal (20 -> 0.20)
+    const thresholdDecimal = quota.failureThreshold / 100;
+    const recoveryThresholdDecimal = thresholdDecimal / 2;
+
     // Adjust capacity based on load
-    if (failureRate > quota.failureThreshold / 100) {
+    if (failureRate > thresholdDecimal) {
       // High failure rate: reduce capacity
       const reductionFactor = Math.max(
         this.minCapacityPercentage,
@@ -214,14 +246,14 @@ export class AdaptiveTokenBucketService {
 
       this.logger.warn(
         `Adaptive reduction for tenant ${state.tenantId}: ` +
-          `failureRate=${(failureRate * 100).toFixed(1)}%, ` +
+          `failureRate=${(failureRate * 100).toFixed(1)}% (threshold=${quota.failureThreshold}%), ` +
           `new capacity=${state.currentCapacity.toFixed(0)}`,
       );
-    } else if (failureRate < quota.failureThreshold / 200) {
+    } else if (failureRate < recoveryThresholdDecimal) {
       // Low failure rate: gradually increase capacity
       const expansionFactor = Math.min(
         this.maxCapacityPercentage,
-        1 + (quota.failureThreshold / 200 - failureRate) / 10,
+        1 + (recoveryThresholdDecimal - failureRate) / 10,
       );
       state.currentCapacity = Math.min(
         state.baseCapacity * this.maxCapacityPercentage,
@@ -265,6 +297,40 @@ export class AdaptiveTokenBucketService {
         ? Math.max(basePolicy.windowMs * 0.8, 10_000) // Faster retry window
         : basePolicy.windowMs,
     };
+  }
+
+  /**
+   * Refill shared tenant budget based on time elapsed
+   */
+  private refillSharedBudget(
+    state: AdaptiveState,
+    quota: TenantBurstQuota,
+  ): void {
+    const now = Date.now();
+    const elapsed = now - state.lastBudgetRefillTime;
+
+    // Refill rate: 1 token per second
+    const tokensToAdd = Math.floor(elapsed / 1000);
+    if (tokensToAdd > 0) {
+      state.sharedBudgetTokens = Math.min(
+        state.currentCapacity,
+        state.sharedBudgetTokens + tokensToAdd,
+      );
+      state.lastBudgetRefillTime = now;
+    }
+  }
+
+  /**
+   * Determine if recovery should be triggered
+   * FIXED: Correctly compare failure rate against threshold
+   */
+  private shouldTriggerRecovery(
+    state: AdaptiveState,
+    quota: TenantBurstQuota,
+  ): boolean {
+    const failureRate = this.getFailureRate(state);
+    const thresholdDecimal = quota.failureThreshold / 100;
+    return failureRate > thresholdDecimal;
   }
 
   /**
@@ -325,6 +391,9 @@ export class AdaptiveTokenBucketService {
     state.failureCount = 0;
     state.successCount = 0;
     state.adaptiveLevel = 0;
+    // Reset shared budget
+    state.sharedBudgetTokens = state.baseCapacity;
+    state.lastBudgetRefillTime = Date.now();
 
     // Clear recovery schedule
     const timeout = this.recoverySchedules.get(tenantId);
