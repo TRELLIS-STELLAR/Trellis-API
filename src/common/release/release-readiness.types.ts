@@ -93,11 +93,30 @@ export interface ReleaseAuditEntry {
   newStatus?: string;
 }
 
+export interface MigrationRecoveryGateReport {
+  decision: "PASS" | "BLOCKED";
+  migrationStatus: string;
+  recoveryStatus: string;
+  rollbackStatus: string;
+  blockingReasons: string[];
+  warnings: string[];
+  evaluatedAt: Date;
+}
+
 export interface AutomatedVerificationPayload {
   migrations?: Array<{ filename: string; content: string }>;
   smokeProbes?: SmokeProbe[];
   schemaChanges?: SchemaColumnSpec[];
   options?: SmokeTestOptions;
+  recovery?: any;
+  rollback?: any;
+  tests?: any;
+  waivers?: any[];
+  releaseGateOptions?: {
+    now?: Date;
+    maxRehearsalAgeDays?: number;
+    maxRecoveryAgeDays?: number;
+  };
 }
 
 export interface ReleaseReadinessEvaluation {
@@ -107,6 +126,7 @@ export interface ReleaseReadinessEvaluation {
   migrationReport?: MigrationReadinessReport;
   smokeTestReport?: SmokeTestReport;
   rollbackReport?: RollbackReadinessReport;
+  migrationRecoveryGate?: MigrationRecoveryGateReport;
   evaluatedAt: Date;
   blockingReasons: string[];
 }

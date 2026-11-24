@@ -9,6 +9,53 @@ import { InputLimitsPipe } from "../pipes/input-limits.pipe";
 import { InputLimitsGuard } from "../guard/input-limits.guard";
 import { Role } from "../guard/roles.enum";
 
+/**
+ * Deterministic pseudo-random generator (LCG) so fuzz cases are reproducible
+ * across runs and failures can be replayed from the printed seed.
+ */
+function makeRng(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+
+const FUZZ_SEED = 437;
+const FUZZ_ITERATIONS = 200;
+
+function randomPrimitive(rng: () => number): unknown {
+  const choices: Array<() => unknown> = [
+    () => null,
+    () => undefined,
+    () => Math.floor(rng() * 1e9) - 5e8,
+    () => rng() < 0.5,
+    () => "",
+    () => "x".repeat(Math.floor(rng() * 50)),
+    () => NaN,
+    () => Infinity,
+    () => -0,
+  ];
+  return choices[Math.floor(rng() * choices.length)]();
+}
+
+function randomValue(rng: () => number, depth: number): unknown {
+  const r = rng();
+  if (depth <= 0 || r < 0.4) {
+    return randomPrimitive(rng);
+  }
+  if (r < 0.7) {
+    const len = Math.floor(rng() * 8);
+    return Array.from({ length: len }, () => randomValue(rng, depth - 1));
+  }
+  const keys = Math.floor(rng() * 8);
+  const obj: Record<string, unknown> = {};
+  for (let i = 0; i < keys; i++) {
+    obj[`k_${Math.floor(rng() * 1000)}`] = randomValue(rng, depth - 1);
+  }
+  return obj;
+}
+
 describe("Strict Input Size and Cardinality Limits (#437)", () => {
   describe("Core Limits Validator: validatePayloadLimits", () => {
     describe("Normal Path", () => {
@@ -38,6 +85,45 @@ describe("Strict Input Size and Cardinality Limits (#437)", () => {
         expect(validatePayloadLimits(undefined).valid).toBe(true);
         expect(validatePayloadLimits(12345).valid).toBe(true);
         expect(validatePayloadLimits(true).valid).toBe(true);
+      });
+    });
+
+    describe("Boundary Cases", () => {
+      it("should accept an object exactly at maxObjectKeys", () => {
+        const obj: Record<string, number> = {};
+        for (let i = 0; i < 100; i++) obj[`k${i}`] = i;
+        const result = validatePayloadLimits(obj, { maxObjectKeys: 100 });
+        expect(result.violations.find((v) => v.code === "INPUT_CARDINALITY_EXCEEDED")).toBeUndefined();
+      });
+
+      it("should accept an object exactly one key over-limit only as a violation", () => {
+        const obj: Record<string, number> = {};
+        for (let i = 0; i < 101; i++) obj[`k${i}`] = i;
+        const result = validatePayloadLimits(obj, { maxObjectKeys: 100 });
+        expect(result.valid).toBe(false);
+        expect(result.violations.find((v) => v.code === "INPUT_CARDINALITY_EXCEEDED")!.actual).toBe(101);
+      });
+
+      it("should accept an array exactly at maxArrayLength", () => {
+        const result = validatePayloadLimits({ items: new Array(1000).fill(0) }, { maxArrayLength: 1000 });
+        expect(result.violations.find((v) => v.code === "INPUT_CARDINALITY_EXCEEDED")).toBeUndefined();
+      });
+
+      it("should accept a string exactly at maxStringLength", () => {
+        const result = validatePayloadLimits({ p: "A".repeat(65536) }, { maxStringLength: 65536 });
+        expect(result.violations.find((v) => v.code === "INPUT_SIZE_EXCEEDED")).toBeUndefined();
+      });
+
+      it("should accept depth exactly at maxDepth", () => {
+        let obj: any = { leaf: 1 };
+        for (let i = 0; i < 4; i++) obj = { child: obj };
+        const result = validatePayloadLimits(obj, { maxDepth: 10 });
+        expect(result.violations.find((v) => v.code === "INPUT_DEPTH_EXCEEDED")).toBeUndefined();
+      });
+
+      it("should handle empty objects and arrays without violations", () => {
+        expect(validatePayloadLimits({}).valid).toBe(true);
+        expect(validatePayloadLimits([]).valid).toBe(true);
       });
     });
 
@@ -112,9 +198,61 @@ describe("Strict Input Size and Cardinality Limits (#437)", () => {
       });
     });
 
+    describe("Fuzz: malformed and random inputs", () => {
+      it("never throws and always returns a well-formed result for random structures", () => {
+        const rng = makeRng(FUZZ_SEED);
+        for (let i = 0; i < FUZZ_ITERATIONS; i++) {
+          const input = randomValue(rng, 6);
+          let result: ReturnType<typeof validatePayloadLimits> | undefined;
+          expect(() => {
+            result = validatePayloadLimits(input);
+          }).not.toThrow();
+          expect(typeof result!.valid).toBe("boolean");
+          expect(Array.isArray(result!.violations)).toBe(true);
+          expect(result!.valid).toBe(result!.violations.length === 0);
+        }
+      });
+
+      it("handles self-referential (cyclic) objects without infinite recursion", () => {
+        const cyclic: any = { name: "loop" };
+        cyclic.self = cyclic;
+        let result: ReturnType<typeof validatePayloadLimits> | undefined;
+        expect(() => {
+          result = validatePayloadLimits(cyclic, { maxDepth: 10 });
+        }).not.toThrow();
+        expect(result!.valid).toBe(false);
+        expect(result!.violations.some((v) => v.code === "INPUT_DEPTH_EXCEEDED")).toBe(true);
+      });
+
+      it("tolerates keys that look like prototype pollution without mutating Object.prototype", () => {
+        const malicious = JSON.parse('{"__proto__": {"polluted": true}, "constructor": {"prototype": {"x": 1}}}');
+        expect(() => validatePayloadLimits(malicious)).not.toThrow();
+        expect(({} as any).polluted).toBeUndefined();
+        expect(({} as any).x).toBeUndefined();
+      });
+
+      it("rejects a sparse array whose declared length exceeds the limit", () => {
+        const sparse: unknown[] = [];
+        sparse.length = 5000;
+        const result = validatePayloadLimits({ items: sparse }, { maxArrayLength: 1000 });
+        expect(result.valid).toBe(false);
+        expect(result.violations.find((v) => v.code === "INPUT_CARDINALITY_EXCEEDED")!.actual).toBe(5000);
+      });
+
+      it("handles non-finite and negative-zero numeric values as ordinary primitives", () => {
+        expect(validatePayloadLimits({ a: NaN, b: Infinity, c: -0 }).valid).toBe(true);
+      });
+    });
+
     describe("Query Parameter Cardinality", () => {
       it("should allow query params within cardinality limit", () => {
         const query = { page: "1", limit: "20", sort: "asc" };
+        expect(validateQueryParamsCardinality(query, 50)).toBeNull();
+      });
+
+      it("should accept query params exactly at the cardinality limit", () => {
+        const query: Record<string, string> = {};
+        for (let i = 0; i < 50; i++) query[`f_${i}`] = "v";
         expect(validateQueryParamsCardinality(query, 50)).toBeNull();
       });
 
@@ -145,6 +283,12 @@ describe("Strict Input Size and Cardinality Limits (#437)", () => {
       expect(pipe.transform(payload, { type: "body" })).toBe(payload);
     });
 
+    it("should pass payloads exactly at the object key boundary", () => {
+      const payload: Record<string, number> = {};
+      for (let i = 0; i < 50; i++) payload[`p${i}`] = i;
+      expect(pipe.transform(payload, { type: "body" })).toBe(payload);
+    });
+
     it("should throw BadRequestException with RFC 7807 error details on limit violation", () => {
       const oversizedPayload: any = {};
       for (let i = 0; i < 60; i++) {
@@ -163,6 +307,24 @@ describe("Strict Input Size and Cardinality Limits (#437)", () => {
         expect(response.code).toBe("INPUT_CARDINALITY_EXCEEDED");
         expect(response.violations.length).toBeGreaterThan(0);
         expect(response.remediation).toBeDefined();
+      }
+    });
+
+    it("should reject a deep payload with a depth violation code", () => {
+      let deep: any = { leaf: true };
+      for (let i = 0; i < 10; i++) deep = { child: deep };
+      expect(() => pipe.transform(deep, { type: "body" })).toThrow(BadRequestException);
+    });
+
+    it("should never throw anything other than BadRequestException on random input", () => {
+      const rng = makeRng(FUZZ_SEED + 1);
+      for (let i = 0; i < FUZZ_ITERATIONS; i++) {
+        const input = randomValue(rng, 6);
+        try {
+          pipe.transform(input, { type: "body" });
+        } catch (err) {
+          expect(err).toBeInstanceOf(BadRequestException);
+        }
       }
     });
   });
@@ -210,6 +372,35 @@ describe("Strict Input Size and Cardinality Limits (#437)", () => {
       expect(guard.canActivate(context)).toBe(true);
     });
 
+    it("should grant elevated capacity ceiling to OPERATOR role", () => {
+      const bulkArray = new Array(3000).fill(1);
+      const context = createMockContext({ items: bulkArray }, {}, [Role.OPERATOR]);
+      expect(guard.canActivate(context)).toBe(true);
+    });
+
+    it("should still reject ADMIN requests beyond the elevated ceiling", () => {
+      const hugeArray = new Array(5001).fill(1);
+      const context = createMockContext({ items: hugeArray }, {}, [Role.ADMIN]);
+      expect(() => guard.canActivate(context)).toThrow(BadRequestException);
+    });
+
+    it("should treat a request with no roles as a standard user (fail-closed on elevation)", () => {
+      const bulkArray = new Array(3000).fill(1);
+      const context = createMockContext({ items: bulkArray }, {}, []);
+      expect(() => guard.canActivate(context)).toThrow(BadRequestException);
+    });
+
+    it("should treat a request with missing user object as a standard user", () => {
+      const context = {
+        getHandler: () => ({}),
+        getClass: () => ({}),
+        switchToHttp: () => ({
+          getRequest: () => ({ body: { ok: true }, query: {} }),
+        }),
+      } as unknown as ExecutionContext;
+      expect(guard.canActivate(context)).toBe(true);
+    });
+
     it("should reject request with excessive query parameters", () => {
       const queryParams: Record<string, string> = {};
       for (let i = 0; i < 75; i++) {
@@ -220,6 +411,14 @@ describe("Strict Input Size and Cardinality Limits (#437)", () => {
 
       expect(() => guard.canActivate(context)).toThrow(BadRequestException);
     });
+
+    it("should not let query-parameter overflow be bypassed by an elevated role", () => {
+      const queryParams: Record<string, string> = {};
+      for (let i = 0; i < 75; i++) {
+        queryParams[`param_${i}`] = "val";
+      }
+      const context = createMockContext({}, queryParams, [Role.ADMIN]);
+      expect(() => guard.canActivate(context)).toThrow(BadRequestException);
+    });
   });
 });
-
