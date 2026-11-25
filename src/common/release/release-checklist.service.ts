@@ -17,12 +17,23 @@ import {
   MigrationReadinessReport,
   SmokeTestReport,
   RollbackReadinessReport,
+  MigrationRecoveryGateReport,
 } from "./release-readiness.types";
 import {
   verifyMigrationReadiness,
   executeSmokeTestsWithRetry,
   verifyRollbackSafety,
 } from "./release-readiness.checker";
+import {
+  evaluateReleaseGate,
+  ReleaseGateEvidence,
+  ReleaseGateDecision,
+  RecoveryEvidence,
+  ReleaseGateOptions,
+  ReleaseGateWaiver,
+  TestSuiteEvidence,
+  RollbackRehearsalEvidence,
+} from "./release-gate";
 
 /**
  * Service for managing release readiness checklists.
@@ -506,6 +517,83 @@ export class ReleaseChecklistService {
       }
     }
 
+    // 4. Run release gate for migrations and recovery evidence (Issue #569)
+    let migrationRecoveryGate: MigrationRecoveryGateReport | undefined;
+    const hasSchemaModifications =
+      (payload.migrations && payload.migrations.length > 0) ||
+      (payload.schemaChanges && payload.schemaChanges.length > 0);
+
+    if (hasSchemaModifications || payload.recovery) {
+      const gateEvidence: ReleaseGateEvidence = {
+        releaseId: `PR-${prNumber}`,
+        tests: payload.tests ?? {
+          requiredSuites: smokeTestReport ? ["smoke"] : [],
+          suites: smokeTestReport
+            ? [
+                {
+                  name: "smoke",
+                  passed: smokeTestReport.passedProbes,
+                  failed: smokeTestReport.failedProbes,
+                },
+              ]
+            : [],
+        },
+        migrations: payload.migrations ?? [],
+        schemaChanges: payload.schemaChanges,
+        rollback: payload.rollback,
+        recovery: payload.recovery,
+        waivers: payload.waivers,
+      };
+
+      const gateDecision = evaluateReleaseGate(gateEvidence, payload.releaseGateOptions);
+      const recoveryGate = gateDecision.gates.find((g) => g.gate === "recovery");
+      const migrationGate = gateDecision.gates.find((g) => g.gate === "migrations");
+      const rollbackGate = gateDecision.gates.find((g) => g.gate === "rollback");
+
+      migrationRecoveryGate = {
+        decision: gateDecision.decision,
+        migrationStatus: migrationGate?.status ?? "PASSED",
+        recoveryStatus: recoveryGate?.status ?? "PASSED",
+        rollbackStatus: rollbackGate?.status ?? "PASSED",
+        blockingReasons: gateDecision.blockingReasons,
+        warnings: [
+          ...(migrationGate?.warnings ?? []),
+          ...(recoveryGate?.warnings ?? []),
+          ...(rollbackGate?.warnings ?? []),
+        ],
+        evaluatedAt: new Date(),
+      };
+
+      if (recoveryGate) {
+        if (recoveryGate.status === "PASSED") {
+          this.updateCheckResult(checklist, "migration_recovery_evidence", CheckStatus.PASSED, {
+            notes: "Verified recovery evidence: backup and restore drill within RPO/RTO SLA with clean invariant report.",
+            actor,
+          });
+        } else if (recoveryGate.status === "WAIVED") {
+          this.updateCheckResult(checklist, "migration_recovery_evidence", CheckStatus.WAIVED, {
+            notes: recoveryGate.warnings.find((w) => w.startsWith("Waived by")) ?? "Recovery gate waived by admin.",
+            actor,
+          });
+        } else {
+          const recoveryErrors = recoveryGate.reasons.join("; ");
+          blockingReasons.push(`Recovery evidence gate blocked: ${recoveryErrors}`);
+          this.updateCheckResult(checklist, "migration_recovery_evidence", CheckStatus.FAILED, {
+            failureReason: recoveryErrors,
+            actor,
+          });
+        }
+      }
+
+      if (gateDecision.decision === "BLOCKED") {
+        for (const reason of gateDecision.blockingReasons) {
+          if (!blockingReasons.some((br) => br.includes(reason))) {
+            blockingReasons.push(reason);
+          }
+        }
+      }
+    }
+
     const overallReady = blockingReasons.length === 0 && checklist.overallStatus === "READY";
 
     this.recordAudit(prNumber, {
@@ -523,8 +611,100 @@ export class ReleaseChecklistService {
       migrationReport,
       smokeTestReport,
       rollbackReport,
+      migrationRecoveryGate,
       evaluatedAt: new Date(),
       blockingReasons,
+    };
+  }
+
+  /**
+   * Evaluates release gate specifically for migrations and recovery evidence (Issue #569).
+   */
+  evaluateMigrationAndRecoveryGate(
+    prNumber: string,
+    evidence: {
+      migrations: Array<{ filename: string; content: string }>;
+      schemaChanges?: SchemaColumnSpec[];
+      recovery?: RecoveryEvidence;
+      rollback?: RollbackRehearsalEvidence;
+      tests?: { requiredSuites: string[]; suites: TestSuiteEvidence[] };
+      waivers?: ReleaseGateWaiver[];
+    },
+    options?: ReleaseGateOptions,
+    actor = "system",
+  ): {
+    prNumber: string;
+    decision: ReleaseGateDecision;
+    checklistStatus: string;
+    blockingReasons: string[];
+    evaluatedAt: Date;
+  } {
+    let checklist = this.getChecklist(prNumber);
+    if (!checklist) {
+      checklist = this.createChecklist(prNumber, `Gate Evaluation PR #${prNumber}`, [], actor);
+    }
+
+    const gateEvidence: ReleaseGateEvidence = {
+      releaseId: `PR-${prNumber}`,
+      tests: evidence.tests ?? { requiredSuites: [], suites: [] },
+      migrations: evidence.migrations,
+      schemaChanges: evidence.schemaChanges,
+      rollback: evidence.rollback,
+      recovery: evidence.recovery,
+      waivers: evidence.waivers,
+    };
+
+    const decision = evaluateReleaseGate(gateEvidence, options);
+    const recoveryGate = decision.gates.find((g) => g.gate === "recovery");
+    const migrationGate = decision.gates.find((g) => g.gate === "migrations");
+
+    if (migrationGate) {
+      if (migrationGate.status === "PASSED") {
+        this.updateCheckResult(checklist, "migration_reversibility", CheckStatus.PASSED, {
+          notes: "Migrations verified reversible and safe.",
+          actor,
+        });
+      } else if (migrationGate.status === "FAILED" || migrationGate.status === "BLOCKED") {
+        this.updateCheckResult(checklist, "migration_reversibility", CheckStatus.FAILED, {
+          failureReason: migrationGate.reasons.join("; "),
+          actor,
+        });
+      }
+    }
+
+    if (recoveryGate) {
+      if (recoveryGate.status === "PASSED") {
+        this.updateCheckResult(checklist, "migration_recovery_evidence", CheckStatus.PASSED, {
+          notes: "Recovery evidence verified: backup, restore drill, and invariants within SLA.",
+          actor,
+        });
+      } else if (recoveryGate.status === "WAIVED") {
+        this.updateCheckResult(checklist, "migration_recovery_evidence", CheckStatus.WAIVED, {
+          notes: recoveryGate.warnings.find((w) => w.startsWith("Waived by")) ?? "Waived by admin.",
+          actor,
+        });
+      } else {
+        this.updateCheckResult(checklist, "migration_recovery_evidence", CheckStatus.FAILED, {
+          failureReason: recoveryGate.reasons.join("; "),
+          actor,
+        });
+      }
+    }
+
+    this.recordAudit(prNumber, {
+      action: "AUTOMATED_VERIFY",
+      actor,
+      timestamp: new Date(),
+      details: `Release gate for migrations and recovery evaluated: ${decision.decision} (${decision.blockingReasons.length} blocking reasons)`,
+      newStatus: checklist.overallStatus,
+    });
+
+    return {
+      prNumber,
+      decision,
+      checklistStatus: checklist.overallStatus,
+      blockingReasons: decision.blockingReasons,
+      evaluatedAt: new Date(),
     };
   }
 

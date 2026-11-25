@@ -7,17 +7,22 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "src/core/auth/jwt.guard";
 import { RiskManagementService } from "./risk-management.service";
 import { RiskConfigDto, PositionSizeDto } from "./dto/risk.dto";
 import { CircuitBreakerService } from "./circuit-breaker.service";
+import { ExplainableRiskScoringService } from "./explainable-risk-scoring.service";
 
+@ApiTags("risk")
 @Controller("risk")
 @UseGuards(JwtAuthGuard)
 export class RiskManagementController {
   constructor(
     private readonly riskService: RiskManagementService,
     private readonly circuitBreaker: CircuitBreakerService,
+    // Issue #568: explainable risk scoring
+    private readonly explainableRiskScoring: ExplainableRiskScoringService,
   ) {}
 
   @Post("config")
@@ -55,6 +60,25 @@ export class RiskManagementController {
   resetCircuitBreaker() {
     this.circuitBreaker.reset();
     return { success: true };
+  }
+
+  @ApiOperation({ summary: "Issue #568 — Explainable risk score for high-impact actions" })
+  @Post("portfolio/:userId/score")
+  async scoreForHighImpactAction(
+    @Param("userId") userId: string,
+    @Body()
+    body: {
+      positions: Array<{
+        asset: string;
+        value: number;
+        weight: number;
+        volatility: number;
+        entryPrice: number;
+        currentPrice: number;
+      }>;
+    },
+  ) {
+    return this.explainableRiskScoring.scoreForHighImpactAction(userId, body.positions);
   }
 
   @Post("portfolio/:userId/analyze")

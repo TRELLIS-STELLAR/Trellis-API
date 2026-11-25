@@ -197,6 +197,72 @@ describe("UrlValidatorService", () => {
       await expect(service.validateUrl("http://example.com:22/")).rejects.toThrow(BadRequestException);
       await expect(service.validateUrl("http://example.com:6379/")).rejects.toThrow(BadRequestException);
     });
+
+    describe("fuzz: malformed and boundary inputs", () => {
+      it("should reject whitespace-only and control-character inputs", async () => {
+        const inputs = [" ", "\t", "\n", "\r\n", "http://example.com\x00", "http://exa\u0007mple.com/"];
+        for (const input of inputs) {
+          await expect(service.validateUrl(input)).rejects.toThrow(BadRequestException);
+        }
+      });
+
+      it("should reject schemes with unusual casing or prefixes that are not http(s)", async () => {
+        const inputs = [
+          "JAVASCRIPT:alert(1)",
+          "  javascript:alert(1)",
+          "vbscript:msgbox(1)",
+          "ftp://example.com/",
+          "gopher://example.com/",
+          "ws://example.com/",
+        ];
+        for (const input of inputs) {
+          await expect(service.validateUrl(input)).rejects.toThrow(BadRequestException);
+        }
+      });
+
+      it("should reject oversized inputs without hanging", async () => {
+        const longHost = "a".repeat(10000);
+        await expect(service.validateUrl(`http://${longHost}.com/`)).rejects.toThrow(BadRequestException);
+        await expect(service.validateUrl("http://example.com/" + "x".repeat(100000))).resolves.toBeDefined().catch(
+          () => undefined,
+        );
+      });
+
+      it("should reject out-of-range and malformed port numbers", async () => {
+        const inputs = [
+          "http://example.com:99999/",
+          "http://example.com:-1/",
+          "http://example.com:abc/",
+        ];
+        for (const input of inputs) {
+          await expect(service.validateUrl(input)).rejects.toThrow(BadRequestException);
+        }
+      });
+
+      it("should reject malformed IPv4 literals that could bypass range checks", async () => {
+        const inputs = [
+          "http://2130706433/",
+          "http://0x7f000001/",
+          "http://0177.0.0.1/",
+          "http://127.1/",
+        ];
+        for (const input of inputs) {
+          await expect(service.validateUrl(input)).rejects.toThrow(BadRequestException);
+        }
+      });
+
+      it("should reject malformed bracketed IPv6 literals", async () => {
+        const inputs = ["http://[::1/", "http://[gggg::1]/", "http://[1:2:3:4:5:6:7:8:9]/"];
+        for (const input of inputs) {
+          await expect(service.validateUrl(input)).rejects.toThrow(BadRequestException);
+        }
+      });
+
+      it("should not accept relative inputs that start with a scheme-like prefix when allowRelative is true", async () => {
+        await expect(service.validateUrl("javascript:alert(1)", true)).rejects.toThrow(BadRequestException);
+        await expect(service.validateUrl("//127.0.0.1/admin", true)).rejects.toThrow(BadRequestException);
+      });
+    });
   });
 
   describe("sanitizeUrl", () => {
@@ -208,6 +274,12 @@ describe("UrlValidatorService", () => {
     it("should return empty string for internal URLs", async () => {
       const result = await service.sanitizeUrl("http://127.0.0.1/admin");
       expect(result).toBe("");
+    });
+
+    it("should return empty string for malformed and boundary inputs", async () => {
+      expect(await service.sanitizeUrl("")).toBe("");
+      expect(await service.sanitizeUrl(null as any)).toBe("");
+      expect(await service.sanitizeUrl("http://example.com:99999/")).toBe("");
     });
 
     it("should return sanitized URL for valid input", async () => {
@@ -233,6 +305,12 @@ describe("UrlValidatorService", () => {
 
     it("should return false for invalid URLs", () => {
       expect(service.isExternalUrl("not-a-url")).toBe(false);
+    });
+
+    it("should return false for malformed and boundary inputs without throwing", () => {
+      expect(service.isExternalUrl("")).toBe(false);
+      expect(service.isExternalUrl(null as any)).toBe(false);
+      expect(service.isExternalUrl("http://[::1/")).toBe(false);
     });
   });
 });

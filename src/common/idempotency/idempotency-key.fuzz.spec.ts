@@ -27,4 +27,29 @@ describe("idempotency input boundaries", () => {
       service.buildScope("POST", "/payments", "bob"),
     );
   });
+
+  it("fuzzes random malformed keys and never accepts a key it would reject as a boundary", () => {
+    // Deterministic pseudo-random fuzz: LCG so failures are reproducible.
+    let seed = 0x2f6e2b1;
+    const next = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed;
+    };
+    const alphabet = "abcXYZ019-_ /\\\t\n.:;\u00e9\u{1F642}";
+    const chars = Array.from(alphabet);
+    for (let i = 0; i < 500; i += 1) {
+      const length = next() % 140;
+      let key = "";
+      for (let j = 0; j < length; j += 1) {
+        key += chars[next() % chars.length];
+      }
+      const trimmed = key.trim();
+      const valid = /^[A-Za-z0-9_-]+$/.test(trimmed) && trimmed.length >= 8 && trimmed.length <= 128;
+      if (valid) {
+        expect(service.assertValidKey(key)).toBe(trimmed);
+      } else {
+        expect(() => service.assertValidKey(key)).toThrow(BadRequestException);
+      }
+    }
+  });
 });

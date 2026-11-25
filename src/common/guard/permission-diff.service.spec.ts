@@ -9,6 +9,60 @@ describe("PermissionDiffService", () => {
     service = new PermissionDiffService();
   });
 
+  describe("Issue #571 permission-diff preview contract", () => {
+    const matrix: PermissionMatrixEntry[] = [
+      {
+        action: "orders.create",
+        description: "Create an order",
+        requiredPermissions: [Permission.TRADE_EXECUTE],
+        allowedRoles: [Role.OPERATOR],
+        scope: "own",
+        sensitive: false,
+        auditRequired: false,
+      },
+    ];
+
+    it("returns a dry-run diff without mutating the active matrix", () => {
+      const result = service.previewPolicyChanges({
+        actor: { id: "maintainer-571", roles: ["MAINTAINER"] },
+        currentMatrix: matrix,
+        proposedMatrix: [...matrix, {
+          action: "audit.export",
+          description: "Export audit records",
+          requiredPermissions: [Permission.AUDIT_READ],
+          allowedRoles: [Role.MAINTAINER],
+          scope: "global",
+          sensitive: true,
+          auditRequired: true,
+        }],
+      });
+
+      expect(result.dryRun).toBe(true);
+      expect(result.addedActions).toEqual(["audit.export"]);
+      expect(result.rollbackPlan.snapshotMatrix).toEqual(matrix);
+      expect(matrix).toHaveLength(1);
+    });
+
+    it("fails closed for an unauthorized preview caller", () => {
+      expect(() => service.previewPolicyChanges({
+        actor: { id: "user-571", roles: ["USER"] },
+        currentMatrix: matrix,
+        proposedMatrix: matrix,
+      })).toThrow("requires ADMIN or MAINTAINER role");
+    });
+
+    it("rejects malformed and duplicate policy actions before diffing", () => {
+      expect(() => service.previewPolicyChanges({
+        actor: { id: "admin-571", roles: ["ADMIN"] },
+        proposedMatrix: [{ ...matrix[0], action: "" }],
+      })).toThrow("non-empty action identifier");
+      expect(() => service.previewPolicyChanges({
+        actor: { id: "admin-571", roles: ["ADMIN"] },
+        proposedMatrix: [matrix[0], matrix[0]],
+      })).toThrow("Duplicate action");
+    });
+  });
+
   describe("Role Permission Diff", () => {
     it("should compute accurate diff when adding new permissions to a role", () => {
       const currentPerms = getRolePermissions(Role.USER);

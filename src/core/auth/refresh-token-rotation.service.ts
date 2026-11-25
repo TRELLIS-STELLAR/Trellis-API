@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { randomUUID } from "crypto";
 import { RefreshToken } from "./entities/auth.entity";
+import type { TokenFamilyInvalidations } from "../../session-revocation/revocation-bus";
 
 /**
  * Refresh token rotation with family reuse detection (issue #144).
@@ -81,6 +82,9 @@ export class RefreshTokenRotationService {
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
     @Optional() @Inject(REVOCATION_STORE) private readonly revocationStore?: RevocationStore,
+    // Families invalidated by the broadcast bus (#526). Optional, so existing
+    // constructions keep their behaviour when no bus is wired.
+    @Optional() private readonly familyInvalidations?: TokenFamilyInvalidations,
   ) {}
 
   /**
@@ -130,6 +134,19 @@ export class RefreshTokenRotationService {
       const revokedTokens = await this.revokeFamily(existing.familyId);
       this.logger.warn(
         `refresh token reuse detected; revoked ${revokedTokens} token(s) in family ${existing.familyId ?? "<none>"}`,
+      );
+      return { kind: "reused", familyId: existing.familyId, revokedTokens };
+    }
+
+    // A family invalidated on another replica, delivered via the broadcast bus.
+    // Refuse it here even though this row was never revoked locally.
+    if (
+      existing.familyId &&
+      this.familyInvalidations?.isInvalidated(existing.familyId)
+    ) {
+      const revokedTokens = await this.revokeFamily(existing.familyId);
+      this.logger.warn(
+        `refresh token rejected: family ${existing.familyId} was invalidated by broadcast; revoked ${revokedTokens} local token(s)`,
       );
       return { kind: "reused", familyId: existing.familyId, revokedTokens };
     }
