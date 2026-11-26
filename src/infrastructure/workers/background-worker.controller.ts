@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Logger } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Logger, Patch } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiParam } from "@nestjs/swagger";
 import { BackgroundWorkerService } from "./background-worker.service";
+import { ConcurrencyLimiterService, BackpressureStrategy, ConcurrencyConfig } from "./concurrency-limiter.service";
 import { JobStatus, JobPriority, WorkerJobPayload } from "./worker.interface";
 import { JwtAuthGuard } from "src/core/auth/jwt.guard";
 import { Roles, Role } from "src/common/decorators/roles.decorator";
@@ -14,7 +15,10 @@ import { RolesGuard } from "src/common/guard/roles.guard";
 export class BackgroundWorkerController {
   private readonly logger = new Logger(BackgroundWorkerController.name);
 
-  constructor(private readonly workerService: BackgroundWorkerService) {}
+  constructor(
+    private readonly workerService: BackgroundWorkerService,
+    private readonly concurrencyLimiter: ConcurrencyLimiterService,
+  ) {}
 
   @Post("jobs")
   @ApiOperation({ summary: "Enqueue a background job" })
@@ -69,5 +73,33 @@ export class BackgroundWorkerController {
   async getMetrics() {
     const metrics = await this.workerService.getMetrics();
     return { success: true, metrics };
+  }
+
+  @Get("concurrency")
+  @ApiOperation({ summary: "Get concurrency configuration and metrics" })
+  async getConcurrency() {
+    const metrics = this.concurrencyLimiter.getMetrics();
+    const activeJobs = this.concurrencyLimiter.getActiveJobIds();
+    const queuedJobs = this.concurrencyLimiter.getQueuedJobs();
+    return { success: true, metrics, activeJobs, queuedJobs };
+  }
+
+  @Patch("concurrency")
+  @ApiOperation({ summary: "Update concurrency configuration" })
+  @Roles(Role.ADMIN)
+  async updateConcurrency(@Body() config: Partial<ConcurrencyConfig>) {
+    this.concurrencyLimiter.updateConfig(config);
+    const updated = this.concurrencyLimiter.getMetrics();
+    this.logger.log(`Concurrency config updated by admin: ${JSON.stringify(config)}`);
+    return { success: true, config: updated.config };
+  }
+
+  @Post("concurrency/clear-queue")
+  @ApiOperation({ summary: "Clear all queued jobs waiting for concurrency slots" })
+  @Roles(Role.ADMIN)
+  async clearConcurrencyQueue() {
+    this.concurrencyLimiter.clearQueue();
+    this.logger.warn("Concurrency queue cleared by admin");
+    return { success: true, message: "Queue cleared" };
   }
 }

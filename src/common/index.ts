@@ -57,3 +57,30 @@ export {
   SENSITIVE_BODY_FIELDS,
   REQUEST_ID_HEADER,
 } from "./middleware/logging.config";
+
+// Correlation
+export { CorrelationModule } from "./correlation/correlation.module";
+export { CorrelationIdMiddleware } from "./correlation/correlation-id.middleware";
+export { CorrelationAuthInterceptor } from "./correlation/correlation-auth.interceptor";
+export { CorrelationHttpInterceptor } from "./correlation/correlation-http.interceptor";
+export {
+  getCorrelationId,
+  getCorrelationContext,
+  runWithCorrelation,
+  withCorrelationHeaders,
+  withJobCorrelation,
+  runJobWithCorrelation,
+  normalizeCorrelationId,
+  generateCorrelationId,
+  deriveContractCorrelationId,
+  resolveInboundCorrelationId,
+  CORRELATION_ID_HEADER,
+  REQUEST_ID_HEADER as CORRELATION_REQUEST_ID_HEADER,
+  JOB_CORRELATION_FIELD,
+  MAX_CORRELATION_ID_LENGTH,
+} from "./correlation/correlation-context";
+export type {
+  CorrelationContext,
+  CorrelationSource,
+  ResolvedCorrelation,
+} from "./correlation/correlation-context";
