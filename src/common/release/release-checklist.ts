@@ -134,6 +134,18 @@ export const TRELLIS_API_RELEASE_CHECKS: ReleaseCheck[] = [
     automatable: false,
     estimatedTimeMinutes: 45,
   },
+  {
+    id: "migration_recovery_evidence",
+    category: "migrations",
+    name: "Migration & Recovery Evidence Gate",
+    description:
+      "Database migrations carry verified recovery evidence (backup verification and restore drill within RPO/RTO targets)",
+    acceptanceCriterion:
+      "Backup verified within 30 days, passed restore drill, measured RPO/RTO within target, clean DR invariants report with 0 critical failures",
+    severity: CheckSeverity.CRITICAL,
+    automatable: true,
+    estimatedTimeMinutes: 30,
+  },
 
   // =========================================================================
   // Configuration

@@ -42,6 +42,33 @@ function dtoWith(email: unknown): TestUserEmailDto {
   return dto;
 }
 
+/**
+ * Deterministic pseudo-random generator (mulberry32) so fuzz cases are
+ * reproducible across runs while still exercising many inputs.
+ */
+function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const FUZZ_ALPHABET =
+  "abcxyzABCXYZ0189._+-@[]:()\"\\,;<>'`!#$%&*/=?^{|}~ \t\n\u0000\u00fc\u4e2d\ud83d\ude00";
+
+function randomString(rand: () => number, maxLen: number): string {
+  const len = Math.floor(rand() * maxLen);
+  let out = "";
+  for (let i = 0; i < len; i++) {
+    out += FUZZ_ALPHABET[Math.floor(rand() * FUZZ_ALPHABET.length)];
+  }
+  return out;
+}
+
 describe("IsRfcEmail Decorator", () => {
   const originalBlock = process.env.DISPOSABLE_EMAIL_DOMAINS;
   const originalAllow = process.env.DISPOSABLE_EMAIL_ALLOWLIST;
@@ -140,6 +167,56 @@ describe("IsRfcEmail Decorator", () => {
         'email has an invalid domain (after "@")',
       );
     });
+
+    it("fuzz: never throws and parseRfcEmail is consistent with the decorator", async () => {
+      const rand = seededRandom(0xc0ffee);
+      for (let i = 0; i < 500; i++) {
+        const input = randomString(rand, 300);
+        expect(() => parseRfcEmail(input)).not.toThrow();
+        const result = parseRfcEmail(input);
+        const errors = await errorsFor(dtoWith(input));
+        if (result.ok) {
+          // Accepted by the parser must not fail syntax validation.
+          // Disposable-domain rejections are the only allowed exception.
+          const syntaxFailed = errors.some(
+            (e) => e.constraints?.isRfcEmail && !e.constraints.isRfcEmail.includes("disposable"),
+          );
+          expect(syntaxFailed).toBe(false);
+        } else {
+          expect(errors.length).toBeGreaterThan(0);
+        }
+      }
+    });
+
+    it("fuzz: rejects every non-string type without throwing", async () => {
+      const rand = seededRandom(7);
+      const values: unknown[] = [];
+      for (let i = 0; i < 50; i++) {
+        values.push(rand() * 1e6, Math.floor(rand() * 100) > 50, Symbol("s"), BigInt(i));
+      }
+      values.push(NaN, Infinity, -0, () => "a@example.com", new Date(0));
+      for (const value of values) {
+        expect(parseRfcEmail(value).ok).toBe(false);
+        expect((await errorsFor(dtoWith(value))).length).toBeGreaterThan(0);
+      }
+    });
+
+    it("boundary: accepts exactly-at-limit lengths and rejects one over", async () => {
+      // local part: 64 ok, 65 rejected (covered above); total length boundary
+      const localMax = "a".repeat(64);
+      const domainLabel = "b".repeat(63);
+      const atLimit = `${localMax}@${domainLabel}.${"c".repeat(63)}.${"d".repeat(58)}.com`;
+      const overLimit = `${localMax}@${domainLabel}.${"c".repeat(63)}.${"d".repeat(60)}.com`;
+      expect(parseRfcEmail(atLimit).ok).toBe(true);
+      expect(parseRfcEmail(overLimit)).toEqual({ ok: false, reason: "too_long" });
+    });
+
+    it("boundary: empty and whitespace-only strings are rejected", async () => {
+      for (const value of ["", " ", "\t", "\n", "   \n  "]) {
+        expect(parseRfcEmail(value).ok).toBe(false);
+        expect((await errorsFor(dtoWith(value))).length).toBeGreaterThan(0);
+      }
+    });
   });
 
   describe("disposable domains", () => {
@@ -191,6 +268,12 @@ describe("IsRfcEmail Decorator", () => {
       process.env.DISPOSABLE_EMAIL_ALLOWLIST = "yopmail.com";
       expect(await errorsFor(dtoWith("qa@yopmail.com"))).toHaveLength(0);
     });
+
+    it("failure path: malformed DISPOSABLE_EMAIL_DOMAINS entries do not disable validation", async () => {
+      process.env.DISPOSABLE_EMAIL_DOMAINS = ",,  , ;;";
+      expect(await errorsFor(dtoWith("user@example.com"))).toHaveLength(0);
+      expect((await errorsFor(dtoWith("bot@mailinator.com"))).length).toBeGreaterThan(0);
+    });
   });
 
   describe("normalizeEmail", () => {
@@ -211,6 +294,15 @@ describe("IsRfcEmail Decorator", () => {
     it("is idempotent", () => {
       const once = normalizeEmail("A.B+c@GoogleMail.com");
       expect(normalizeEmail(once)).toBe(once);
+    });
+
+    it("is idempotent across fuzzed inputs", () => {
+      const rand = seededRandom(42);
+      for (let i = 0; i < 300; i++) {
+        const input = randomString(rand, 80) + "@gmail.com";
+        const once = normalizeEmail(input);
+        expect(normalizeEmail(once)).toBe(once);
+      }
     });
 
     it("leaves unparseable or non-string input for validation to reject", () => {

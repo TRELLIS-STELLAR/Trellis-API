@@ -121,7 +121,7 @@ export class ReleaseChecklistController {
 
   /**
    * POST /api/v1/admin/release-checklist/:prNumber/verify
-   * Run automated release readiness verification (migrations, smoke tests, rollback safety).
+   * Run automated release readiness verification (migrations, smoke tests, rollback safety, recovery evidence).
    */
   @Post(":prNumber/verify")
   @HttpCode(200)
@@ -132,6 +132,42 @@ export class ReleaseChecklistController {
   ): Promise<any> {
     const actor = req?.user?.email || req?.user?.id || "admin";
     return this.checklistService.runAutomatedVerification(prNumber, dto, actor);
+  }
+
+  /**
+   * POST /api/v1/admin/release-checklist/:prNumber/gate
+   * Evaluates release gate for migrations, rollback, and recovery evidence (Issue #569).
+   */
+  @Post(":prNumber/gate")
+  @HttpCode(200)
+  evaluateReleaseGate(
+    @Param("prNumber") prNumber: string,
+    @Body()
+    dto: {
+      migrations?: Array<{ filename: string; content: string }>;
+      schemaChanges?: any[];
+      recovery?: any;
+      rollback?: any;
+      tests?: any;
+      waivers?: any[];
+      options?: any;
+    },
+    @Req() req?: any,
+  ) {
+    const actor = req?.user?.email || req?.user?.id || "admin";
+    return this.checklistService.evaluateMigrationAndRecoveryGate(
+      prNumber,
+      {
+        migrations: dto.migrations ?? [],
+        schemaChanges: dto.schemaChanges,
+        recovery: dto.recovery,
+        rollback: dto.rollback,
+        tests: dto.tests,
+        waivers: dto.waivers,
+      },
+      dto.options,
+      actor,
+    );
   }
 
   /**
