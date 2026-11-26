@@ -5,9 +5,10 @@ import { SandboxPaymentAdapter } from "src/sandbox/adapters/sandbox-payment.adap
 import { SandboxConfigService } from "src/sandbox/sandbox.config";
 import { SandboxProcessorRegistrar } from "src/sandbox/sandbox-processor.registrar";
 import { SandboxService } from "src/sandbox/sandbox.service";
+import { SandboxSnapshotService } from "src/sandbox/sandbox-snapshot.service";
 
 /**
- * Integration sandbox mode (issue #57).
+ * Integration sandbox mode (issue #57, #520).
  *
  * Provides a credential-free, deterministic stand-in for the external payment
  * dependency plus a facade to run the primary workflow locally. The sandbox
@@ -23,9 +24,15 @@ import { SandboxService } from "src/sandbox/sandbox.service";
   providers: [
     SandboxConfigService,
     SandboxPaymentAdapter,
+    SandboxSnapshotService,
     SandboxService,
     SandboxProcessorRegistrar,
   ],
-  exports: [SandboxConfigService, SandboxPaymentAdapter, SandboxService],
+  exports: [
+    SandboxConfigService,
+    SandboxPaymentAdapter,
+    SandboxSnapshotService,
+    SandboxService,
+  ],
 })
 export class SandboxModule {}

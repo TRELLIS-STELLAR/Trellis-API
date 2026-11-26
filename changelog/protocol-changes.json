@@ -286,6 +286,44 @@
       "docs": [
         "docs/BOUNDED_CACHE_INVALIDATION.md"
       ]
+    },
+    {
+      "version": "0.3.0",
+      "date": "2026-11-22",
+      "status": "unreleased",
+      "impact": "compatible",
+      "title": "Email locale fallback, bounce suppression, referral attribution, storage TTL scanner, and sandbox snapshotter",
+      "summary": "Adds email template locale fallback resolver with progressive RFC 5646 chain traversal, bounce suppression list with TTL auto-expiration, growth referral attribution and qualification window verifiers with idempotent clawback guards, storage TTL expiration scanner with proactive off-chain archival hooks, and sandbox scenario state snapshotter with deterministic seed resets.",
+      "protocolSurfaces": [
+        {
+          "kind": "cli",
+          "path": "node scripts/verify-issues-519-520-521-522.js",
+          "description": "Runs comprehensive executable verification for locale fallbacks, bounce suppression, referral attribution windows, TTL expiration scanning, and sandbox state snapshotting."
+        },
+        {
+          "kind": "config",
+          "key": "SANDBOX_SEED",
+          "description": "Deterministic seed for reproducible sandbox scenario replay and state snapshotting."
+        }
+      ],
+      "migration": {
+        "required": false,
+        "automated": true,
+        "steps": [],
+        "notes": "Non-breaking additive release. Existing public API signatures and storage structures remain backward-compatible."
+      },
+      "relatedIssues": [
+        519,
+        520,
+        521,
+        522
+      ],
+      "docs": [
+        "docs/EMAIL_LOCALE_SUPPRESSION.md",
+        "docs/referral-attribution.md",
+        "docs/STORAGE_TTL_MONITORING.md",
+        "docs/SANDBOX_MODE.md"
+      ]
     }
   ]
 }
