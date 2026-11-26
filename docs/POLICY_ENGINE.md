@@ -1,4 +1,4 @@
-# Policy engine & simulation preview
+# Policy Engine & Simulation Preview (#524)
 
 The policy engine centralizes configurable business decisions across trading, DeFi protocol adapters, portfolio rebalancing constraints, authentication/access controls, and notification routing. It governs `POST /trading/execute` via `PolicyService` and provides a deterministic, read-only **Policy Simulation Preview** (`PolicySimulationService` and `PolicyController`) so maintainers can inspect affected records/users, expected side effects, and rollback constraints before committing high-impact or irreversible changes.
 

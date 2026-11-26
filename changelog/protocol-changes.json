@@ -36,8 +36,12 @@
         "steps": [],
         "notes": "No migration. Callers that do not send ?details= receive the unchanged legacy payload, so the change is additive."
       },
-      "relatedIssues": [125],
-      "docs": ["docs/transaction-details.md"]
+      "relatedIssues": [
+        125
+      ],
+      "docs": [
+        "docs/transaction-details.md"
+      ]
     },
     {
       "version": "0.2.0",
@@ -71,8 +75,12 @@
         "steps": [],
         "notes": "No migration. New environment variables are optional and default to the previous behaviour."
       },
-      "relatedIssues": [124],
-      "docs": ["docs/dependency-health.md"]
+      "relatedIssues": [
+        124
+      ],
+      "docs": [
+        "docs/dependency-health.md"
+      ]
     },
     {
       "version": "0.2.0",
@@ -105,8 +113,13 @@
         "steps": [],
         "notes": "No migration. Consumers that need upgrade warnings can poll the endpoint from the version they run. The reload() API allows hot-swapping the changelog without a restart; on failure the previous document is preserved."
       },
-      "relatedIssues": [126, 352],
-      "docs": ["docs/protocol-changelog.md"]
+      "relatedIssues": [
+        126,
+        352
+      ],
+      "docs": [
+        "docs/protocol-changelog.md"
+      ]
     },
     {
       "version": "0.2.0",
@@ -133,8 +146,146 @@
         "steps": [],
         "notes": "No migration. Test-only harness; nothing is added to the production bundle."
       },
-      "relatedIssues": [127],
-      "docs": ["docs/fault-injection.md"]
+      "relatedIssues": [
+        127
+      ],
+      "docs": [
+        "docs/fault-injection.md"
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-11-22",
+      "status": "unreleased",
+      "impact": "compatible",
+      "title": "Policy engine dry-run evaluator with diff impact summary",
+      "summary": "Adds read-only policy simulation preview across trading, DeFi adapters, portfolio rebalancing, and access control with field-level diffs, affected user counts, and commit tokens (#524).",
+      "protocolSurfaces": [
+        {
+          "kind": "http",
+          "method": "POST",
+          "path": "/policy/simulations/preview",
+          "description": "Runs dry-run policy simulation preview returning field-level diffs, affected record summaries, and commitToken."
+        },
+        {
+          "kind": "http",
+          "method": "POST",
+          "path": "/policy/simulations/assert",
+          "description": "Validates proposed policy changes against domain invariants and commitToken."
+        }
+      ],
+      "migration": {
+        "required": false,
+        "automated": true,
+        "steps": [],
+        "notes": "No migration. Existing policy execution endpoints remain unchanged."
+      },
+      "relatedIssues": [
+        524
+      ],
+      "docs": [
+        "docs/POLICY_ENGINE.md"
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-11-22",
+      "status": "unreleased",
+      "impact": "compatible",
+      "title": "Preflight transaction resource estimator with fee-bump advisor",
+      "summary": "Provides preflight resource footprint estimation (CPU, memory, ledger footprint) and dynamic fee-bump multipliers for congestion mitigation and transaction retry (#525).",
+      "protocolSurfaces": [
+        {
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/v1/preflight",
+          "description": "Simulates preflight transaction execution and returns resource estimates and fee-bump guidance."
+        },
+        {
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/v1/preflight/assert",
+          "description": "Gates transaction submission with strict precondition assertions."
+        }
+      ],
+      "migration": {
+        "required": false,
+        "automated": true,
+        "steps": [],
+        "notes": "No migration. Preflight endpoints are additive."
+      },
+      "relatedIssues": [
+        525
+      ],
+      "docs": [
+        "docs/PREFLIGHT.md"
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-11-22",
+      "status": "unreleased",
+      "impact": "compatible",
+      "title": "OpenAPI schema breaking-change detector and client SDK smoke gate",
+      "summary": "Adds structural OpenAPI drift detection, breaking change classification, and client SDK smoke test gating to prevent contract regressions (#531).",
+      "protocolSurfaces": [
+        {
+          "kind": "cli",
+          "path": "npm run openapi:drift",
+          "description": "Runs structural diff between committed OpenAPI schema and live controller decorators."
+        },
+        {
+          "kind": "config",
+          "path": "docs/openapi.json",
+          "description": "Committed canonical OpenAPI contract artifact."
+        }
+      ],
+      "migration": {
+        "required": false,
+        "automated": true,
+        "steps": [],
+        "notes": "No migration. Enforces backward compatibility for external consumers."
+      },
+      "relatedIssues": [
+        531
+      ],
+      "docs": [
+        "docs/OPENAPI_BREAKING_CHANGE_DETECTOR.md"
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-11-22",
+      "status": "unreleased",
+      "impact": "compatible",
+      "title": "Bounded cache invalidation, stale detection and rollback recovery",
+      "summary": "Implements memory-bounded LRU cache with explicit invalidation rules, stale-while-revalidate detection, degraded-mode serving, and atomic rollback snapshots (#562).",
+      "protocolSurfaces": [
+        {
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/v1/cache/invalidate",
+          "description": "Bounded invalidation by key, prefix, or tag with atomic snapshot generation."
+        },
+        {
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/v1/cache/rollback",
+          "description": "Restores invalidated entries from previous atomic snapshot."
+        }
+      ],
+      "migration": {
+        "required": false,
+        "automated": true,
+        "steps": [],
+        "notes": "No migration. Cache operations are opt-in and additive."
+      },
+      "relatedIssues": [
+        562
+      ],
+      "docs": [
+        "docs/BOUNDED_CACHE_INVALIDATION.md"
+      ]
     }
   ]
 }

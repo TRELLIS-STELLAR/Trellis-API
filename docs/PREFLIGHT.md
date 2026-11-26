@@ -1,4 +1,6 @@
-# Transaction simulation preflight
+# Transaction Simulation Preflight & Resource Estimator with Fee-Bump Advisor (#525)
+
+Provides preflight transaction resource estimation (CPU instructions, memory footprint, ledger footprint) and a dynamic fee-bump advisor that calculates optimal fee recommendations under network congestion tiers.
 
 The preflight is a deterministic, side-effect-free check that runs **before** a
 high-risk operation is submitted. It answers one question: given the operation

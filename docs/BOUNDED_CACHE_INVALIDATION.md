@@ -1,8 +1,12 @@
-# Bounded Cache Invalidation and Stale Detection (#486)
+# Bounded Cache Invalidation and Stale Detection (#562, #486)
 
 ## Overview
 
-The Bounded Cache subsystem provides an in-memory, memory-bounded LRU cache with explicit invalidation rules, stale-while-revalidate (SWR) stale detection, graceful degraded-mode serving, and atomic rollback snapshots.
+The Bounded Cache subsystem (`src/common/cache`) provides an in-memory, memory-bounded LRU cache with explicit invalidation rules, stale-while-revalidate (SWR) stale detection, graceful degraded-mode serving, and atomic rollback snapshots.
+
+High-frequency API reads (such as Stellar asset metadata, oracle rates, and exchange rates) require aggressive caching without risking memory leaks or serving dangerously expired state. The bounded cache provides strict capacity constraints, deterministic age-based stale detection, and instantaneous emergency rollback capabilities.
+
+---
 
 ## Key Capabilities
 
@@ -24,9 +28,26 @@ The Bounded Cache subsystem provides an in-memory, memory-bounded LRU cache with
 - Employs exponential backoff retries when fetching fresh data from downstream sources.
 - **Degraded Stale Fallback**: If all retries fail but a stale cached entry exists within its `staleUntil` window, the cache serves the stale value with `degraded: true` rather than surfacing a hard outage to clients.
 
-## Paths Covered
+---
+
+## Operational Execution Paths
 
 - **Normal Path**: Bounded key/prefix/tag invalidation, structured receipt with snapshot, stale detection audit, and atomic restoration.
 - **Failure Path**: Fails fast on empty criteria, blank prefixes/tags, or when matching keys exceed `maxKeysToInvalidate`.
 - **Retry Path**: Recovers from transient upstream failures via exponential backoff; gracefully falls back to serving stale content if downstream is completely unavailable.
 - **Authorization Path**: Restricts invalidation and rollback operations strictly to callers with `ADMIN` or `MAINTAINER` roles (`ForbiddenException` / 403).
+
+---
+
+## Edge Cases, Recovery, and Rollback Behavior
+
+- **Downstream Outage**: When third-party oracles or Stellar RPC nodes experience outages, the cache continues to serve stale records within `staleUntil` windows, annotating responses with `degraded: true`.
+- **Accidental Mass Eviction**: If an operator mistakenly invalidates an active prefix, `rollbackInvalidation` re-inserts the atomic snapshot without needing a database rebuild.
+- **Memory Boundary**: When cache reaches `maxEntries`, LRU eviction safely purges the oldest unaccessed entries.
+
+---
+
+## Compatibility & Migration Plan
+
+- **Preservation of Existing Cache Layer**: Fully compatible with existing Redis and in-memory caches.
+- **Zero Breaking Changes**: Opt-in features for endpoints requiring strict bounded guarantees.
