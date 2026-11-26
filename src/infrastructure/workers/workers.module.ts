@@ -1,10 +1,10 @@
 import { Module } from "@nestjs/common";
 import { BackgroundWorkerController } from "./background-worker.controller";
 import { BackgroundWorkerService } from "./background-worker.service";
-import { DeadLetterInspectionController } from "./dead-letter-inspection.controller";
-import { DeadLetterInspectionService } from "./dead-letter-inspection.service";
+import { ConcurrencyLimiterService } from "./concurrency-limiter.service";
 import { BullModule } from "@nestjs/bull";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { EventEmitterModule } from "@nestjs/event-emitter";
 
 /**
  * Workers module for delayed and retryable background jobs with dead-letter
@@ -29,9 +29,10 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
         },
       }),
     }),
+    EventEmitterModule.forRoot(),
   ],
-  controllers: [BackgroundWorkerController, DeadLetterInspectionController],
-  providers: [BackgroundWorkerService, DeadLetterInspectionService],
-  exports: [BackgroundWorkerService, DeadLetterInspectionService],
+  controllers: [BackgroundWorkerController],
+  providers: [BackgroundWorkerService, ConcurrencyLimiterService],
+  exports: [BackgroundWorkerService, ConcurrencyLimiterService],
 })
 export class WorkersModule {}

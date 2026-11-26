@@ -13,6 +13,7 @@ import {
   normalizeCorrelationId,
 } from "src/common/correlation/correlation-context";
 import { sanitizeErrorMessage } from "src/logging/sanitize.util";
+import { ConcurrencyLimiterService } from "./concurrency-limiter.service";
 
 @Injectable()
 export class BackgroundWorkerService implements OnModuleInit {
@@ -21,7 +22,10 @@ export class BackgroundWorkerService implements OnModuleInit {
   private readonly policies = new Map<string, RetryPolicy>();
   private readonly cleanupHandlers = new Map<string, JobCleanupFn>();
 
-  constructor(@InjectQueue("background-jobs") private readonly queue: Queue) {
+  constructor(
+    @InjectQueue("background-jobs") private readonly queue: Queue,
+    private readonly concurrencyLimiter: ConcurrencyLimiterService,
+  ) {
     // Register default policies eagerly so they exist even when the module
     // is instantiated outside the Nest lifecycle (e.g. in unit tests).
     this.registerDefaultPolicies();
@@ -46,8 +50,15 @@ export class BackgroundWorkerService implements OnModuleInit {
   }
 
   private setupEventListeners() {
+    this.queue.on("active", (job) => {
+      // Track when job starts processing (no concurrency slot acquired here,
+      // that happens at enqueue time)
+      this.updateJobStatus(job.id.toString(), JobStatus.ACTIVE);
+    });
+
     this.queue.on("completed", (job) => {
       this.updateJobStatus(job.id.toString(), JobStatus.COMPLETED, { result: job.returnvalue });
+      this.concurrencyLimiter.release(job.id.toString());
       this.logger.log(`Job ${job.id} completed`);
     });
 
@@ -61,9 +72,11 @@ export class BackgroundWorkerService implements OnModuleInit {
       const correlation = workerJob?.correlationId ? ` [correlationId=${workerJob.correlationId}]` : "";
       if (attempts >= maxAttempts) {
         this.updateJobStatus(job.id.toString(), JobStatus.DEAD_LETTER, { error });
+        this.concurrencyLimiter.release(job.id.toString());
         this.logger.warn(`Job ${job.id} moved to dead-letter queue after ${attempts} attempts${correlation}`);
       } else {
         this.updateJobStatus(job.id.toString(), JobStatus.FAILED, { error });
+        // Don't release on transient failure — job will retry
         this.logger.error(`Job ${job.id} failed (attempt ${attempts}/${maxAttempts}): ${error}${correlation}`);
       }
     });
@@ -99,6 +112,15 @@ export class BackgroundWorkerService implements OnModuleInit {
     };
 
     this.jobStore.set(id, job);
+
+    // Acquire concurrency slot before enqueuing to Bull
+    try {
+      await this.concurrencyLimiter.acquire(id);
+    } catch (err) {
+      // Backpressure rejection — remove from jobStore and rethrow
+      this.jobStore.delete(id);
+      throw err;
+    }
 
     const bullJob = await this.queue.add(
       type,
@@ -153,6 +175,14 @@ export class BackgroundWorkerService implements OnModuleInit {
     job.status = JobStatus.PENDING;
     job.updatedAt = new Date();
     job.error = undefined;
+
+    // Acquire concurrency slot before retrying
+    try {
+      await this.concurrencyLimiter.acquire(id);
+    } catch (err) {
+      this.logger.error(`Cannot retry job ${id}: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
 
     await this.queue.add(
       job.type,
@@ -238,6 +268,9 @@ export class BackgroundWorkerService implements OnModuleInit {
     job.error = "Cancelled by operator";
     this.logger.log(`Job ${id} (type=${job.type}) cancelled`);
 
+    // Release concurrency slot
+    this.concurrencyLimiter.release(id);
+
     await this.runCleanup(job);
     return true;
   }
@@ -255,6 +288,10 @@ export class BackgroundWorkerService implements OnModuleInit {
     job.updatedAt = new Date();
     job.error = "Cancelled by operator (cooperative)";
     this.logger.log(`Job ${id} (type=${job.type}) acknowledged cooperative cancellation`);
+    
+    // Release concurrency slot
+    this.concurrencyLimiter.release(id);
+    
     await this.runCleanup(job);
   }
 
@@ -279,6 +316,9 @@ export class BackgroundWorkerService implements OnModuleInit {
     const cancelled = jobs.filter((j) => j.status === JobStatus.CANCELLED).length;
     const pending = jobs.filter((j) => j.status === JobStatus.PENDING || j.status === JobStatus.ACTIVE).length;
 
+    // Include concurrency metrics
+    const concurrencyMetrics = this.concurrencyLimiter.getMetrics();
+
     return {
       total,
       completed,
@@ -288,6 +328,7 @@ export class BackgroundWorkerService implements OnModuleInit {
       pending,
       successRate: total > 0 ? (completed / total) * 100 : 0,
       byType: jobs.reduce<Record<string, number>>((acc, j) => { acc[j.type] = (acc[j.type] || 0) + 1; return acc; }, {}),
+      concurrency: concurrencyMetrics,
     };
   }
 
