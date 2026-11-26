@@ -9,6 +9,13 @@ import { getHeapSnapshot, getHeapStatistics } from "v8";
 import { performance, PerformanceObserver } from "perf_hooks";
 import * as Sentry from "@sentry/node";
 import { register } from "../config/metrics";
+import {
+  CollectorActor,
+  FlamegraphArtifact,
+  FlamegraphCollector,
+} from "./flamegraph/flamegraph-collector";
+import { MemoryThresholdTrigger } from "./flamegraph/memory-threshold-trigger";
+import { inspectorProfileSource } from "./flamegraph/inspector-profile-source";
 
 const execAsync = promisify(exec);
 
@@ -43,15 +50,58 @@ export class ProfilingService {
     new Map();
   private memoryLeakThreshold = 0.9; // 90% memory usage threshold
   private baselineMetrics: any = null;
+  private readonly flamegraphCollector: FlamegraphCollector;
 
   constructor() {
     // Ensure profiles directory exists
     if (!fs.existsSync(this.profilesDir)) {
       fs.mkdirSync(this.profilesDir, { recursive: true });
     }
+    this.flamegraphCollector = new FlamegraphCollector({
+      outputDir: this.profilesDir,
+      profileSource: inspectorProfileSource(),
+      isEnabled: () =>
+        process.env.NODE_ENV !== "production" ||
+        process.env.ENABLE_PROFILING === "true",
+      trigger: this.buildFlamegraphTrigger(),
+      durationMs:
+        Number(process.env.PROFILING_FLAMEGRAPH_DURATION_MS) || undefined,
+    });
     this.initializePerformanceObserver();
     this.establishPerformanceBaseline();
     this.startMemoryLeakMonitoring();
+  }
+
+  /**
+   * Manual flamegraph capture. Admin only; see FlamegraphCollector for the gates.
+   */
+  captureFlamegraph(
+    actor: CollectorActor,
+    durationMs?: number,
+  ): Promise<FlamegraphArtifact> {
+    return this.flamegraphCollector.collect(actor, durationMs);
+  }
+
+  /**
+   * The memory trigger is opt-in. It is only armed when
+   * PROFILING_FLAMEGRAPH_MEMORY_THRESHOLD is set to a ratio in (0, 1). An
+   * invalid value is logged and disables the trigger rather than failing startup.
+   */
+  private buildFlamegraphTrigger(): MemoryThresholdTrigger | undefined {
+    const raw = process.env.PROFILING_FLAMEGRAPH_MEMORY_THRESHOLD;
+    if (!raw) return undefined;
+    try {
+      return new MemoryThresholdTrigger({
+        threshold: Number(raw),
+        cooldownMs:
+          Number(process.env.PROFILING_FLAMEGRAPH_COOLDOWN_MS) || undefined,
+      });
+    } catch (error) {
+      this.logger.error(
+        `flamegraph memory trigger disabled: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
   }
 
   /**
@@ -110,6 +160,11 @@ export class ProfilingService {
           },
         });
       }
+      // Fire-and-forget: a flamegraph capture must never stall the check loop.
+      void this.flamegraphCollector.onMemorySample({
+        usedHeapSize: stats.used_heap_size,
+        heapSizeLimit: stats.heap_size_limit,
+      });
     }, 60000); // Check every minute
   }
 

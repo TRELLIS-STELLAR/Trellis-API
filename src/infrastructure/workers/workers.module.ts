@@ -6,6 +6,10 @@ import { BullModule } from "@nestjs/bull";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 
+/**
+ * Workers module for delayed and retryable background jobs with dead-letter
+ * inspection and safe retry tooling.
+ */
 @Module({
   imports: [
     BullModule.registerQueueAsync({
